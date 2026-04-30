@@ -6,6 +6,7 @@ import {
   CheckCircle,
   CircleNotch,
   ClockCounterClockwise,
+  ArrowsClockwise,
 } from "@phosphor-icons/react";
 import { AppHeader } from "@/components/AppHeader";
 import { DataverseClient } from "@/lib/dataverse";
@@ -123,6 +124,16 @@ export function Reset() {
             <span className="text-xs text-muted">
               ({runs.length} on this device)
             </span>
+            <button
+              type="button"
+              onClick={() => orgUrl && setRuns(runHistory.list(orgUrl))}
+              disabled={running}
+              title="Refresh from this device's local history"
+              className="ml-auto inline-flex items-center gap-1.5 text-xs text-slate-300 hover:text-white px-2.5 py-1 rounded-md border border-border hover:border-accent transition-colors disabled:opacity-50"
+            >
+              <ArrowsClockwise size={14} weight="bold" />
+              Refresh
+            </button>
           </div>
 
           {runs.length === 0 ? (

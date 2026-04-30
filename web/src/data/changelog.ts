@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.18.4";
+export const APP_VERSION = "v1.18.5";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.18.5",
+    date: "April 30, 2026",
+    tag: "RESET",
+    features: [
+      "**Refresh button on the Reset page.** Click it after a Generate run completes (or fails) to pull the latest run history from this device without reloading the app.",
+    ],
+  },
   {
     version: "v1.18.4",
     date: "April 30, 2026",
