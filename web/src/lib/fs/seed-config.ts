@@ -332,7 +332,6 @@ export async function seedFromPreset(
       mapKey: (wt) => wt.code,
       build: (wt) => ({
         msdyn_name: wt.name,
-        msdyn_description: tag(wt.description),
       }),
     },
     onProgress,

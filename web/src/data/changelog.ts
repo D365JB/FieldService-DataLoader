@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.18.0";
+export const APP_VERSION = "v1.18.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.18.1",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Work Order Types create no longer 400s.** Removed the unsupported `msdyn_description` field from the create payload — `msdyn_workordertypes` only carries `msdyn_name` on this Dataverse schema.",
+    ],
+  },
   {
     version: "v1.18.0",
     date: "April 30, 2026",
