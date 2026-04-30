@@ -119,6 +119,18 @@ export interface FsPreset {
     coveredProductNumbers?: string[];
     description?: string;
   }>;
+  /**
+   * Phase 5 — Warehouses (parts depots / vans / customer-site stock). Each
+   * warehouse + product combo gets a Product Inventory row with on-hand
+   * quantity so the FS Inventory views aren't empty. 2–4 entries works well.
+   */
+  warehouses?: Array<{
+    name: string;
+    description?: string;
+    /** Optional city/state for realism in the warehouse list. */
+    city?: string;
+    state?: string;
+  }>;
   /** Reasoning the AI gave for picking this vertical — surfaced in review UI. */
   rationale: string;
 }
@@ -145,6 +157,8 @@ Constraints:
   - estimatedDurationMinutes between 60 and 240.
   - coveredIncidentTypeNames: 1–2 names from incidentTypes[] above.
   - coveredProductNumbers: 1–2 productNumbers from products[] above.
+- Phase 5 — warehouses (REQUIRED, 2–4 entries):
+  - Realistic depot or service-truck names. Include city/state matching one of the territories. e.g. "Main Parts Depot — Atlanta", "Service Van #12", "Northeast Regional Warehouse".
 - All names must be realistic — never lorem ipsum, never "Sample".
 - The rationale field should be 1–2 sentences explaining why this vertical fits the company.`;
 
@@ -176,6 +190,7 @@ Generate a Field Service preset for this company as JSON matching exactly this s
   "customerAssets": [{ "name": "<string>", "accountName": "<must match a sampleAccounts[].name>", "functionalLocationName": "<optional>", "productNumber": "<optional, must match a products[].productNumber>", "parentAssetName": "<optional>", "serialNumber": "<string>", "description": "<optional>" }],
   "serviceTaskTypes": [{ "name": "<string>", "description": "<optional>", "estimatedDurationMinutes": <int> }],
   "agreements": [{ "name": "<string>", "accountName": "<must match a sampleAccounts[].name>", "startOn": "YYYY-MM-DD", "endOn": "YYYY-MM-DD", "recurrencePattern": "FREQ=MONTHLY", "estimatedDurationMinutes": <int>, "coveredIncidentTypeNames": ["<must match incidentTypes[].name>"], "coveredProductNumbers": ["<must match products[].productNumber>"], "description": "<optional>" }],
+  "warehouses": [{ "name": "<string>", "city": "<string>", "state": "<2-letter>", "description": "<optional>" }],
   "rationale": "<1-2 sentences>"
 }`;
 

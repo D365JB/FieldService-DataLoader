@@ -7,9 +7,21 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.12.0";
+export const APP_VERSION = "v1.13.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.13.0",
+    date: "May 21, 2026",
+    tag: "INVENTORY",
+    features: [
+      "**Warehouses** — depots and service-van stock locations now seed automatically (3 by default in the generic preset).",
+      "**Product Inventory** — every warehouse × product combo gets an on-hand quantity row (5–50 units) so the FS Inventory and parts-availability views aren't empty.",
+      "Smart unit lookup — the seeder reads each product's primary unit on the fly. If a product has no default unit configured, that inventory row is skipped silently rather than failing the whole run.",
+      "AI preset generator now produces 2–4 vertical-appropriate warehouses with city/state matching the territories.",
+      "Reset and per-run delete clean up Product Inventory before Warehouses (correct child-first order).",
+    ],
+  },
   {
     version: "v1.12.0",
     date: "May 14, 2026",

@@ -42,6 +42,9 @@ const phase2EntityOrder: Array<{
   // Phase 4 — WO execution detail. All reference WOs, must delete first.
   { key: "workOrderProducts", label: "WO Products", entitySet: "msdyn_workorderproducts", phase: "beforeWo" },
   { key: "timeEntries", label: "Time Entries", entitySet: "msdyn_timeentries", phase: "beforeWo" },
+  // Phase 5 — inventory. Independent of WOs but delete child first.
+  { key: "productInventory", label: "Product Inventory", entitySet: "msdyn_productinventories", phase: "afterWo" },
+  { key: "warehouses", label: "Warehouses", entitySet: "msdyn_warehouses", phase: "afterWo" },
   // Phase 3 — agreement subtree (child-first). All afterWo because none
   // reference work orders directly:
   { key: "agreementBookingIncidents", label: "Agreement Booking Incidents", entitySet: "msdyn_agreementbookingincidents", phase: "afterWo" },
@@ -739,6 +742,95 @@ export async function seedFromPreset(
     onProgress,
   );
 
+  // ── Warehouses + Product Inventory (Phase 5) ────────────────────────────
+  // Each warehouse holds on-hand inventory for every product. We look up the
+  // product's defaultuomid (primary unit) on demand because msdyn_productinventory
+  // requires a unit lookup; if the product has no default unit we skip its row.
+  const warehouses = preset.warehouses ?? [];
+  const warehouseMap = getIdMap(result, "warehouses");
+  await runEntityStep(
+    dv,
+    {
+      label: "Warehouses",
+      items: warehouses,
+      choice: undefined,
+      target: warehouseMap,
+      entitySet: "msdyn_warehouses",
+      idField: "msdyn_warehouseid",
+      findField: "msdyn_name",
+      findValue: (w) => w.name,
+      mapKey: (w) => w.name,
+      build: (w) => ({
+        msdyn_name: w.name,
+        msdyn_description: tag(w.description),
+      }),
+      onCreated: (id) => trackCreated(result, "warehouses", id),
+    },
+    onProgress,
+  );
+
+  const warehouseIdList = Object.values(warehouseMap);
+  const productEntries = Object.entries(result.productIds);
+  if (warehouseIdList.length > 0 && productEntries.length > 0) {
+    // Cache product → defaultuomid lookups so we only query each product once.
+    const productUnitCache: Record<string, string | null> = {};
+    const totalRows = warehouseIdList.length * productEntries.length;
+    onProgress({
+      step: "Product Inventory",
+      done: 0,
+      total: totalRows,
+    });
+    let done = 0;
+    for (const warehouseId of warehouseIdList) {
+      for (const [, productId] of productEntries) {
+        // Resolve unit lazily.
+        let unitId = productUnitCache[productId];
+        if (unitId === undefined) {
+          try {
+            const row = await dv.retrieve<{
+              _defaultuomid_value?: string;
+            }>("products", productId, ["_defaultuomid_value"]);
+            unitId = row?._defaultuomid_value ?? null;
+          } catch {
+            unitId = null;
+          }
+          productUnitCache[productId] = unitId;
+        }
+        if (!unitId) {
+          done++;
+          onProgress({ step: "Product Inventory", done, total: totalRows });
+          continue;
+        }
+
+        const existing = await dv.query<{ msdyn_productinventoryid: string }>(
+          "msdyn_productinventories",
+          {
+            filter: `_msdyn_warehouse_value eq ${warehouseId} and _msdyn_product_value eq ${productId}`,
+            select: ["msdyn_productinventoryid"],
+            top: 1,
+          },
+        );
+        if (!existing[0]) {
+          try {
+            const piId = await dv.create("msdyn_productinventories", {
+              msdyn_name: tag(`Inventory ${productId.slice(0, 6)}@${warehouseId.slice(0, 6)}`),
+              msdyn_description: tag(),
+              msdyn_quantityonhand: 5 + Math.floor(Math.random() * 45),
+              "msdyn_Warehouse@odata.bind": `/msdyn_warehouses(${warehouseId})`,
+              "msdyn_Product@odata.bind": `/products(${productId})`,
+              "msdyn_Unit@odata.bind": `/uoms(${unitId})`,
+            });
+            trackCreated(result, "productInventory", piId);
+          } catch {
+            /* skip — unit groups may not be configured */
+          }
+        }
+        done++;
+        onProgress({ step: "Product Inventory", done, total: totalRows });
+      }
+    }
+  }
+
   // ── Work Orders (mixed statuses) ─────────────────────────────────────────
   // Synthesize ~2 work orders per account across 3 status buckets so the
   // dispatcher board / KPI tiles have something to show on first load.
@@ -1212,6 +1304,19 @@ export async function resetDemoData(
     "Agreements",
     "msdyn_agreements",
     "msdyn_agreementid",
+    "msdyn_description",
+  );
+  // Phase 5 — Product Inventory before Warehouses (FK).
+  await sweep(
+    "Product Inventory",
+    "msdyn_productinventories",
+    "msdyn_productinventoryid",
+    "msdyn_description",
+  );
+  await sweep(
+    "Warehouses",
+    "msdyn_warehouses",
+    "msdyn_warehouseid",
     "msdyn_description",
   );
   // Resource-level associations next.

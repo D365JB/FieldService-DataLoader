@@ -193,4 +193,10 @@ export const GENERIC_PRESET: FsPreset = {
       description: "Hotel HVAC monthly service plan",
     },
   ],
+  // Phase 5 — warehouses for parts inventory.
+  warehouses: [
+    { name: "Main Parts Depot — Atlanta", city: "Atlanta", state: "GA", description: "Primary regional parts depot" },
+    { name: "Service Van Stock — North", city: "Albany", state: "NY", description: "Mobile inventory for northern crew" },
+    { name: "Service Van Stock — South", city: "Dallas", state: "TX", description: "Mobile inventory for southern crew" },
+  ],
 };
