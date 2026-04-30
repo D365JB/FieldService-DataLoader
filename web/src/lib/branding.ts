@@ -171,7 +171,7 @@ export async function applyTheme({
     selectedlinkeffect: colors.selectedLink,
   };
   if (webResourceId) {
-    body["LogoImage@odata.bind"] = `/webresourceset(${webResourceId})`;
+    body["logoimage@odata.bind"] = `/webresourceset(${webResourceId})`;
   }
 
   let themeId: string;

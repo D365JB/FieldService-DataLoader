@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.15.2";
+export const APP_VERSION = "v1.15.3";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.15.3",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Branding fix #2** — Apply theme was failing with `An undeclared property 'LogoImage'`. Dataverse `theme` entity's logo navigation property is `logoimage` (lowercase), not `LogoImage`. OData binding annotation is now `logoimage@odata.bind` and resolves to `/webresourceset(...)` correctly.",
+    ],
+  },
   {
     version: "v1.15.2",
     date: "April 30, 2026",
