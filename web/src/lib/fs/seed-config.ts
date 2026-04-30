@@ -527,12 +527,10 @@ export async function seedFromPreset(
           const payload: Record<string, unknown> = {
             "msdyn_incidenttype@odata.bind": `/msdyn_incidenttypes(${incidentId})`,
             "msdyn_product@odata.bind": `/products(${productId})`,
-            msdyn_estimateduration: 1,
-            // 690970000 = Estimated, 690970001 = Used.
-            msdyn_lineitemtype: 690970000,
+            msdyn_quantity: 1,
           };
           if (uomId) {
-            payload["msdyn_estimateunit@odata.bind"] = `/uoms(${uomId})`;
+            payload["msdyn_unit@odata.bind"] = `/uoms(${uomId})`;
           }
           id = await dv.create("msdyn_incidenttypeproducts", payload);
           trackCreated(result, "incidentTypeProducts", id);

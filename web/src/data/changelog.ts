@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.20.0";
+export const APP_VERSION = "v1.20.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.20.1",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Incident Type ↔ Product mapping uses correct Dataverse fields.** Was sending `msdyn_estimateduration`/`msdyn_estimateunit` (those are agreement-product columns); the actual `msdyn_incidenttypeproduct` schema uses `msdyn_quantity` and the `msdyn_unit` lookup. Removed the non-existent `msdyn_lineitemtype` field.",
+    ],
+  },
   {
     version: "v1.20.0",
     date: "April 30, 2026",
