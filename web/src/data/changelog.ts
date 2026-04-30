@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.17.2";
+export const APP_VERSION = "v1.18.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.18.0",
+    date: "April 30, 2026",
+    tag: "DEMO PACKS",
+    features: [
+      "**11 new curated demo packs** — Medical/Biomed (JCAHO PMs, MRI/CT), Manufacturing OEM (CNC + robotics warranty), Fire & Life Safety (NFPA 25/72 inspections), Restaurant/Kitchen (fryers, walk-ins, hood cleaning), Electric Utility (meter exchange, outage), Solar O&M (drone thermal, IV-curve), Retail Tech Break-Fix (POS/kiosk/ATM), Pest Control (route + termite warranty), Elevator (monthly PM + entrapment), Heavy Equipment (telematics PM + warranty recovery), and Pool & Spa (weekly route + seasonal). 15 packs total now ship with the app — pick the closest match on Analyze and the AI fills in accounts, technicians, locations, assets, agreements, and warehouses around the curated incident catalog.",
+    ],
+  },
   {
     version: "v1.17.2",
     date: "April 30, 2026",

@@ -13,6 +13,13 @@ export type FsVertical =
   | "industrial"
   | "facilities"
   | "medical_equipment"
+  | "restaurant"
+  | "utilities"
+  | "solar"
+  | "retail_tech"
+  | "pest_control"
+  | "construction"
+  | "pool_spa"
   | "generic";
 
 export interface FsPreset {
