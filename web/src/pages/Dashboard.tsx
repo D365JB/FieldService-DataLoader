@@ -16,7 +16,7 @@ const ACTIONS = [
   {
     icon: Sparkle,
     title: "Generate FS demo data",
-    body: "Analyze a customer URL with AI, then populate your sandbox with territories, work order types, incidents, resources, and live work orders.",
+    body: "Analyze a customer URL with AI, then populate your sandbox with a full Field Service demo: accounts, work orders + bookings, agreements, customer assets, IoT alerts, and inventory.",
     cta: "Start AI generator",
     href: "/analyze",
     primary: false,
@@ -80,12 +80,6 @@ export function Dashboard() {
               </span>
             </button>
           ))}
-        </div>
-
-        <div className="mt-12 p-4 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm">
-          <strong>Phase 1C — Dataverse write-back is live.</strong> Analyze a
-          customer URL, then Generate to write the FS config tier into your
-          sandbox. Reset deletes anything tagged <code>DEMO-FS</code>.
         </div>
       </main>
     </div>

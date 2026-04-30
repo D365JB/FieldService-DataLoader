@@ -32,8 +32,18 @@ const STEP_ORDER = [
   "Products",
   "Accounts",
   "Bookable Resources",
+  "Functional Locations",
+  "Customer Assets",
+  "Service Task Types",
+  "Agreements",
+  "Warehouses",
+  "Product Inventory",
   "Work Orders",
+  "WO Service Tasks",
   "Bookings",
+  "WO Products",
+  "Time Entries",
+  "IoT Alerts",
 ];
 
 export function Generate() {
@@ -506,6 +516,13 @@ function ResultSummary({
   preset: FsPreset;
   orgUrl: string;
 }) {
+  const idMaps = result.idMaps ?? {};
+  const createdIds = result.createdIds ?? {};
+  // Phase 2+ entities go through the generic idMaps registry. Some only have
+  // createdIds (no human-readable mapKey) — synthesize numbered labels for those.
+  const fromIdMap = (key: string) => idMaps[key] ?? {};
+  const fromCreatedIds = (key: string, label: string) =>
+    Object.fromEntries((createdIds[key] ?? []).map((id, i) => [`${label} #${i + 1}`, id]));
   const sections: Array<{ title: string; entitySet: string; ids: Record<string, string> }> = [
     { title: "Territories", entitySet: "territories", ids: result.territoryIds },
     { title: "Work Order Types", entitySet: "msdyn_workordertypes", ids: result.workOrderTypeIds },
@@ -514,17 +531,27 @@ function ResultSummary({
     { title: "Products", entitySet: "products", ids: result.productIds },
     { title: "Accounts", entitySet: "accounts", ids: result.accountIds },
     { title: "Bookable Resources", entitySet: "bookableresources", ids: result.resourceIds },
+    { title: "Functional Locations", entitySet: "msdyn_functionallocations", ids: fromIdMap("functionalLocations") },
+    { title: "Customer Assets", entitySet: "msdyn_customerassets", ids: fromIdMap("customerAssets") },
+    { title: "Service Task Types", entitySet: "msdyn_servicetasktypes", ids: fromIdMap("serviceTaskTypes") },
+    { title: "Agreements", entitySet: "msdyn_agreements", ids: fromIdMap("agreements") },
+    { title: "Warehouses", entitySet: "msdyn_warehouses", ids: fromIdMap("warehouses") },
+    { title: "Product Inventory", entitySet: "msdyn_productinventories", ids: fromCreatedIds("productInventory", "Inventory") },
     {
       title: "Work Orders",
       entitySet: "msdyn_workorders",
       ids: Object.fromEntries(result.workOrderIds.map((id, i) => [`WO #${i + 1}`, id])),
     },
+    { title: "WO Service Tasks", entitySet: "msdyn_workorderservicetasks", ids: fromCreatedIds("workOrderServiceTasks", "Task") },
     {
       title: "Bookings",
       entitySet: "bookableresourcebookings",
       ids: Object.fromEntries(result.bookingIds.map((id, i) => [`Booking #${i + 1}`, id])),
     },
-  ];
+    { title: "WO Products", entitySet: "msdyn_workorderproducts", ids: fromCreatedIds("workOrderProducts", "Line") },
+    { title: "Time Entries", entitySet: "msdyn_timeentries", ids: fromCreatedIds("timeEntries", "Entry") },
+    { title: "IoT Alerts", entitySet: "msdyn_iotalerts", ids: fromCreatedIds("iotAlerts", "Alert") },
+  ].filter((s) => Object.keys(s.ids).length > 0);
   const total = sections.reduce((n, s) => n + Object.keys(s.ids).length, 0);
 
   return (

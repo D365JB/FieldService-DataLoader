@@ -7,9 +7,18 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.15.1";
+export const APP_VERSION = "v1.15.2";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.15.2",
+    date: "April 30, 2026",
+    tag: "POLISH",
+    features: [
+      "**Generate page now reflects every entity.** The progress tracker and result summary were still showing only the original 9 steps from v1.0 — Phase 2-6 entities (Functional Locations, Customer Assets, Service Task Types, Agreements, Warehouses, Product Inventory, WO Service Tasks, WO Products, Time Entries, IoT Alerts) were silently writing to Dataverse without UI feedback. Now all 19 steps render with progress and the success view groups every created record with a deep link.",
+      "**Dashboard** — refreshed the AI generator tile copy to mention the full demo (assets, agreements, IoT, inventory) instead of the v1.0 minimum, and removed the stale 'Phase 1C — Dataverse write-back is live' banner.",
+    ],
+  },
   {
     version: "v1.15.1",
     date: "April 30, 2026",
