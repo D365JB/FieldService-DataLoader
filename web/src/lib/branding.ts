@@ -159,7 +159,7 @@ export async function applyTheme({
     navbarshelfcolor: colors.navbarShelf,
     maincolor: colors.main,
     accentcolor: colors.accent,
-    pagecolor: colors.pageBackground,
+    pageheaderbackgroundcolor: colors.pageBackground,
     globallinkcolor: colors.globalLink,
     headercolor: colors.headerColor,
     controlborder: colors.controlBorder,

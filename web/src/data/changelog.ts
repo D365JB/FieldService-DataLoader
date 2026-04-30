@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.16.2";
+export const APP_VERSION = "v1.16.3";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.16.3",
+    date: "April 30, 2026",
+    tag: "BRANDING",
+    features: [
+      "**Fixed `pagecolor` invalid-property error when applying themes.** The Dataverse `theme` entity has no `pagecolor` attribute — the correct field is `pageheaderbackgroundcolor`. Branding apply now succeeds without 400 errors.",
+    ],
+  },
   {
     version: "v1.16.2",
     date: "April 30, 2026",
