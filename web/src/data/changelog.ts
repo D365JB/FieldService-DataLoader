@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.18.1";
+export const APP_VERSION = "v1.18.2";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.18.2",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Incident type service tasks no longer 400.** Lookup binding navigation property is `msdyn_incidenttype` (lowercase) on this Dataverse schema, not `msdyn_IncidentType`.",
+    ],
+  },
   {
     version: "v1.18.1",
     date: "April 30, 2026",

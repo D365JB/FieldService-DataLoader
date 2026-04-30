@@ -395,7 +395,7 @@ export async function seedFromPreset(
             await dv.create("msdyn_incidenttypeservicetasks", {
               msdyn_name: taskName,
               msdyn_description: tag(),
-              "msdyn_IncidentType@odata.bind": `/msdyn_incidenttypes(${incidentId})`,
+              "msdyn_incidenttype@odata.bind": `/msdyn_incidenttypes(${incidentId})`,
             });
           }
         }
