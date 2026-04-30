@@ -568,10 +568,10 @@ export async function seedFromPreset(
         // NOTE: Functional Location ↔ Account is a many-to-many relationship
         // (`msdyn_msdyn_functionallocation_account`), NOT a single lookup, so
         // we cannot bind an account on create. Verified via $metadata.
+        // Also: msdyn_functionallocation has no `msdyn_description` field.
         const parentId = fl.parentName ? flMap[fl.parentName] : undefined;
         const payload: Record<string, unknown> = {
           msdyn_name: fl.name,
-          msdyn_description: tag(fl.description),
         };
         if (parentId) {
           payload["msdyn_ParentFunctionalLocation@odata.bind"] =

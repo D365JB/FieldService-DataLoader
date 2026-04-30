@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.18.11";
+export const APP_VERSION = "v1.18.12";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.18.12",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Functional Location create no longer sends `msdyn_description`** — the column doesn't exist on `msdyn_functionallocation` (verified via `$metadata`). Dropped from the payload.",
+    ],
+  },
   {
     version: "v1.18.11",
     date: "April 30, 2026",
