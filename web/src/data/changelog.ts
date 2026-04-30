@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.17.1";
+export const APP_VERSION = "v1.17.2";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.17.2",
+    date: "April 30, 2026",
+    tag: "BRANDING",
+    features: [
+      "**Fixed PublishTheme 404 + `Default status cannot be updated` fallback.** The Web API only exposes `PublishTheme` as a bound action on a theme record, not unbound at the root. Switched to `POST /themes({id})/Microsoft.Dynamics.CRM.PublishTheme` and removed the `isdefaulttheme=true` PATCH fallback (that field is server-managed). Apply now publishes successfully end to end.",
+    ],
+  },
   {
     version: "v1.17.1",
     date: "April 30, 2026",

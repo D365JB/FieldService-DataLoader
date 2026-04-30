@@ -197,33 +197,26 @@ export async function applyTheme({
     themeId = await client.create("themes", body);
   }
 
-  // 3) Publish the theme (sets it as default + applies).
+  // 3) Publish the theme as default. The correct call is the BOUND action
+  // on the theme record: POST /themes({id})/Microsoft.Dynamics.CRM.PublishTheme.
+  // The unbound /PublishTheme variant returns 404 ("Resource not found for
+  // the segment 'PublishTheme'"). The PATCH-isdefaulttheme=true fallback is
+  // also rejected ("Default status cannot be updated using update operation"),
+  // because isdefaulttheme is server-managed and only flipped via PublishTheme.
   onStatus?.("Publishing theme as default…");
-  const publishRes = await client.request("/PublishTheme", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      Target: {
-        themeid: themeId,
-        "@odata.type": "Microsoft.Dynamics.CRM.theme",
-      },
-    }),
-  });
-  if (!publishRes.ok) {
-    // Fallback: at least flip isdefaulttheme.
-    const detail = await publishRes.text().catch(() => "");
-    onStatus?.(
-      `PublishTheme returned ${publishRes.status} — falling back to isdefaulttheme=true. (${detail.slice(0, 200)})`,
-    );
-    const fallback = await client.request(`/themes(${themeId})`, {
-      method: "PATCH",
+  const publishRes = await client.request(
+    `/themes(${themeId})/Microsoft.Dynamics.CRM.PublishTheme`,
+    {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isdefaulttheme: true }),
-    });
-    if (!fallback.ok) {
-      const fdetail = await fallback.text().catch(() => "");
-      throw new Error(`Publish/Default failed: ${fallback.status} ${fdetail}`);
-    }
+      body: "{}",
+    },
+  );
+  if (!publishRes.ok) {
+    const detail = await publishRes.text().catch(() => "");
+    throw new Error(
+      `PublishTheme failed: ${publishRes.status} ${detail.slice(0, 400)}`,
+    );
   }
 
   return { themeId, webResourceId };
