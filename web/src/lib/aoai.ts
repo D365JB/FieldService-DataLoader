@@ -74,7 +74,12 @@ export async function fetchWebsite(url: string): Promise<{
   description: string;
   text: string;
 }> {
-  const res = await fetch(`/api/fetchWebsite?url=${encodeURIComponent(url)}`);
+  const normalized = /^https?:\/\//i.test(url.trim())
+    ? url.trim()
+    : `https://${url.trim()}`;
+  const res = await fetch(
+    `/api/fetchWebsite?url=${encodeURIComponent(normalized)}`,
+  );
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
     throw new Error(`fetchWebsite ${res.status}: ${detail || res.statusText}`);

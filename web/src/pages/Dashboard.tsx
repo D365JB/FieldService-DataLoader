@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useMsal } from "@azure/msal-react";
-import { Sparkle, Trash, Wrench } from "@phosphor-icons/react";
+import { Sparkle, Trash, Wrench, Palette } from "@phosphor-icons/react";
 import { AppHeader } from "@/components/AppHeader";
 
 const ACTIONS = [
@@ -11,6 +11,14 @@ const ACTIONS = [
     cta: "Start AI generator",
     href: "/analyze",
     primary: true,
+  },
+  {
+    icon: Palette,
+    title: "Brand your environment",
+    body: "Paste a customer URL — we’ll fetch their logo and brand colors, let you tweak, then publish a D365 theme as the default for the org.",
+    cta: "Brand environment",
+    href: "/brand",
+    primary: false,
   },
   {
     icon: Trash,
@@ -48,7 +56,7 @@ export function Dashboard() {
           Connected to <code className="text-accent">{new URL(orgUrl).host}</code>
         </p>
 
-        <div className="grid md:grid-cols-2 gap-6">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           {ACTIONS.map((a) => (
             <button
               key={a.title}

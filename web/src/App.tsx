@@ -7,6 +7,7 @@ import { Dashboard } from "@/pages/Dashboard";
 import { Analyze } from "@/pages/Analyze";
 import { Generate } from "@/pages/Generate";
 import { Reset } from "@/pages/Reset";
+import { Brand } from "@/pages/Brand";
 import { AppFooter } from "@/components/AppFooter";
 
 export default function App() {
@@ -21,6 +22,7 @@ export default function App() {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/analyze" element={<Analyze />} />
               <Route path="/generate" element={<Generate />} />
+              <Route path="/brand" element={<Brand />} />
               <Route path="/reset" element={<Reset />} />
               <Route path="*" element={<Landing />} />
             </Routes>

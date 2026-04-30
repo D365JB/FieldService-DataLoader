@@ -7,9 +7,23 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.1.0";
+export const APP_VERSION = "v1.2.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.2.0",
+    date: "April 30, 2026",
+    tag: "BRAND",
+    features: [
+      "New Brand your environment wizard at /brand: detects logo + brand colors from any website URL, lets you preview & tweak, then publishes a Dynamics 365 theme as the default for the connected org.",
+      "Server-side branding extractor (favicon / apple-touch-icon / og:image / theme-color meta / page palette) plus an SSRF-guarded image proxy for cross-origin logo download.",
+      "Theme apply pipeline: creates the theme record, optionally uploads the logo as a web resource and publishes it, then calls PublishTheme so the new colors are immediately effective.",
+    ],
+    improvements: [
+      "Dashboard tile grid now has three cards: Generate, Brand, Reset.",
+      "fetchWebsite client auto-prepends https:// when the user omits the scheme.",
+    ],
+  },
   {
     version: "v1.1.0",
     date: "April 30, 2026",

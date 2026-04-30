@@ -90,14 +90,6 @@ export function Landing() {
               {busy ? "Signing in…" : "Sign in to your tenant"}
               <ArrowRight size={20} weight="bold" />
             </button>
-            <a
-              href="https://github.com/D365JB/FieldService-DataLoader"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-ghost"
-            >
-              View source
-            </a>
           </div>
         </section>
 
