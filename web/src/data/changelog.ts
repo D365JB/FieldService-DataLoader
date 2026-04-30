@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.16.1";
+export const APP_VERSION = "v1.16.2";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.16.2",
+    date: "April 30, 2026",
+    tag: "RESET",
+    features: [
+      "**Removed legacy DEMO-FS tag sweep from Reset page.** Every run since v1.6 tracks records by id, so the catch-all tag sweep was just dead UI. Reset is now exclusively per-run cleanup — pick a load, delete it, done.",
+    ],
+  },
   {
     version: "v1.16.1",
     date: "April 30, 2026",

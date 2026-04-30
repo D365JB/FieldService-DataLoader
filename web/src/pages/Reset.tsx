@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMsal } from "@azure/msal-react";
 import {
   Trash,
-  Warning,
   CheckCircle,
   CircleNotch,
   ClockCounterClockwise,
@@ -11,9 +10,7 @@ import {
 import { AppHeader } from "@/components/AppHeader";
 import { DataverseClient } from "@/lib/dataverse";
 import {
-  resetDemoData,
   deleteRun,
-  DEMO_TAG,
   type SeedProgress,
 } from "@/lib/fs/seed-config";
 import { orgStore } from "@/lib/orgStore";
@@ -26,7 +23,6 @@ export function Reset() {
   const navigate = useNavigate();
   const orgUrl = orgStore.getOrgUrl() ?? "";
 
-  const [confirmText, setConfirmText] = useState("");
   const [mode, setMode] = useState<Mode>("idle");
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<SeedProgress | null>(null);
@@ -43,11 +39,7 @@ export function Reset() {
     if (orgUrl) setRuns(runHistory.list(orgUrl));
   }, [orgUrl]);
 
-  const expectedConfirm = useMemo(
-    () => (orgUrl ? new URL(orgUrl).host : ""),
-    [orgUrl],
-  );
-  const confirmed = confirmText.trim() === expectedConfirm;
+  const orgHost = orgUrl ? new URL(orgUrl).host : "";
   const running = mode === "running";
 
   async function handleDeleteRun(run: RunRecord) {
@@ -101,27 +93,6 @@ export function Reset() {
     }
   }
 
-  async function handleFullReset() {
-    if (!confirmed) return;
-    setError(null);
-    setResult(null);
-    setActiveRunId(null);
-    setMode("running");
-    try {
-      const dv = new DataverseClient({ orgUrl });
-      const r = await resetDemoData(dv, setProgress);
-      setResult(r.deletedByEntity);
-      runHistory.clear(orgUrl);
-      setRuns([]);
-      setMode("done");
-    } catch (err) {
-      setError((err as Error).message);
-      setMode("error");
-    } finally {
-      setProgress(null);
-    }
-  }
-
   if (!orgUrl) return null;
 
   return (
@@ -134,9 +105,10 @@ export function Reset() {
         </div>
         <p className="text-slate-400 mb-8">
           Delete records this tool created in{" "}
-          <strong className="text-white">{expectedConfirm}</strong>. Pick a
-          specific run to clear just that load, or wipe everything tagged{" "}
-          <code className="text-accent">{DEMO_TAG}:</code>.
+          <strong className="text-white">{orgHost}</strong>. Pick a specific
+          run to clear just that load, or delete every load at once. Each run
+          tracks the exact records it created, so cleanup is precise — no tag
+          scans, no false positives.
         </p>
 
         {/* Per-run history */}
@@ -221,69 +193,14 @@ export function Reset() {
           )}
         </div>
 
-        {/* Legacy tag-sweep fallback */}
-        <div className="card p-6">
-          <h2 className="font-semibold text-white mb-1">
-            Legacy cleanup (tag sweep)
-          </h2>
-          <p className="text-xs text-muted mb-3">
-            Only needed for runs created before <code>v1.6.0</code> or from a
-            different browser. Finds every record whose description still
-            starts with <code>{DEMO_TAG}:</code> and deletes it. New loads
-            (v1.6+) no longer use this prefix — descriptions stay clean and
-            deletion is tracked by record id instead.
-          </p>
-
-          <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-sm flex items-start gap-2 mb-4">
-            <Warning size={18} className="flex-shrink-0 mt-0.5" />
-            <div>
-              Deletes every <code>{DEMO_TAG}:</code>-tagged record from{" "}
-              <strong>{expectedConfirm}</strong>: IoT alerts, time entries, WO
-              products, WO service tasks, bookings, work orders, agreement
-              booking incidents/products/services/setups, agreements, customer
-              assets, functional locations, service task types, product
-              inventory, warehouses, accounts, products, characteristics,
-              incident types, work order types, and demo-tagged bookable
-              resources. Cannot be undone.
-            </div>
-          </div>
-
-          <label className="block text-sm font-medium text-slate-300 mb-2">
-            Type <code className="text-accent">{expectedConfirm}</code> to
-            confirm
-          </label>
-          <input
-            type="text"
-            value={confirmText}
-            onChange={(e) => setConfirmText(e.target.value)}
-            placeholder={expectedConfirm}
+        <div className="flex gap-3">
+          <button
+            onClick={() => navigate("/dashboard")}
+            className="btn-ghost"
             disabled={running}
-            className="w-full bg-bg-elevated border border-border rounded-lg px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-red-500 font-mono"
-          />
-
-          <div className="flex gap-3 mt-6">
-            <button
-              onClick={handleFullReset}
-              disabled={!confirmed || running}
-              className="bg-red-600 hover:bg-red-700 text-white font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
-            >
-              {running && activeRunId === null ? (
-                <CircleNotch size={18} className="animate-spin" />
-              ) : (
-                <Trash size={18} weight="bold" />
-              )}
-              {running && activeRunId === null
-                ? "Deleting…"
-                : "Run legacy tag sweep"}
-            </button>
-            <button
-              onClick={() => navigate("/dashboard")}
-              className="btn-ghost"
-              disabled={running}
-            >
-              Cancel
-            </button>
-          </div>
+          >
+            Back to dashboard
+          </button>
         </div>
 
         {progress && (
