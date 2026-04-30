@@ -8,6 +8,23 @@
     background: radial-gradient(ellipse at top, #1a2340 0%, #0b0f17 60%);
     background-attachment: fixed;
   }
+
+  /* Override Chrome/Edge yellow-white autofill that ignores our dark inputs.
+     -webkit-autofill repaints the field background; trick is to use an inset
+     box-shadow large enough to cover it, plus -webkit-text-fill-color for the
+     value text. Applies to all autofill states. */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active,
+  textarea:-webkit-autofill,
+  select:-webkit-autofill {
+    -webkit-box-shadow: 0 0 0 1000px #0b0f17 inset !important;
+    box-shadow: 0 0 0 1000px #0b0f17 inset !important;
+    -webkit-text-fill-color: #ffffff !important;
+    caret-color: #ffffff;
+    transition: background-color 9999s ease-in-out 0s;
+  }
 }
 
 @layer components {

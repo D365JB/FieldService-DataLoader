@@ -6,25 +6,25 @@ import { orgStore } from "@/lib/orgStore";
 
 const ACTIONS = [
   {
-    icon: Sparkle,
-    title: "Generate FS demo data",
-    body: "Analyze a customer URL with AI, then populate your sandbox with territories, work order types, incidents, resources, and live work orders.",
-    cta: "Start AI generator",
-    href: "/analyze",
-    primary: true,
-  },
-  {
     icon: Palette,
     title: "Brand your environment",
     body: "Paste a customer URL — we’ll fetch their logo and brand colors, let you tweak, then publish a D365 theme as the default for the org.",
     cta: "Brand environment",
     href: "/brand",
+    primary: true,
+  },
+  {
+    icon: Sparkle,
+    title: "Generate FS demo data",
+    body: "Analyze a customer URL with AI, then populate your sandbox with territories, work order types, incidents, resources, and live work orders.",
+    cta: "Start AI generator",
+    href: "/analyze",
     primary: false,
   },
   {
     icon: Trash,
     title: "Reset demo data",
-    body: "Tear down records created by previous runs of this tool. Tag-scoped — your real data is untouched.",
+    body: "Tear down records created by previous runs of this tool. Tracked per run — your real data is untouched.",
     cta: "Open reset",
     href: "/reset",
     primary: false,
