@@ -533,8 +533,8 @@ export async function seedFromPreset(
         if (terrId) {
           try {
             await dv.create("msdyn_resourceterritories", {
-              "msdyn_Resource@odata.bind": `/bookableresources(${resourceId})`,
-              "msdyn_Territory@odata.bind": `/territories(${terrId})`,
+              "msdyn_resource@odata.bind": `/bookableresources(${resourceId})`,
+              "msdyn_territory@odata.bind": `/territories(${terrId})`,
               msdyn_description: tag(),
             });
           } catch {
@@ -723,8 +723,10 @@ export async function seedFromPreset(
           msdyn_enddate: a.endOn,
         };
         if (accountId) {
-          payload["msdyn_ServiceAccount@odata.bind"] = `/accounts(${accountId})`;
-          payload["msdyn_BillingAccount@odata.bind"] = `/accounts(${accountId})`;
+          // All single-lookup nav props on msdyn_agreement / msdyn_workorder are
+          // lowercase in this org — verified via $metadata.
+          payload["msdyn_serviceaccount@odata.bind"] = `/accounts(${accountId})`;
+          payload["msdyn_billingaccount@odata.bind"] = `/accounts(${accountId})`;
         }
         return payload;
       },
@@ -738,7 +740,7 @@ export async function seedFromPreset(
           setupId = await dv.create("msdyn_agreementbookingsetups", {
             msdyn_name: setupName,
             msdyn_description: tag(),
-            "msdyn_Agreement@odata.bind": `/msdyn_agreements(${agreementId})`,
+            "msdyn_agreement@odata.bind": `/msdyn_agreements(${agreementId})`,
             // Don't auto-generate WOs — demo presenter does that manually.
             msdyn_autogenerateworkorder: false,
             msdyn_estimatedduration: a.estimatedDurationMinutes ?? 60,
@@ -762,8 +764,8 @@ export async function seedFromPreset(
             const id = await dv.create("msdyn_agreementbookingincidents", {
               msdyn_name: tag(`${a.name} — ${incidentName}`),
               msdyn_description: tag(),
-              "msdyn_AgreementBookingSetup@odata.bind": `/msdyn_agreementbookingsetups(${setupId})`,
-              "msdyn_IncidentType@odata.bind": `/msdyn_incidenttypes(${incidentId})`,
+              "msdyn_agreementbookingsetup@odata.bind": `/msdyn_agreementbookingsetups(${setupId})`,
+              "msdyn_incidenttype@odata.bind": `/msdyn_incidenttypes(${incidentId})`,
             });
             trackCreated(result, "agreementBookingIncidents", id);
           } catch {
@@ -779,8 +781,8 @@ export async function seedFromPreset(
             const id = await dv.create("msdyn_agreementbookingproducts", {
               msdyn_name: tag(`${a.name} — ${productNumber}`),
               msdyn_description: tag(),
-              "msdyn_AgreementBookingSetup@odata.bind": `/msdyn_agreementbookingsetups(${setupId})`,
-              "msdyn_Product@odata.bind": `/products(${productId})`,
+              "msdyn_agreementbookingsetup@odata.bind": `/msdyn_agreementbookingsetups(${setupId})`,
+              "msdyn_product@odata.bind": `/products(${productId})`,
               msdyn_estimatedquantity: 1,
             });
             trackCreated(result, "agreementBookingProducts", id);
@@ -869,9 +871,9 @@ export async function seedFromPreset(
               msdyn_name: tag(`Inventory ${productId.slice(0, 6)}@${warehouseId.slice(0, 6)}`),
               msdyn_description: tag(),
               msdyn_quantityonhand: 5 + Math.floor(Math.random() * 45),
-              "msdyn_Warehouse@odata.bind": `/msdyn_warehouses(${warehouseId})`,
-              "msdyn_Product@odata.bind": `/products(${productId})`,
-              "msdyn_Unit@odata.bind": `/uoms(${unitId})`,
+              "msdyn_warehouse@odata.bind": `/msdyn_warehouses(${warehouseId})`,
+              "msdyn_product@odata.bind": `/products(${productId})`,
+              "msdyn_unit@odata.bind": `/uoms(${unitId})`,
             });
             trackCreated(result, "productInventory", piId);
           } catch {
@@ -936,10 +938,10 @@ export async function seedFromPreset(
         const woPayload: Record<string, unknown> = {
           msdyn_workordersummary: summary,
           msdyn_systemstatus: status,
-          "msdyn_ServiceAccount@odata.bind": `/accounts(${accountId})`,
-          "msdyn_BillingAccount@odata.bind": `/accounts(${accountId})`,
-          "msdyn_WorkOrderType@odata.bind": `/msdyn_workordertypes(${woTypeId})`,
-          "msdyn_PrimaryIncidentType@odata.bind": `/msdyn_incidenttypes(${incidentId})`,
+          "msdyn_serviceaccount@odata.bind": `/accounts(${accountId})`,
+          "msdyn_billingaccount@odata.bind": `/accounts(${accountId})`,
+          "msdyn_workordertype@odata.bind": `/msdyn_workordertypes(${woTypeId})`,
+          "msdyn_primaryincidenttype@odata.bind": `/msdyn_incidenttypes(${incidentId})`,
         };
         // Phase 2: attach a customer asset for this account if we have one.
         // Round-robin through the account's assets so multiple WOs against
@@ -947,7 +949,7 @@ export async function seedFromPreset(
         const accountAssets = assetsByAccount[accountId] ?? [];
         if (accountAssets.length > 0) {
           const assetId = accountAssets[i % accountAssets.length];
-          woPayload["msdyn_CustomerAsset@odata.bind"] =
+          woPayload["msdyn_customerasset@odata.bind"] =
             `/msdyn_customerassets(${assetId})`;
         }
         woId = await dv.create("msdyn_workorders", woPayload);
@@ -1012,8 +1014,8 @@ export async function seedFromPreset(
           const id = await dv.create("msdyn_workorderservicetasks", {
             msdyn_name: taskName,
             msdyn_description: tag(),
-            "msdyn_WorkOrder@odata.bind": `/msdyn_workorders(${woId})`,
-            "msdyn_TaskType@odata.bind": `/msdyn_servicetasktypes(${taskTypeId})`,
+            "msdyn_workorder@odata.bind": `/msdyn_workorders(${woId})`,
+            "msdyn_tasktype@odata.bind": `/msdyn_servicetasktypes(${taskTypeId})`,
           });
           trackCreated(result, "workOrderServiceTasks", id);
         } catch {
@@ -1165,8 +1167,8 @@ export async function seedFromPreset(
             msdyn_estimatequantity: 1 + (j % 2),
             msdyn_quantity: lineStatus === 690970001 ? 1 + (j % 2) : 0,
             msdyn_lineorder: j + 1,
-            "msdyn_WorkOrder@odata.bind": `/msdyn_workorders(${woId})`,
-            "msdyn_Product@odata.bind": `/products(${productId})`,
+            "msdyn_workorder@odata.bind": `/msdyn_workorders(${woId})`,
+            "msdyn_product@odata.bind": `/products(${productId})`,
           });
           trackCreated(result, "workOrderProducts", lineId);
         } catch {

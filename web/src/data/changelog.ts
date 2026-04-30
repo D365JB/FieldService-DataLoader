@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.18.13";
+export const APP_VERSION = "v1.18.14";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.18.14",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Lowercased every wrong-cased nav-property binding** flagged by Dataverse \u2014 Agreement, WorkOrder, WorkOrderProduct/Service/ServiceTask, AgreementBookingSetup/Incident/Product, ResourceTerritory, and Warehouse all now use the lowercase nav-prop names verified against `$metadata`. Functional Location, Customer Asset, IoT Alert and Parent Functional Location keep the Pascal casing the schema actually uses.",
+    ],
+  },
   {
     version: "v1.18.13",
     date: "April 30, 2026",
