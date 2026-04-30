@@ -13,6 +13,7 @@ import { DataverseClient, deepLink } from "@/lib/dataverse";
 import { seedFromPreset, type SeedProgress, type SeedResult, type SeedOptions } from "@/lib/fs/seed-config";
 import type { FsPreset } from "@/lib/preset";
 import { orgStore } from "@/lib/orgStore";
+import { runHistory } from "@/lib/runHistory";
 import { ResourcePicker, type PickedResource } from "@/components/ResourcePicker";
 
 interface StepState {
@@ -121,6 +122,7 @@ export function Generate() {
         seedOptions,
       );
       setResult(seedResult);
+      runHistory.add(orgUrl, preset.companyName, seedResult);
       // Mark all steps complete (in case last step had total 0).
       setSteps((prev) => prev.map((s) => ({ ...s, status: "complete" })));
       setRetryNotice(null);

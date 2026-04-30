@@ -702,3 +702,86 @@ export async function resetDemoData(
 
   return { deletedByEntity: deleted };
 }
+
+/**
+ * Delete a single seed run by exact id. Skips bookable resources that look
+ * like pre-existing org records (we shouldn't delete those when the user
+ * picked the "use existing" mode). A resource is considered "demo-created"
+ * only if its description still starts with the DEMO_TAG.
+ */
+export async function deleteRun(
+  dv: DataverseClient,
+  result: SeedResult,
+  onProgress: ProgressFn,
+): Promise<{ deletedByEntity: Record<string, number> }> {
+  const deleted: Record<string, number> = {};
+
+  const sweepIds = async (
+    label: string,
+    entitySet: string,
+    ids: string[],
+  ): Promise<void> => {
+    if (ids.length === 0) return;
+    onProgress({ step: label, done: 0, total: ids.length });
+    let count = 0;
+    for (let i = 0; i < ids.length; i++) {
+      try {
+        await dv.delete(entitySet, ids[i]);
+        count++;
+      } catch {
+        /* swallow individual failures — record may already be gone */
+      }
+      onProgress({ step: label, done: i + 1, total: ids.length });
+    }
+    deleted[entitySet] = count;
+  };
+
+  // Children → parents.
+  await sweepIds("Bookings", "bookableresourcebookings", result.bookingIds);
+  await sweepIds("Work Orders", "msdyn_workorders", result.workOrderIds);
+
+  // Bookable resources: only delete the ones we created. We detect that by
+  // re-reading the description and checking it still has the DEMO_TAG prefix.
+  const resourceIds = Object.values(result.resourceIds);
+  const ourResourceIds: string[] = [];
+  for (const rid of resourceIds) {
+    try {
+      const row = await dv.retrieve<{ description?: string }>(
+        "bookableresources",
+        rid,
+        ["description"],
+      );
+      if (row?.description?.startsWith(`${DEMO_TAG}:`)) {
+        ourResourceIds.push(rid);
+      }
+    } catch {
+      /* skip — record probably already deleted */
+    }
+  }
+  await sweepIds("Bookable Resources", "bookableresources", ourResourceIds);
+
+  await sweepIds(
+    "Incident Types",
+    "msdyn_incidenttypes",
+    Object.values(result.incidentTypeIds),
+  );
+  await sweepIds(
+    "WO Types",
+    "msdyn_workordertypes",
+    Object.values(result.workOrderTypeIds),
+  );
+  await sweepIds(
+    "Characteristics",
+    "characteristics",
+    Object.values(result.characteristicIds),
+  );
+  await sweepIds("Products", "products", Object.values(result.productIds));
+  await sweepIds("Accounts", "accounts", Object.values(result.accountIds));
+  await sweepIds(
+    "Territories",
+    "territories",
+    Object.values(result.territoryIds),
+  );
+
+  return { deletedByEntity: deleted };
+}

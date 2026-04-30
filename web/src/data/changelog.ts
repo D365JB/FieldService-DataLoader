@@ -7,9 +7,20 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.4.0";
+export const APP_VERSION = "v1.5.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.5.0",
+    date: "April 30, 2026",
+    tag: "HISTORY",
+    features: [
+      "Reset page now lists every recent generation run (per-device, stored in localStorage) with timestamp, company name, and per-entity counts.",
+      "New “Delete this run” button on each run wipes only that load by exact record id — useful for stacking multiple demo orgs without nuking each other.",
+      "Existing bookable resources brought in via “use existing” mode are protected from per-run deletion (only resources we created are removed).",
+      "“Wipe everything” fallback still does the catch-all DEMO-FS tag sweep for older runs or other devices.",
+    ],
+  },
   {
     version: "v1.4.0",
     date: "April 30, 2026",
