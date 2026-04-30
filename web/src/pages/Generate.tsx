@@ -75,7 +75,17 @@ export function Generate() {
     | "accounts"
     | "resources"
     | "workOrders"
-    | "bookings";
+    | "bookings"
+    | "functionalLocations"
+    | "customerAssets"
+    | "serviceTaskTypes"
+    | "agreements"
+    | "warehouses"
+    | "productInventory"
+    | "workOrderServiceTasks"
+    | "workOrderProducts"
+    | "timeEntries"
+    | "iotAlerts";
   type Mode = "create" | "existing" | "skip";
   const [entityModes, setEntityModes] = useState<Record<EntityKey, Mode>>({
     territories: "create",
@@ -87,6 +97,16 @@ export function Generate() {
     resources: "create",
     workOrders: "create",
     bookings: "create",
+    functionalLocations: "create",
+    customerAssets: "create",
+    serviceTaskTypes: "create",
+    agreements: "create",
+    warehouses: "create",
+    productInventory: "create",
+    workOrderServiceTasks: "create",
+    workOrderProducts: "create",
+    timeEntries: "create",
+    iotAlerts: "create",
   });
   const [entityPicks, setEntityPicks] = useState<
     Record<EntityKey, PickedEntity[]>
@@ -100,6 +120,16 @@ export function Generate() {
     resources: [],
     workOrders: [],
     bookings: [],
+    functionalLocations: [],
+    customerAssets: [],
+    serviceTaskTypes: [],
+    agreements: [],
+    warehouses: [],
+    productInventory: [],
+    workOrderServiceTasks: [],
+    workOrderProducts: [],
+    timeEntries: [],
+    iotAlerts: [],
   });
   function setMode(k: EntityKey, m: Mode) {
     setEntityModes((s) => ({ ...s, [k]: m }));
@@ -162,6 +192,16 @@ export function Generate() {
         "resources",
         "workOrders",
         "bookings",
+        "functionalLocations",
+        "customerAssets",
+        "serviceTaskTypes",
+        "agreements",
+        "warehouses",
+        "productInventory",
+        "workOrderServiceTasks",
+        "workOrderProducts",
+        "timeEntries",
+        "iotAlerts",
       ];
       for (const k of keys) {
         const mode = entityModes[k];
@@ -335,23 +375,39 @@ export function Generate() {
               />
               <AutoLoadRow
                 label="Functional Locations"
-                hint={`Preset has ${preset.functionalLocations?.length ?? 0}. Auto-loaded.`}
+                hint={`Preset has ${preset.functionalLocations?.length ?? 0}.`}
+                mode={entityModes.functionalLocations}
+                onModeChange={(m) => setMode("functionalLocations", m)}
               />
               <AutoLoadRow
                 label="Customer Assets"
-                hint={`Preset has ${preset.customerAssets?.length ?? 0}. Auto-loaded.`}
+                hint={`Preset has ${preset.customerAssets?.length ?? 0}.`}
+                mode={entityModes.customerAssets}
+                onModeChange={(m) => setMode("customerAssets", m)}
               />
               <AutoLoadRow
                 label="Service Task Types"
-                hint={`Preset has ${preset.serviceTaskTypes?.length ?? 0}. Auto-loaded.`}
+                hint={`Preset has ${preset.serviceTaskTypes?.length ?? 0}. WO Service Tasks pull from this catalog.`}
+                mode={entityModes.serviceTaskTypes}
+                onModeChange={(m) => setMode("serviceTaskTypes", m)}
               />
               <AutoLoadRow
                 label="Agreements"
-                hint={`Preset has ${preset.agreements?.length ?? 0} (with booking setups + line items). Auto-loaded.`}
+                hint={`Preset has ${preset.agreements?.length ?? 0}. Booking setups + line items included.`}
+                mode={entityModes.agreements}
+                onModeChange={(m) => setMode("agreements", m)}
               />
               <AutoLoadRow
-                label="Warehouses + Product Inventory"
-                hint={`Preset has ${preset.warehouses?.length ?? 0} warehouses; on-hand stock for every product. Auto-loaded.`}
+                label="Warehouses"
+                hint={`Preset has ${preset.warehouses?.length ?? 0}.`}
+                mode={entityModes.warehouses}
+                onModeChange={(m) => setMode("warehouses", m)}
+              />
+              <AutoLoadRow
+                label="Product Inventory"
+                hint="On-hand stock per warehouse × product."
+                mode={entityModes.productInventory}
+                onModeChange={(m) => setMode("productInventory", m)}
               />
               <EntityRow
                 label="Work Orders"
@@ -359,6 +415,12 @@ export function Generate() {
                 mode={entityModes.workOrders}
                 onModeChange={(m) => setMode("workOrders", m)}
                 hideExisting
+              />
+              <AutoLoadRow
+                label="WO Service Tasks"
+                hint="2–4 tasks per WO from the Service Task Type catalog."
+                mode={entityModes.workOrderServiceTasks}
+                onModeChange={(m) => setMode("workOrderServiceTasks", m)}
               />
               <EntityRow
                 label="Bookings"
@@ -368,12 +430,22 @@ export function Generate() {
                 hideExisting
               />
               <AutoLoadRow
-                label="WO Service Tasks + Products + Time Entries"
-                hint="Auto-attached per Work Order / Booking."
+                label="WO Products"
+                hint="1–3 product lines per WO (Estimated for open, Used for closed)."
+                mode={entityModes.workOrderProducts}
+                onModeChange={(m) => setMode("workOrderProducts", m)}
+              />
+              <AutoLoadRow
+                label="Time Entries"
+                hint="One submitted Work entry per booking."
+                mode={entityModes.timeEntries}
+                onModeChange={(m) => setMode("timeEntries", m)}
               />
               <AutoLoadRow
                 label="IoT Alerts"
-                hint="One alert per Customer Asset (Connected Field Service). Auto-loaded."
+                hint="One Connected Field Service alert per Customer Asset."
+                mode={entityModes.iotAlerts}
+                onModeChange={(m) => setMode("iotAlerts", m)}
               />
             </div>
           </div>
@@ -535,7 +607,17 @@ function EntityRow({
   );
 }
 
-function AutoLoadRow({ label, hint }: { label: string; hint: string }) {
+function AutoLoadRow({
+  label,
+  hint,
+  mode,
+  onModeChange,
+}: {
+  label: string;
+  hint: string;
+  mode: "create" | "existing" | "skip";
+  onModeChange: (m: "create" | "existing" | "skip") => void;
+}) {
   return (
     <div className="border border-border rounded-lg p-3 bg-bg-base/40">
       <div className="flex items-center justify-between gap-3">
@@ -543,9 +625,17 @@ function AutoLoadRow({ label, hint }: { label: string; hint: string }) {
           <div className="text-sm font-semibold text-white truncate">{label}</div>
           <div className="text-xs text-muted">{hint}</div>
         </div>
-        <span className="text-xs text-accent flex-shrink-0 px-2 py-1 rounded bg-accent/10 border border-accent/30">
-          Auto-loaded
-        </span>
+        <select
+          aria-label={`Sourcing mode for ${label}`}
+          value={mode}
+          onChange={(e) =>
+            onModeChange(e.target.value as "create" | "existing" | "skip")
+          }
+          className="bg-bg-elevated border border-border rounded px-2 py-1 text-xs text-white flex-shrink-0"
+        >
+          <option value="create">Create from preset</option>
+          <option value="skip">Skip</option>
+        </select>
       </div>
     </div>
   );

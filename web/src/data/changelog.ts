@@ -7,9 +7,19 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.15.5";
+export const APP_VERSION = "v1.16.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.16.0",
+    date: "April 30, 2026",
+    tag: "CONTROL",
+    features: [
+      "**Skip support for every Phase 2-6 entity.** The Generate plan now lets you choose Create / Skip independently for Functional Locations, Customer Assets, Service Task Types, Agreements, Warehouses, Product Inventory, WO Service Tasks, WO Products, Time Entries, and IoT Alerts.",
+      "Useful for partial demos — e.g. skip IoT Alerts when CFS isn't enabled, skip Agreements for a transactional-only demo, or skip Time Entries for orgs without timesheet flows.",
+      "Skips are honoured both in the seeder and in the per-run delete (skipped entities never produce ids, so reset only removes what was actually created).",
+    ],
+  },
   {
     version: "v1.15.5",
     date: "April 30, 2026",

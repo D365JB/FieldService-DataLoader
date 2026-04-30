@@ -120,6 +120,18 @@ export interface SeedOptions {
   resources?: EntityChoice;
   workOrders?: EntityChoice;
   bookings?: EntityChoice;
+  // Phase 2-6 entities — only "create" / "skip" are honoured (no existing
+  // picker UI yet; "existing" mode is treated like "create" with empty picks).
+  functionalLocations?: EntityChoice;
+  customerAssets?: EntityChoice;
+  serviceTaskTypes?: EntityChoice;
+  agreements?: EntityChoice;
+  warehouses?: EntityChoice;
+  productInventory?: EntityChoice;
+  workOrderServiceTasks?: EntityChoice;
+  workOrderProducts?: EntityChoice;
+  timeEntries?: EntityChoice;
+  iotAlerts?: EntityChoice;
 }
 
 export interface EntityChoice {
@@ -511,9 +523,7 @@ export async function seedFromPreset(
     {
       label: "Functional Locations",
       items: functionalLocations,
-      // Phase 2 entities don't have a per-entity choice yet — we treat them
-      // as "create" by default and skip if the preset section is empty.
-      choice: undefined,
+      choice: options.functionalLocations,
       target: flMap,
       entitySet: "msdyn_functionallocations",
       idField: "msdyn_functionallocationid",
@@ -555,7 +565,7 @@ export async function seedFromPreset(
     {
       label: "Customer Assets",
       items: customerAssets,
-      choice: undefined,
+      choice: options.customerAssets,
       target: assetMap,
       entitySet: "msdyn_customerassets",
       idField: "msdyn_customerassetid",
@@ -619,7 +629,7 @@ export async function seedFromPreset(
     {
       label: "Service Task Types",
       items: serviceTaskTypes,
-      choice: undefined,
+      choice: options.serviceTaskTypes,
       target: taskTypeMap,
       entitySet: "msdyn_servicetasktypes",
       idField: "msdyn_servicetasktypeid",
@@ -658,7 +668,7 @@ export async function seedFromPreset(
     {
       label: "Agreements",
       items: agreements,
-      choice: undefined,
+      choice: options.agreements,
       target: agreementMap,
       entitySet: "msdyn_agreements",
       idField: "msdyn_agreementid",
@@ -757,7 +767,7 @@ export async function seedFromPreset(
     {
       label: "Warehouses",
       items: warehouses,
-      choice: undefined,
+      choice: options.warehouses,
       target: warehouseMap,
       entitySet: "msdyn_warehouses",
       idField: "msdyn_warehouseid",
@@ -775,7 +785,9 @@ export async function seedFromPreset(
 
   const warehouseIdList = Object.values(warehouseMap);
   const productEntries = Object.entries(result.productIds);
-  if (warehouseIdList.length > 0 && productEntries.length > 0) {
+  const skipProductInventory =
+    (options.productInventory?.mode ?? "create") !== "create";
+  if (!skipProductInventory && warehouseIdList.length > 0 && productEntries.length > 0) {
     // Cache product → defaultuomid lookups so we only query each product once.
     const productUnitCache: Record<string, string | null> = {};
     const totalRows = warehouseIdList.length * productEntries.length;
@@ -934,7 +946,9 @@ export async function seedFromPreset(
   // checklist surfaces in demos. Skipped silently if no service-task types
   // were seeded.
   const taskTypeIds = Object.values(taskTypeMap);
-  if (taskTypeIds.length > 0 && result.workOrderIds.length > 0) {
+  const skipWoServiceTasks =
+    (options.workOrderServiceTasks?.mode ?? "create") !== "create";
+  if (!skipWoServiceTasks && taskTypeIds.length > 0 && result.workOrderIds.length > 0) {
     const tasksPerWo = Math.min(4, Math.max(2, Math.floor(taskTypeIds.length / 2)));
     onProgress({
       step: "WO Service Tasks",
@@ -1079,7 +1093,9 @@ export async function seedFromPreset(
   // 1–3 product lines per WO. linestatus = Estimated for Open/Scheduled, Used
   // for Closed-Posted so closed WOs look "actually serviced" in the demo.
   const productIdList = Object.values(result.productIds);
-  if (productIdList.length > 0 && woMeta.length > 0) {
+  const skipWoProducts =
+    (options.workOrderProducts?.mode ?? "create") !== "create";
+  if (!skipWoProducts && productIdList.length > 0 && woMeta.length > 0) {
     onProgress({
       step: "WO Products",
       done: 0,
@@ -1131,7 +1147,9 @@ export async function seedFromPreset(
   // ── Time Entries (Phase 4) ──────────────────────────────────────────────
   // One Time Entry per booking spanning its full window, type=Work,
   // entrystatus=Submitted. This populates the resource's timesheet view.
-  if (bookingMeta.length > 0) {
+  const skipTimeEntries =
+    (options.timeEntries?.mode ?? "create") !== "create";
+  if (!skipTimeEntries && bookingMeta.length > 0) {
     onProgress({
       step: "Time Entries",
       done: 0,
@@ -1201,7 +1219,8 @@ export async function seedFromPreset(
   const accountsWithAssets = Object.entries(assetsByAccount).filter(
     ([, ids]) => ids.length > 0,
   );
-  if (accountsWithAssets.length > 0) {
+  const skipIotAlerts = (options.iotAlerts?.mode ?? "create") !== "create";
+  if (!skipIotAlerts && accountsWithAssets.length > 0) {
     let totalAlerts = 0;
     for (const [, assetIds] of accountsWithAssets) {
       totalAlerts += assetIds.length; // 1 alert per asset
