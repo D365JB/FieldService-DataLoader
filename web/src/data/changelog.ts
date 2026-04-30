@@ -7,9 +7,18 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.15.4";
+export const APP_VERSION = "v1.15.5";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.15.5",
+    date: "April 30, 2026",
+    tag: "POLISH",
+    features: [
+      "**Analyze review** — preset summary cards now include Locations, Assets, Task Types, Agreements, and Warehouses, so you can see the full Phase 2-6 footprint before generating.",
+      "**Generate \"What to load\"** — added explicit auto-loaded rows for Functional Locations, Customer Assets, Service Task Types, Agreements, Warehouses + Product Inventory, WO Service Tasks/Products/Time Entries, and IoT Alerts. They run automatically (no Skip yet) but you can now see them in the plan.",
+    ],
+  },
   {
     version: "v1.15.4",
     date: "April 30, 2026",

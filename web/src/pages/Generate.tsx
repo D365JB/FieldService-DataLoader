@@ -333,6 +333,26 @@ export function Generate() {
                   />
                 }
               />
+              <AutoLoadRow
+                label="Functional Locations"
+                hint={`Preset has ${preset.functionalLocations?.length ?? 0}. Auto-loaded.`}
+              />
+              <AutoLoadRow
+                label="Customer Assets"
+                hint={`Preset has ${preset.customerAssets?.length ?? 0}. Auto-loaded.`}
+              />
+              <AutoLoadRow
+                label="Service Task Types"
+                hint={`Preset has ${preset.serviceTaskTypes?.length ?? 0}. Auto-loaded.`}
+              />
+              <AutoLoadRow
+                label="Agreements"
+                hint={`Preset has ${preset.agreements?.length ?? 0} (with booking setups + line items). Auto-loaded.`}
+              />
+              <AutoLoadRow
+                label="Warehouses + Product Inventory"
+                hint={`Preset has ${preset.warehouses?.length ?? 0} warehouses; on-hand stock for every product. Auto-loaded.`}
+              />
               <EntityRow
                 label="Work Orders"
                 hint="Sample WOs across Open / Scheduled / Closed."
@@ -346,6 +366,14 @@ export function Generate() {
                 mode={entityModes.bookings}
                 onModeChange={(m) => setMode("bookings", m)}
                 hideExisting
+              />
+              <AutoLoadRow
+                label="WO Service Tasks + Products + Time Entries"
+                hint="Auto-attached per Work Order / Booking."
+              />
+              <AutoLoadRow
+                label="IoT Alerts"
+                hint="One alert per Customer Asset (Connected Field Service). Auto-loaded."
               />
             </div>
           </div>
@@ -503,6 +531,22 @@ function EntityRow({
         </select>
       </div>
       {mode === "existing" && picker}
+    </div>
+  );
+}
+
+function AutoLoadRow({ label, hint }: { label: string; hint: string }) {
+  return (
+    <div className="border border-border rounded-lg p-3 bg-bg-base/40">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-white truncate">{label}</div>
+          <div className="text-xs text-muted">{hint}</div>
+        </div>
+        <span className="text-xs text-accent flex-shrink-0 px-2 py-1 rounded bg-accent/10 border border-accent/30">
+          Auto-loaded
+        </span>
+      </div>
     </div>
   );
 }

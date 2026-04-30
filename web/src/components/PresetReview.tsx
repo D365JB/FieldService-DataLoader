@@ -83,6 +83,11 @@ export function PresetReview({ preset, onChange }: Props) {
           <Stat label="Skills" value={preset.characteristics.length} />
           <Stat label="Accounts" value={preset.sampleAccounts.length} />
           <Stat label="Technicians" value={preset.sampleTechnicians.length} />
+          <Stat label="Locations" value={preset.functionalLocations?.length ?? 0} />
+          <Stat label="Assets" value={preset.customerAssets?.length ?? 0} />
+          <Stat label="Task Types" value={preset.serviceTaskTypes?.length ?? 0} />
+          <Stat label="Agreements" value={preset.agreements?.length ?? 0} />
+          <Stat label="Warehouses" value={preset.warehouses?.length ?? 0} />
         </div>
       </div>
 
