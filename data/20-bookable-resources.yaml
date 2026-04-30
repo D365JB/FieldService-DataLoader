@@ -1,0 +1,5 @@
+# Tier 2 — Bookable resources. Equipment-type by default; User-type only when run-config.users provides UPNs.
+# resourcetype: 1=Equipment, 2=Account, 3=User, 4=Contact, 5=Crew, 6=Facility, 7=Pool
+entity_set: bookableresources
+alt_key_field: name
+rows: []

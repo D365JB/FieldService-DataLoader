@@ -1,0 +1,4 @@
+# Tier 3 — Agreements (one agreement = one service account).
+entity_set: msdyn_agreements
+alt_key_field: msdyn_name
+rows: []

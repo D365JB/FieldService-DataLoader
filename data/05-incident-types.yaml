@@ -1,0 +1,4 @@
+# Tier 1 — Incident types (templates that auto-clone onto Work Orders).
+entity_set: msdyn_incidenttypes
+alt_key_field: msdyn_name
+rows: []

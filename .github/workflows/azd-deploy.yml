@@ -1,0 +1,66 @@
+# Provisions infra (Bicep) and deploys both services (web + api) on every push
+# to main. Uses azd with a federated GitHub OIDC credential — no client secret.
+#
+# Required GitHub Actions repository variables (Settings → Variables → Actions):
+#   AZURE_CLIENT_ID         App Registration appId with Contributor on the target RG
+#   AZURE_TENANT_ID         Directory tenant id
+#   AZURE_SUBSCRIPTION_ID   Target subscription id
+#   AZURE_ENV_NAME          azd environment name (3-12 lowercase chars)
+#   AZURE_LOCATION          e.g. eastus2
+#   VITE_MSAL_CLIENT_ID     Multi-tenant App Registration appId for end-user sign-in
+#
+# To bootstrap the federated credential, run locally (one time):
+#   azd pipeline config --provider github
+# …or follow docs/deploy.md.
+
+name: Deploy (azd)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      # Vite picks this up at build time inside the prepackage hook.
+      VITE_MSAL_CLIENT_ID: ${{ vars.VITE_MSAL_CLIENT_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            api/package-lock.json
+
+      - name: Install azd
+        uses: Azure/setup-azd@v2
+
+      - name: Log in with Azure (Federated Credential)
+        run: |
+          azd auth login \
+            --client-id "$AZURE_CLIENT_ID" \
+            --federated-credential-provider "github" \
+            --tenant-id "$AZURE_TENANT_ID"
+
+      - name: Provision infrastructure
+        run: azd provision --no-prompt
+
+      - name: Deploy services
+        run: azd deploy --no-prompt

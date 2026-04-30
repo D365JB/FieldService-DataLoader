@@ -1,0 +1,4 @@
+# Tier 1 — Bookable resource categories.
+entity_set: bookableresourcecategories
+alt_key_field: name
+rows: []

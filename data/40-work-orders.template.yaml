@@ -1,0 +1,10 @@
+# Tier 3 — Work order template. Dates are computed at runtime from utcnow() + offsets.
+# load_transactional.py reads `template:` and synthesizes scale.open_work_orders rows.
+template:
+  entity_set: msdyn_workorders
+  alt_key_field: msdyn_name
+  base_attributes:
+    msdyn_systemstatus: 690970000  # Open-Unscheduled
+  incident_pool: []   # populated by generate_seeds.py from preset incident types
+  resource_pool: []   # populated from 20-bookable-resources.yaml names
+  territory_pool: []  # populated from 01-territories.yaml names

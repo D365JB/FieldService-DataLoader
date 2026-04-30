@@ -1,0 +1,4 @@
+# Tier 1 — Territories (per metro). Generator overwrites this file.
+entity_set: territories
+alt_key_field: name
+rows: []

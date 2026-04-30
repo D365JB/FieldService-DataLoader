@@ -1,0 +1,80 @@
+name: deploy-demo
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_config_path:
+        description: "Path to run-config.yaml in the repo"
+        required: true
+        default: "run-config.yaml"
+      target_env_url:
+        description: "Override target environment URL (optional)"
+        required: false
+        default: ""
+      use_webapi_config:
+        description: "Skip pac data import; load Tier 1 config via Web API on Linux"
+        required: false
+        default: "false"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  # Tier 1 config — pac data import requires Windows.
+  config-track:
+    if: ${{ inputs.use_webapi_config != 'true' }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Power Platform CLI
+        uses: microsoft/powerplatform-actions/actions-install@v1
+
+      - name: Authenticate (service principal)
+        uses: microsoft/powerplatform-actions/who-am-i@v1
+        with:
+          environment-url: ${{ inputs.target_env_url }}
+          app-id: ${{ secrets.FS_CLIENT_ID }}
+          client-secret: ${{ secrets.FS_CLIENT_SECRET }}
+          tenant-id: ${{ secrets.FS_TENANT_ID }}
+
+      - name: Import config bundle
+        uses: microsoft/powerplatform-actions/import-data@v1
+        with:
+          environment-url: ${{ inputs.target_env_url }}
+          app-id: ${{ secrets.FS_CLIENT_ID }}
+          client-secret: ${{ secrets.FS_CLIENT_SECRET }}
+          tenant-id: ${{ secrets.FS_TENANT_ID }}
+          data-file: config/data/fs-config-data.zip
+
+  # Tier 2 + Tier 3 — Python on Linux.
+  data-tracks:
+    needs: [config-track]
+    if: ${{ always() && (needs.config-track.result == 'success' || inputs.use_webapi_config == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install loader
+        working-directory: scripts/python
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Run orchestrator
+        env:
+          TENANT_ID: ${{ secrets.FS_TENANT_ID }}
+          CLIENT_ID: ${{ secrets.FS_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.FS_CLIENT_SECRET }}
+          ENV_URL: ${{ inputs.target_env_url }}
+        run: |
+          ARGS="--run-config ${{ inputs.run_config_path }} --skip-config"
+          if [ "${{ inputs.use_webapi_config }}" = "true" ]; then
+            ARGS="--run-config ${{ inputs.run_config_path }} --use-webapi-config"
+          fi
+          python -m fsloader.orchestrate $ARGS

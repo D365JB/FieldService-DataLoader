@@ -1,0 +1,4 @@
+# Tier 1 — Organizational units (with explicit lat/long).
+entity_set: msdyn_organizationalunits
+alt_key_field: msdyn_name
+rows: []

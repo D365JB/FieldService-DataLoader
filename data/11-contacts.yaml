@@ -1,0 +1,4 @@
+# Tier 2 — Contacts. Parented to accounts via @odata.bind on emailaddress1.
+entity_set: contacts
+alt_key_field: emailaddress1
+rows: []

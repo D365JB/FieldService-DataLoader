@@ -1,0 +1,50 @@
+# Manifest — declares run order, optional modules, and where each track gets its inputs.
+# Read by fsloader.orchestrate at startup.
+schema_version: 1
+
+modules:
+  - name: config
+    track: config
+    entrypoint: fsloader.load_config
+    enabled_by_default: true
+    description: |
+      Tier 1 — configuration rows (territories, incident types, booking statuses,
+      price lists, etc.) loaded via `pac data import` (Windows) or Web API
+      fallback (--use-webapi-config).
+
+  - name: master
+    track: master
+    entrypoint: fsloader.load_master
+    enabled_by_default: true
+    description: Tier 2 — accounts, contacts, locations, products, warehouses, bookable resources.
+
+  - name: transactional
+    track: transactional
+    entrypoint: fsloader.load_transactional
+    enabled_by_default: true
+    description: Tier 3 — agreements, work orders, bookings (date-relative).
+
+  - name: verify
+    track: verify
+    entrypoint: fsloader.verify
+    enabled_by_default: true
+    description: Post-load read-back assertions against acceptance criteria.
+
+  # ---- v2 stubs — declared for forward compatibility, no loader code in v1. ----
+  - name: rso
+    track: optional
+    entrypoint: external
+    enabled_by_default: false
+    description: Resource Scheduling Optimization (paid add-in). Deferred to v2.
+
+  - name: iot_cfs
+    track: optional
+    entrypoint: external
+    enabled_by_default: false
+    description: IoT / Connected Field Service device seed. Deferred to v2.
+
+  - name: customer_voice
+    track: optional
+    entrypoint: external
+    enabled_by_default: false
+    description: Customer Voice survey hook configuration. Deferred to v2.

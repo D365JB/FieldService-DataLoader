@@ -1,0 +1,4 @@
+# Tier 1 — Characteristics (skills/certifications).
+entity_set: characteristics
+alt_key_field: name
+rows: []

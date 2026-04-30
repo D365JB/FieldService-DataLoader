@@ -1,0 +1,49 @@
+name: validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  lint-and-dryrun:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install loader
+        working-directory: scripts/python
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Lint YAML
+        run: |
+          pip install yamllint
+          yamllint -d "{extends: relaxed, rules: {line-length: disable}}" data/ config/manifest.yaml ui-streamlit/presets/
+
+      - name: Validate run-config schema
+        run: python -m fsloader.run_config --validate run-config.example.yaml
+        working-directory: ${{ github.workspace }}
+        continue-on-error: true  # remove once example file is committed
+
+      - name: Unit tests
+        working-directory: scripts/python
+        run: pytest -q
+
+      - name: Dry-run orchestrator (sandbox)
+        if: ${{ secrets.FS_SANDBOX_ENV_URL != '' }}
+        env:
+          TENANT_ID: ${{ secrets.FS_TENANT_ID }}
+          CLIENT_ID: ${{ secrets.FS_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.FS_CLIENT_SECRET }}
+          ENV_URL: ${{ secrets.FS_SANDBOX_ENV_URL }}
+        run: |
+          python -m fsloader.orchestrate \
+            --run-config run-config.example.yaml \
+            --dry-run

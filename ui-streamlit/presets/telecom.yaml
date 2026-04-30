@@ -1,0 +1,39 @@
+# Telecom vertical preset
+vertical: telecom
+display_name: Telecom Field Service
+
+resource_categories:
+  - Outside Plant Technician
+  - Tower Technician
+  - Network Engineer
+
+skills:
+  - { code: FIBER-OTDR,  description: "Fiber OTDR diagnostics" }
+  - { code: FIBER-SPLICE, description: "Fusion splicing" }
+  - { code: RF-TUNE,     description: "RF site tuning" }
+  - { code: TOWER-CLIMB, description: "OSHA-certified tower climbing" }
+  - { code: COPPER-LOOP, description: "Copper loop testing" }
+  - { code: ONT-INSTALL, description: "ONT/CPE installation" }
+
+incident_types:
+  - { code: OUTAGE,       description: "Service outage triage",         estimated_minutes: 120 }
+  - { code: FIBER-CUT,    description: "Fiber cut splice + restore",    estimated_minutes: 180 }
+  - { code: ONT-INSTALL,  description: "Customer premise ONT install",  estimated_minutes: 90 }
+  - { code: TOWER-PM,     description: "Tower preventive maintenance",  estimated_minutes: 240 }
+
+asset_categories:
+  - Cell Tower
+  - ONT
+  - Fiber Splice Closure
+  - DSLAM
+  - Backhaul Microwave
+
+products:
+  - { code: PRD-TEL-FIBER-12,    name: "12-strand fiber drop cable", fs_type: 690970000 }
+  - { code: PRD-TEL-FIBER-24,    name: "24-strand fiber distribution", fs_type: 690970000 }
+  - { code: PRD-TEL-SPLICE-KIT,  name: "Fusion splice protection kit", fs_type: 690970000 }
+  - { code: PRD-TEL-ONT-GPON,    name: "GPON ONT 4-port",          fs_type: 690970000 }
+  - { code: PRD-TEL-RJ45-100,    name: "RJ45 connectors (100ct)",  fs_type: 690970000 }
+  - { code: PRD-TEL-CAT6-1000,   name: "Cat6 cable 1000ft",        fs_type: 690970000 }
+  - { code: PRD-TEL-OTDR-RENT,   name: "OTDR rental (daily)",      fs_type: 690970001 }
+  - { code: PRD-TEL-LABOR,       name: "Telecom labor (hourly)",   fs_type: 690970001 }

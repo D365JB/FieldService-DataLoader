@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+name: fsdataloader
+metadata:
+  template: fsdataloader@0.1.0
+
+# Two services: SPA (web) and Function App (api). SWA proxies /api to the
+# Function App via linkedBackends. We use BYO Functions because:
+#   - SWA managed Functions don't support managed identity
+#   - The tenant policy forces AOAI key auth off, so MI is required
+
+services:
+  web:
+    project: ./web
+    language: ts
+    host: staticwebapp
+    dist: dist
+  api:
+    project: ./api
+    language: ts
+    host: function
+
+hooks:
+  prepackage:
+    windows:
+      shell: pwsh
+      run: |
+        Push-Location web; try { npm install; npm run build } finally { Pop-Location }
+        Push-Location api; try { npm install; npm run build } finally { Pop-Location }
+    posix:
+      shell: sh
+      run: |
+        (cd web && npm install && npm run build)
+        (cd api && npm install && npm run build)
+  postdeploy:
+    windows:
+      shell: pwsh
+      run: |
+        Write-Host ""
+        Write-Host "==> Deployment complete."
+        Write-Host "Site: $env:WEB_URL"
+        Write-Host "API:  $env:API_URL  (proxied at $env:WEB_URL/api)"
+        Write-Host "AOAI: $env:AOAI_ENDPOINT  (deployment: $env:AOAI_DEPLOYMENT)"
+        Write-Host ""
+        Write-Host "NEXT: Add $env:WEB_URL to your App Reg's SPA redirect URIs."
+    posix:
+      shell: sh
+      run: |
+        echo ""
+        echo "==> Deployment complete."
+        echo "Site: $WEB_URL"
+        echo "API:  $API_URL"
+        echo "AOAI: $AOAI_ENDPOINT"

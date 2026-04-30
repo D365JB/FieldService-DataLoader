@@ -1,0 +1,4 @@
+# Tier 2 — Customer assets (parent/child trees, ≥3 levels deep).
+entity_set: msdyn_customerassets
+alt_key_field: msdyn_name
+rows: []

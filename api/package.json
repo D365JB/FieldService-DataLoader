@@ -1,0 +1,21 @@
+{
+  "name": "fsdataloader-api",
+  "version": "0.1.0",
+  "description": "SWA managed Functions: AOAI proxy + helpers for FS Data Studio",
+  "main": "dist/src/functions/*.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "start": "func start",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.5.1",
+    "@azure/identity": "^4.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.10",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.7.2"
+  }
+}

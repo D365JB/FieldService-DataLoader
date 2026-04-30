@@ -1,0 +1,9 @@
+# Custom vertical — blank template. Fill in your own values.
+vertical: custom
+display_name: Custom Vertical
+
+resource_categories: []
+skills: []
+incident_types: []
+asset_categories: []
+products: []

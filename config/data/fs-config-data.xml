@@ -1,0 +1,9 @@
+<!--
+  Placeholder for the unpacked CMT data.xml.
+
+  This file is committed alongside config/data/fs-config-data.zip so PR diffs
+  are reviewable. After regenerating the zip via DataMigrationUtility.exe,
+  unpack it and replace this file. `python scripts/python/repack_cmt.py` will
+  rebuild the zip from this XML on demand.
+-->
+<entities />

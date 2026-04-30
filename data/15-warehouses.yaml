@@ -1,0 +1,4 @@
+# Tier 2 — Warehouses. Inventory adjustments seeded separately for products used by incident types.
+entity_set: msdyn_warehouses
+alt_key_field: msdyn_name
+rows: []

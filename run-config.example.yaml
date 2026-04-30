@@ -1,0 +1,58 @@
+# Example run-config.yaml — copy this to run-config.yaml and edit.
+schema_version: 1
+run_id: DEMO-EXAMPLE-001
+
+target:
+  env_url: https://orgname.crm.dynamics.com
+  auth_method: service_principal     # service_principal | interactive | env
+  # tenant_id and client_id can be set here OR via env (TENANT_ID/CLIENT_ID).
+  # CLIENT_SECRET is NEVER read from this file — set the env var instead.
+
+vertical: hvac                        # hvac | telecom | medical | utilities | custom
+preset_overrides: {}
+
+scale:
+  accounts: 20                        # 5..100
+  bookable_resources: 10              # 3..50
+  open_work_orders: 60                # 10..500
+
+geography:
+  metros:
+    - seattle
+    - dallas
+    - atlanta
+  random_seed: 42
+
+date_window:
+  past_days: 14
+  future_days: 14
+  distribution:
+    past_pct: 30
+    near_future_pct: 50
+    far_future_pct: 20
+  refresh_existing_dates: false       # v1: false; v2 will add a --refresh-dates flag
+
+modules:
+  config:         { enabled: true,  use_webapi: false }
+  master:         { enabled: true }
+  transactional:  { enabled: true }
+  agreements:     { enabled: true,  count: 3 }
+  customer_assets: { enabled: true,  max_depth: 3 }
+  # v2 stubs — keep here for forward compatibility, no loader paths in v1.
+  rso:            { enabled: false }
+  iot_cfs:        { enabled: false }
+  customer_voice: { enabled: false }
+
+attachments:
+  attach_photo_to_open_wo: true
+  attach_pdf_inspection_to_open_wo: true
+
+reset:
+  prefix: DEMO-
+
+logging:
+  level: INFO
+  output: text
+
+# Optional: real Entra UPNs for User-type bookable resources. Empty = synthesize Equipment-type only.
+users: []

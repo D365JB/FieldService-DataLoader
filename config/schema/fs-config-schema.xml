@@ -1,0 +1,17 @@
+<!--
+  Placeholder Configuration Migration Tool schema.
+  Replace this file with one generated from your source FS demo environment.
+
+  See ../README.md for instructions.
+
+  Required Tier 1 entities (minimum):
+    territory, msdyn_organizationalunit, bookableresourcecategory,
+    characteristic, ratingmodel, ratingvalue,
+    msdyn_workordertype, msdyn_workordersubstatus, bookingstatus,
+    msdyn_incidenttype, msdyn_incidenttypeservicetask,
+    msdyn_incidenttypeproduct, msdyn_incidenttypeservice,
+    msdyn_incidenttypecharacteristic,
+    msdyn_servicetasktype, msdyn_customerassetcategory, msdyn_property,
+    pricelevel, uomschedule, uom
+-->
+<entities />

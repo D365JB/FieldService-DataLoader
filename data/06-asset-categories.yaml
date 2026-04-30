@@ -1,0 +1,4 @@
+# Tier 1 — Customer asset categories.
+entity_set: msdyn_customerassetcategories
+alt_key_field: msdyn_name
+rows: []

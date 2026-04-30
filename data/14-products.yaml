@@ -1,0 +1,4 @@
+# Tier 2 — Products. At least one should set Convert to Customer Asset = Yes.
+entity_set: products
+alt_key_field: productnumber
+rows: []

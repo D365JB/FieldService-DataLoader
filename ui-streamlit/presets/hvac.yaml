@@ -1,0 +1,43 @@
+# HVAC vertical preset
+# Consumed by fsloader.generate_seeds.py — never read by the loaders directly.
+vertical: hvac
+display_name: HVAC Service & Maintenance
+
+resource_categories:
+  - HVAC Technician
+  - Senior HVAC Technician
+  - Apprentice
+
+# Skills / certifications. characteristictype=1=Skill, 2=Certification.
+skills:
+  - { code: EPA608,    description: "EPA Section 608 refrigerant handling" }
+  - { code: NATE,      description: "NATE certification" }
+  - { code: HVAC-INST, description: "Residential HVAC install" }
+  - { code: HVAC-COMM, description: "Commercial rooftop unit service" }
+  - { code: BOIL-LIC,  description: "Boiler operator license" }
+  - { code: ELEC-LV,   description: "Low-voltage controls electrical" }
+
+# Incident types — the templates that auto-clone onto Work Orders.
+incident_types:
+  - { code: NO-COOL,    description: "No cooling — diagnostic + repair", estimated_minutes: 90 }
+  - { code: NO-HEAT,    description: "No heat — diagnostic + repair",    estimated_minutes: 90 }
+  - { code: PM-FALL,    description: "Fall preventive maintenance",      estimated_minutes: 60 }
+  - { code: INSTALL-RTU, description: "Rooftop unit replacement",        estimated_minutes: 240 }
+
+asset_categories:
+  - Rooftop Unit
+  - Split System
+  - Furnace
+  - Boiler
+  - Air Handler
+
+# Products. fs_type 690970000=Inventory, 690970001=Non-Inventory.
+products:
+  - { code: PRD-HVAC-FILTER-16,  name: "Air filter 16x25x1",    fs_type: 690970000 }
+  - { code: PRD-HVAC-FILTER-20,  name: "Air filter 20x25x1",    fs_type: 690970000 }
+  - { code: PRD-HVAC-CAP-45,     name: "Run capacitor 45/5 MFD", fs_type: 690970000 }
+  - { code: PRD-HVAC-CONT-2P,    name: "2-pole contactor 30A",  fs_type: 690970000 }
+  - { code: PRD-HVAC-R410A,      name: "R-410A refrigerant 25lb cyl", fs_type: 690970000 }
+  - { code: PRD-HVAC-RTU-3T,     name: "3-ton commercial RTU",  fs_type: 690970000 }
+  - { code: PRD-HVAC-TSTAT-WIFI, name: "Wi-Fi smart thermostat", fs_type: 690970000 }
+  - { code: PRD-HVAC-LABOR,      name: "HVAC labor (hourly)",   fs_type: 690970001 }

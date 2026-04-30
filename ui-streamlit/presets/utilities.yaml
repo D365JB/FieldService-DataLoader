@@ -1,0 +1,39 @@
+# Utilities (electric / gas / water) vertical preset
+vertical: utilities
+display_name: Utilities Field Operations
+
+resource_categories:
+  - Lineman
+  - Meter Technician
+  - Gas Service Technician
+
+skills:
+  - { code: LINEMAN-J,     description: "Journeyman lineman certification" }
+  - { code: OSHA-1910,     description: "OSHA 29 CFR 1910.269 high-voltage" }
+  - { code: METER-AMI,     description: "AMI smart meter installation" }
+  - { code: GAS-SAFETY,    description: "Gas distribution safety (OQ Plan)" }
+  - { code: TRANSFORMER,   description: "Pad-mount transformer servicing" }
+  - { code: TROUBLEMAN,    description: "Trouble dispatch / outage triage" }
+
+incident_types:
+  - { code: METER-SWAP,    description: "Smart meter swap-out",         estimated_minutes: 30 }
+  - { code: TRANS-PM,      description: "Transformer preventive maintenance", estimated_minutes: 180 }
+  - { code: OUTAGE,        description: "Outage restoration",           estimated_minutes: 120 }
+  - { code: NEW-SERVICE,   description: "New service connection",       estimated_minutes: 240 }
+
+asset_categories:
+  - Pole-Mount Transformer
+  - Pad-Mount Transformer
+  - Smart Meter (Electric)
+  - Gas Regulator
+  - Service Drop
+
+products:
+  - { code: PRD-UTL-METER-AMI,  name: "Single-phase AMI meter",   fs_type: 690970000 }
+  - { code: PRD-UTL-METER-3P,   name: "3-phase commercial meter", fs_type: 690970000 }
+  - { code: PRD-UTL-XFMR-25KVA, name: "25 kVA pad-mount transformer", fs_type: 690970000 }
+  - { code: PRD-UTL-FUSE-CLO,   name: "Cutout fuse 100A",         fs_type: 690970000 }
+  - { code: PRD-UTL-CONN-CRMP,  name: "Crimp connector (bag)",    fs_type: 690970000 }
+  - { code: PRD-UTL-REG-GAS,    name: "Residential gas regulator", fs_type: 690970000 }
+  - { code: PRD-UTL-WIRE-336,   name: "336 kcmil ACSR wire (1000ft)", fs_type: 690970000 }
+  - { code: PRD-UTL-LABOR,      name: "Lineman labor (hourly)",   fs_type: 690970001 }

@@ -1,0 +1,4 @@
+# Tier 2 — Accounts. Generator overwrites this file with vertical-specific content.
+entity_set: accounts
+alt_key_field: accountnumber
+rows: []

@@ -1,0 +1,39 @@
+# Medical equipment vertical preset
+vertical: medical
+display_name: Medical Equipment Service
+
+resource_categories:
+  - Biomedical Engineer
+  - Imaging Field Engineer
+  - Calibration Technician
+
+skills:
+  - { code: BIOMED,    description: "Biomedical equipment certification (BMET)" }
+  - { code: MRI-CERT,  description: "MRI service certification" }
+  - { code: CT-CERT,   description: "CT scanner service certification" }
+  - { code: CALIB-ISO, description: "ISO 17025 calibration" }
+  - { code: GMP-13485, description: "ISO 13485 / GMP procedural training" }
+  - { code: CYBER-MED, description: "Medical device cybersecurity (HIPAA)" }
+
+incident_types:
+  - { code: PM-Q,         description: "Quarterly preventive maintenance",  estimated_minutes: 120 }
+  - { code: CALIBRATION,  description: "Annual calibration",                estimated_minutes: 90 }
+  - { code: IQ-OQ,        description: "Installation/operational qual",    estimated_minutes: 240 }
+  - { code: BREAK-FIX,    description: "Break-fix dispatch",                estimated_minutes: 120 }
+
+asset_categories:
+  - MRI Scanner
+  - CT Scanner
+  - Infusion Pump
+  - Patient Monitor
+  - Dialysis Machine
+
+products:
+  - { code: PRD-MED-PROBE-LIN, name: "Linear ultrasound probe", fs_type: 690970000 }
+  - { code: PRD-MED-COIL-MRI,  name: "MRI knee coil",           fs_type: 690970000 }
+  - { code: PRD-MED-BATT-PUMP, name: "Infusion pump battery pack", fs_type: 690970000 }
+  - { code: PRD-MED-FILTER-DI, name: "Dialysis water filter",   fs_type: 690970000 }
+  - { code: PRD-MED-CAL-KIT,   name: "Calibration test kit",    fs_type: 690970000 }
+  - { code: PRD-MED-LEAD-ECG,  name: "ECG patient lead set",    fs_type: 690970000 }
+  - { code: PRD-MED-CONTRAST,  name: "MRI contrast media (case)", fs_type: 690970000 }
+  - { code: PRD-MED-LABOR,     name: "BMET labor (hourly)",     fs_type: 690970001 }
