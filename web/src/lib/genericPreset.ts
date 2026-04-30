@@ -156,4 +156,41 @@ export const GENERIC_PRESET: FsPreset = {
     { name: "Capture Post-service Photos", description: "Document after-state", estimatedDurationMinutes: 5 },
     { name: "Customer Sign-off", description: "Walk through findings, get signature", estimatedDurationMinutes: 10 },
   ],
+  // Phase 3 — service agreements. Created in Estimate status so server-side
+  // recurrence stays dormant until the demo presenter promotes them.
+  agreements: [
+    {
+      name: "Northwind Annual Maintenance",
+      accountName: "Northwind Manufacturing",
+      startOn: "2026-01-01",
+      endOn: "2027-01-01",
+      recurrencePattern: "FREQ=MONTHLY",
+      estimatedDurationMinutes: 120,
+      coveredIncidentTypeNames: ["Annual Inspection", "Filter Change"],
+      coveredProductNumbers: ["FILT-STD-01", "PART-PUMP-01"],
+      description: "Monthly preventive maintenance contract",
+    },
+    {
+      name: "Tailspin Quarterly Inspection",
+      accountName: "Tailspin Distribution",
+      startOn: "2026-01-01",
+      endOn: "2027-01-01",
+      recurrencePattern: "FREQ=MONTHLY;INTERVAL=3",
+      estimatedDurationMinutes: 180,
+      coveredIncidentTypeNames: ["Annual Inspection"],
+      coveredProductNumbers: ["FILT-PRM-01"],
+      description: "Quarterly site inspection covering all floors",
+    },
+    {
+      name: "Adventure Works Hotel Service Plan",
+      accountName: "Adventure Works Hotel",
+      startOn: "2026-01-01",
+      endOn: "2027-01-01",
+      recurrencePattern: "FREQ=MONTHLY",
+      estimatedDurationMinutes: 90,
+      coveredIncidentTypeNames: ["Equipment Not Working", "Intermittent Failure"],
+      coveredProductNumbers: ["PART-PUMP-01"],
+      description: "Hotel HVAC monthly service plan",
+    },
+  ],
 };

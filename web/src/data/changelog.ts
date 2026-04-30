@@ -7,9 +7,21 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.10.0";
+export const APP_VERSION = "v1.11.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.11.0",
+    date: "May 7, 2026",
+    tag: "AGREEMENTS",
+    features: [
+      "**Service Agreements** — recurring service contracts now seed automatically. Each top account gets an annual agreement with a recurrence pattern, covered incident types, and estimated parts.",
+      "**Booking Setup + line items** — every agreement gets a child booking-setup carrying the recurrence rule plus 1–2 covered incident links and 1–2 estimated product lines, so the agreement form is realistic out of the box.",
+      "**Safe by default** — agreements are created in **Estimate** status with `auto-generate WO = false`, so the server-side recurrence engine stays dormant during the demo. Flip them to Active manually when you want to see WOs spawn.",
+      "AI preset generator now produces 2–4 vertical-appropriate agreements per analyzed company; the generic preset ships with 3 ready-to-demo contracts.",
+      "Reset and per-run delete clean up the agreement subtree (booking-incidents → booking-products → booking-setups → agreements) in the right child-first order.",
+    ],
+  },
   {
     version: "v1.10.0",
     date: "April 30, 2026",

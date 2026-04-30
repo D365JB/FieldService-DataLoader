@@ -39,6 +39,13 @@ const phase2EntityOrder: Array<{
   { key: "customerAssets", label: "Customer Assets", entitySet: "msdyn_customerassets", phase: "afterWo" },
   { key: "functionalLocations", label: "Functional Locations", entitySet: "msdyn_functionallocations", phase: "afterWo" },
   { key: "serviceTaskTypes", label: "Service Task Types", entitySet: "msdyn_servicetasktypes", phase: "afterWo" },
+  // Phase 3 — agreement subtree (child-first). All afterWo because none
+  // reference work orders directly:
+  { key: "agreementBookingIncidents", label: "Agreement Booking Incidents", entitySet: "msdyn_agreementbookingincidents", phase: "afterWo" },
+  { key: "agreementBookingProducts", label: "Agreement Booking Products", entitySet: "msdyn_agreementbookingproducts", phase: "afterWo" },
+  { key: "agreementBookingServices", label: "Agreement Booking Services", entitySet: "msdyn_agreementbookingservices", phase: "afterWo" },
+  { key: "agreementBookingSetups", label: "Agreement Booking Setups", entitySet: "msdyn_agreementbookingsetups", phase: "afterWo" },
+  { key: "agreements", label: "Agreements", entitySet: "msdyn_agreements", phase: "afterWo" },
 ];
 
 export interface SeedProgress {
@@ -626,6 +633,109 @@ export async function seedFromPreset(
     onProgress,
   );
 
+  // ── Agreements (Phase 3) ────────────────────────────────────────────────
+  // Created in Estimate status so server-side recurrence doesn't auto-spawn
+  // WOs during the demo run. Each agreement gets a single booking setup with
+  // covered incidents + estimated product lines.
+  const agreements = preset.agreements ?? [];
+  const agreementMap = getIdMap(result, "agreements");
+  const agreementBookingSetupMap = getIdMap(
+    result,
+    "agreementBookingSetups",
+  );
+  await runEntityStep(
+    dv,
+    {
+      label: "Agreements",
+      items: agreements,
+      choice: undefined,
+      target: agreementMap,
+      entitySet: "msdyn_agreements",
+      idField: "msdyn_agreementid",
+      findField: "msdyn_name",
+      findValue: (a) => a.name,
+      mapKey: (a) => a.name,
+      build: (a) => {
+        const accountId = result.accountIds[a.accountName];
+        const payload: Record<string, unknown> = {
+          msdyn_name: a.name,
+          msdyn_description: tag(a.description),
+          // 192350000 = Estimate. Keeps server-side recurrence dormant.
+          msdyn_systemstatus: 192350000,
+          msdyn_startdate: a.startOn,
+          msdyn_enddate: a.endOn,
+        };
+        if (accountId) {
+          payload["msdyn_ServiceAccount@odata.bind"] = `/accounts(${accountId})`;
+          payload["msdyn_BillingAccount@odata.bind"] = `/accounts(${accountId})`;
+        }
+        return payload;
+      },
+      onCreated: async (agreementId, a) => {
+        trackCreated(result, "agreements", agreementId);
+
+        // 1:1 booking setup carrying the recurrence + estimated duration.
+        const setupName = `${a.name} — Visit Setup`;
+        let setupId: string | null = null;
+        try {
+          setupId = await dv.create("msdyn_agreementbookingsetups", {
+            msdyn_name: setupName,
+            msdyn_description: tag(),
+            "msdyn_Agreement@odata.bind": `/msdyn_agreements(${agreementId})`,
+            // Don't auto-generate WOs — demo presenter does that manually.
+            msdyn_autogenerateworkorder: false,
+            msdyn_estimatedduration: a.estimatedDurationMinutes ?? 60,
+            msdyn_recurrencepattern: a.recurrencePattern,
+            msdyn_startdate: a.startOn,
+            msdyn_enddate: a.endOn,
+          });
+          agreementBookingSetupMap[a.name] = setupId;
+          trackCreated(result, "agreementBookingSetups", setupId);
+        } catch {
+          /* booking setup is best-effort; agreement still exists */
+        }
+
+        if (!setupId) return;
+
+        // Covered incident types — one row per incident name we recognise.
+        for (const incidentName of a.coveredIncidentTypeNames ?? []) {
+          const incidentId = result.incidentTypeIds[incidentName];
+          if (!incidentId) continue;
+          try {
+            const id = await dv.create("msdyn_agreementbookingincidents", {
+              msdyn_name: tag(`${a.name} — ${incidentName}`),
+              msdyn_description: tag(),
+              "msdyn_AgreementBookingSetup@odata.bind": `/msdyn_agreementbookingsetups(${setupId})`,
+              "msdyn_IncidentType@odata.bind": `/msdyn_incidenttypes(${incidentId})`,
+            });
+            trackCreated(result, "agreementBookingIncidents", id);
+          } catch {
+            /* per-row best effort */
+          }
+        }
+
+        // Covered estimated product lines.
+        for (const productNumber of a.coveredProductNumbers ?? []) {
+          const productId = result.productIds[productNumber];
+          if (!productId) continue;
+          try {
+            const id = await dv.create("msdyn_agreementbookingproducts", {
+              msdyn_name: tag(`${a.name} — ${productNumber}`),
+              msdyn_description: tag(),
+              "msdyn_AgreementBookingSetup@odata.bind": `/msdyn_agreementbookingsetups(${setupId})`,
+              "msdyn_Product@odata.bind": `/products(${productId})`,
+              msdyn_estimatedquantity: 1,
+            });
+            trackCreated(result, "agreementBookingProducts", id);
+          } catch {
+            /* per-row best effort */
+          }
+        }
+      },
+    },
+    onProgress,
+  );
+
   // ── Work Orders (mixed statuses) ─────────────────────────────────────────
   // Synthesize ~2 work orders per account across 3 status buckets so the
   // dispatcher board / KPI tiles have something to show on first load.
@@ -929,6 +1039,37 @@ export async function resetDemoData(
     "Service Task Types",
     "msdyn_servicetasktypes",
     "msdyn_servicetasktypeid",
+    "msdyn_description",
+  );
+  // Phase 3 — agreement subtree (child-first). All depend on accounts.
+  await sweep(
+    "Agreement Booking Incidents",
+    "msdyn_agreementbookingincidents",
+    "msdyn_agreementbookingincidentid",
+    "msdyn_description",
+  );
+  await sweep(
+    "Agreement Booking Products",
+    "msdyn_agreementbookingproducts",
+    "msdyn_agreementbookingproductid",
+    "msdyn_description",
+  );
+  await sweep(
+    "Agreement Booking Services",
+    "msdyn_agreementbookingservices",
+    "msdyn_agreementbookingserviceid",
+    "msdyn_description",
+  );
+  await sweep(
+    "Agreement Booking Setups",
+    "msdyn_agreementbookingsetups",
+    "msdyn_agreementbookingsetupid",
+    "msdyn_description",
+  );
+  await sweep(
+    "Agreements",
+    "msdyn_agreements",
+    "msdyn_agreementid",
     "msdyn_description",
   );
   // Resource-level associations next.

@@ -96,6 +96,29 @@ export interface FsPreset {
     description?: string;
     estimatedDurationMinutes?: number;
   }>;
+  /**
+   * Phase 3 — Service agreements (recurring contracts). Each agreement gets a
+   * booking-setup with a recurrence pattern, plus one or two covered
+   * incident-types and product lines. We create them in **Estimate** status
+   * (192350000) so the server-side recurrence engine doesn't auto-spawn WOs
+   * during the demo run — the presenter can flip them to Active manually.
+   */
+  agreements?: Array<{
+    name: string;
+    accountName: string;
+    /** ISO date YYYY-MM-DD. */
+    startOn: string;
+    /** ISO date YYYY-MM-DD. */
+    endOn: string;
+    /** RFC 5545-ish recurrence: FREQ=MONTHLY|WEEKLY|DAILY[;INTERVAL=N]. */
+    recurrencePattern: string;
+    estimatedDurationMinutes?: number;
+    /** Names from incidentTypes[].name. */
+    coveredIncidentTypeNames?: string[];
+    /** productNumbers from products[].productNumber. */
+    coveredProductNumbers?: string[];
+    description?: string;
+  }>;
   /** Reasoning the AI gave for picking this vertical — surfaced in review UI. */
   rationale: string;
 }
@@ -115,6 +138,13 @@ Constraints:
   - 8–12 functional locations distributed across the top 3–4 accounts as a 2-level tree (Building → Floor / Zone). parentName references another node within this list. accountName must match a sampleAccounts[].name.
   - 8–14 customer assets distributed across those accounts. Each asset has an industry-appropriate name (e.g. "RTU-A1-01" for HVAC, "Generator-DC-A" for telecom, "Elevator Bank North" for elevator). accountName must match a sampleAccounts[].name. functionalLocationName, when set, must match a functionalLocations[].name. productNumber, when set, must match a products[].productNumber. Add a unique serialNumber to each.
   - 6–10 reusable serviceTaskTypes covering safety, diagnostic, repair, verify, and sign-off steps. Realistic for the vertical.
+- Phase 3 — agreements (REQUIRED, 2–4 entries):
+  - Each agreement is a recurring service contract for ONE of the top 3 sampleAccounts. accountName must match a sampleAccounts[].name.
+  - startOn must be 2026-01-01 or earlier. endOn must be one full year later.
+  - recurrencePattern is a short RFC-5545 fragment, one of: "FREQ=MONTHLY", "FREQ=MONTHLY;INTERVAL=3", "FREQ=WEEKLY", "FREQ=DAILY;INTERVAL=14".
+  - estimatedDurationMinutes between 60 and 240.
+  - coveredIncidentTypeNames: 1–2 names from incidentTypes[] above.
+  - coveredProductNumbers: 1–2 productNumbers from products[] above.
 - All names must be realistic — never lorem ipsum, never "Sample".
 - The rationale field should be 1–2 sentences explaining why this vertical fits the company.`;
 
@@ -145,6 +175,7 @@ Generate a Field Service preset for this company as JSON matching exactly this s
   "functionalLocations": [{ "name": "<string>", "accountName": "<must match a sampleAccounts[].name>", "parentName": "<optional, must match another functionalLocations[].name>", "description": "<optional>" }],
   "customerAssets": [{ "name": "<string>", "accountName": "<must match a sampleAccounts[].name>", "functionalLocationName": "<optional>", "productNumber": "<optional, must match a products[].productNumber>", "parentAssetName": "<optional>", "serialNumber": "<string>", "description": "<optional>" }],
   "serviceTaskTypes": [{ "name": "<string>", "description": "<optional>", "estimatedDurationMinutes": <int> }],
+  "agreements": [{ "name": "<string>", "accountName": "<must match a sampleAccounts[].name>", "startOn": "YYYY-MM-DD", "endOn": "YYYY-MM-DD", "recurrencePattern": "FREQ=MONTHLY", "estimatedDurationMinutes": <int>, "coveredIncidentTypeNames": ["<must match incidentTypes[].name>"], "coveredProductNumbers": ["<must match products[].productNumber>"], "description": "<optional>" }],
   "rationale": "<1-2 sentences>"
 }`;
 
