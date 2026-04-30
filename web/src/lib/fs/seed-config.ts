@@ -505,7 +505,8 @@ export async function seedFromPreset(
       mapKey: (t) => t.name,
       build: (t) => ({
         name: t.name,
-        description: tag(`Technician — ${t.primarySkill} (${t.primaryTerritoryCode})`),
+        // bookableresource has no `description` column; primary skill/territory
+        // get linked below via bookableresourcecharacteristic + msdyn_resourceterritory.
         // 4 = Equipment. Avoids needing to create a systemuser.
         resourcetype: 4,
       }),

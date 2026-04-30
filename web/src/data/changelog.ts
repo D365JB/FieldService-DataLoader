@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.18.7";
+export const APP_VERSION = "v1.18.8";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.18.8",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Bookable resource create no longer 400s.** `bookableresource` has no `description` column on this org's schema — verified via `$metadata`. Removed the field from the create payload; primary skill / territory still get linked through `bookableresourcecharacteristic` and `msdyn_resourceterritory`.",
+    ],
+  },
   {
     version: "v1.18.7",
     date: "April 30, 2026",
