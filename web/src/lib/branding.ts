@@ -142,19 +142,24 @@ export async function applyTheme({
     await publishWebResource(client, webResourceId);
   }
 
-  // 2) Find existing theme by name (custom themes have type=false; the OOTB
-  // CRM Default Theme is type=true). The `type` column is Edm.Boolean — using
-  // `eq 0` triggers a 400 "incompatible operand types" so we compare to false.
+  // 2) Find existing theme by name. We deliberately do NOT filter on `type`
+  // here — different Dataverse orgs report it as either Edm.Boolean or an
+  // option-set, and a wrong filter either silently misses our previous theme
+  // (causing duplicate-create attempts) or 400s on filter parse. Filtering by
+  // name is enough since custom theme names are unique within an org for our
+  // purposes. Likewise we don't send `type` on create/update — the platform
+  // assigns it correctly (custom) and explicitly sending `false` triggers the
+  // "System or Default theme can only be created out of box" 400 in some orgs
+  // because the value gets coerced to the System option.
   onStatus?.("Looking up existing theme…");
   const existing = await client.query<ThemeRecord>("themes", {
-    filter: `name eq '${themeName.replace(/'/g, "''")}' and type eq false`,
+    filter: `name eq '${themeName.replace(/'/g, "''")}'`,
     select: ["themeid", "name", "type", "isdefaulttheme"],
     top: 1,
   });
 
   const body: Record<string, unknown> = {
     name: themeName,
-    type: false,
     navbarbackgroundcolor: colors.navbarBackground,
     navbarshelfcolor: colors.navbarShelf,
     maincolor: colors.main,

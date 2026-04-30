@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.17.0";
+export const APP_VERSION = "v1.17.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.17.1",
+    date: "April 30, 2026",
+    tag: "BRANDING",
+    features: [
+      "**Fixed `System or Default theme can only be created out of box` on Apply.** Removed the explicit `type` value from the theme PATCH/POST body and from the existing-theme lookup filter — different Dataverse orgs treat `type` as boolean vs option-set, and explicitly sending `false` was being coerced to the System option. The platform now assigns `type` correctly on its own.",
+    ],
+  },
   {
     version: "v1.17.0",
     date: "April 30, 2026",
