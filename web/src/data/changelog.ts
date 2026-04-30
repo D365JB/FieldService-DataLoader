@@ -7,9 +7,20 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.18.14";
+export const APP_VERSION = "v1.19.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.19.0",
+    date: "April 30, 2026",
+    tag: "FEATURE",
+    features: [
+      "**Per-run record breakdown on the Reset page.** Click any load to expand a full inventory of what it created — territories, work order types, incident types, products, accounts, resources, functional locations, customer assets, agreements, work orders, bookings, IoT alerts, and more.",
+      "**Export & Import runs.** Download your run history as JSON and restore it on another device (or browser) with one click. Useful for moving the cleanup record after demos or sharing across a team.",
+      "**Clearer storage docs in the UI.** New explainer states exactly where runs live (`localStorage` under `fsdl:runs:<org>`), that the 25 newest are kept, and how to back them up.",
+      "**Agreement create fix:** `msdyn_systemstatus` now uses `690970000` (Estimate) instead of the wrong `192350000`, matching this org's accepted values.",
+    ],
+  },
   {
     version: "v1.18.14",
     date: "April 30, 2026",

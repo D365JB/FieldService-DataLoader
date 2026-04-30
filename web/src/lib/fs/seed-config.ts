@@ -717,8 +717,10 @@ export async function seedFromPreset(
         const payload: Record<string, unknown> = {
           msdyn_name: a.name,
           msdyn_description: tag(a.description),
-          // 192350000 = Estimate. Keeps server-side recurrence dormant.
-          msdyn_systemstatus: 192350000,
+          // 690970000 = Estimate (msdyn_agreement.msdyn_systemstatus). Keeps
+          // server-side recurrence dormant. Accepted values in this org:
+          // 690970000–690970003 (verified via the validation error).
+          msdyn_systemstatus: 690970000,
           msdyn_startdate: a.startOn,
           msdyn_enddate: a.endOn,
         };
