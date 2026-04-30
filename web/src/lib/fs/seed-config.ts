@@ -34,24 +34,28 @@ const phase2EntityOrder: Array<{
    */
   phase: "beforeWo" | "afterWo";
 }> = [
-  // Phase 2 — child-first delete order:
+  // ── beforeWo (delete BEFORE work orders) ───────────────────────────────
+  // These reference WOs directly, so must clear first.
   { key: "workOrderServiceTasks", label: "WO Service Tasks", entitySet: "msdyn_workorderservicetasks", phase: "beforeWo" },
+  { key: "workOrderProducts", label: "WO Products", entitySet: "msdyn_workorderproducts", phase: "beforeWo" },
+  { key: "timeEntries", label: "Time Entries", entitySet: "msdyn_timeentries", phase: "beforeWo" },
+
+  // ── afterWo (delete AFTER work orders, child-first) ────────────────────
+  // Phase 6 — IoT alerts reference customer assets, delete before them.
+  { key: "iotAlerts", label: "IoT Alerts", entitySet: "msdyn_iotalerts", phase: "afterWo" },
+  // Phase 2 — assets / locations / task-type catalog.
   { key: "customerAssets", label: "Customer Assets", entitySet: "msdyn_customerassets", phase: "afterWo" },
   { key: "functionalLocations", label: "Functional Locations", entitySet: "msdyn_functionallocations", phase: "afterWo" },
   { key: "serviceTaskTypes", label: "Service Task Types", entitySet: "msdyn_servicetasktypes", phase: "afterWo" },
-  // Phase 4 — WO execution detail. All reference WOs, must delete first.
-  { key: "workOrderProducts", label: "WO Products", entitySet: "msdyn_workorderproducts", phase: "beforeWo" },
-  { key: "timeEntries", label: "Time Entries", entitySet: "msdyn_timeentries", phase: "beforeWo" },
-  // Phase 5 — inventory. Independent of WOs but delete child first.
-  { key: "productInventory", label: "Product Inventory", entitySet: "msdyn_productinventories", phase: "afterWo" },
-  { key: "warehouses", label: "Warehouses", entitySet: "msdyn_warehouses", phase: "afterWo" },
-  // Phase 3 — agreement subtree (child-first). All afterWo because none
-  // reference work orders directly:
+  // Phase 3 — agreement subtree (child-first).
   { key: "agreementBookingIncidents", label: "Agreement Booking Incidents", entitySet: "msdyn_agreementbookingincidents", phase: "afterWo" },
   { key: "agreementBookingProducts", label: "Agreement Booking Products", entitySet: "msdyn_agreementbookingproducts", phase: "afterWo" },
   { key: "agreementBookingServices", label: "Agreement Booking Services", entitySet: "msdyn_agreementbookingservices", phase: "afterWo" },
   { key: "agreementBookingSetups", label: "Agreement Booking Setups", entitySet: "msdyn_agreementbookingsetups", phase: "afterWo" },
   { key: "agreements", label: "Agreements", entitySet: "msdyn_agreements", phase: "afterWo" },
+  // Phase 5 — inventory (child-first).
+  { key: "productInventory", label: "Product Inventory", entitySet: "msdyn_productinventories", phase: "afterWo" },
+  { key: "warehouses", label: "Warehouses", entitySet: "msdyn_warehouses", phase: "afterWo" },
 ];
 
 export interface SeedProgress {
@@ -1183,6 +1187,79 @@ export async function seedFromPreset(
     }
   }
 
+  // ── IoT Alerts (Phase 6) ────────────────────────────────────────────────
+  // Mock alerts per customer asset so the FS Connected Field Service views
+  // have data. Severities: 192350000=Info, 192350001=Warning, 192350002=Critical.
+  // Status: 192350000=Active (most), 192350001=InProgress (some), 192350002=Closed (few).
+  const iotAlertTemplates = [
+    { severity: 192350002, message: "Compressor outlet pressure exceeded threshold (PSI > 175)" },
+    { severity: 192350001, message: "Filter pressure differential rising — service due soon" },
+    { severity: 192350000, message: "Routine telemetry checkpoint received" },
+    { severity: 192350001, message: "Vibration above nominal — recommend inspection" },
+    { severity: 192350002, message: "Temperature alarm: unit exceeded 85°C for >5 min" },
+  ];
+  const accountsWithAssets = Object.entries(assetsByAccount).filter(
+    ([, ids]) => ids.length > 0,
+  );
+  if (accountsWithAssets.length > 0) {
+    let totalAlerts = 0;
+    for (const [, assetIds] of accountsWithAssets) {
+      totalAlerts += assetIds.length; // 1 alert per asset
+    }
+    onProgress({ step: "IoT Alerts", done: 0, total: totalAlerts });
+    let done = 0;
+    let templateIdx = 0;
+    for (const [accountId, assetIds] of accountsWithAssets) {
+      for (let i = 0; i < assetIds.length; i++) {
+        const assetId = assetIds[i];
+        const template = iotAlertTemplates[templateIdx % iotAlertTemplates.length];
+        templateIdx++;
+        // Most alerts are still Active so the demo shows active issues to triage.
+        const status =
+          done % 5 === 4 ? 192350002 // Closed
+            : done % 3 === 2 ? 192350001 // InProgress
+              : 192350000; // Active
+
+        const alertTime = new Date();
+        alertTime.setHours(alertTime.getHours() - (done * 3 + 1));
+        const alertToken = `${DEMO_TAG}-IOT-${accountId.slice(0, 6)}-${i}`;
+        const description = tag(template.message);
+
+        const existing = await dv.query<{ msdyn_iotalertid: string }>(
+          "msdyn_iotalerts",
+          {
+            filter: `msdyn_alerttoken eq '${oencode(alertToken)}'`,
+            select: ["msdyn_iotalertid"],
+            top: 1,
+          },
+        );
+        if (!existing[0]) {
+          try {
+            const alertId = await dv.create("msdyn_iotalerts", {
+              msdyn_description: description,
+              msdyn_alerttoken: alertToken,
+              msdyn_alerttime: alertTime.toISOString(),
+              msdyn_alertdata: JSON.stringify({
+                source: "DEMO-FS",
+                severity: template.severity,
+                message: template.message,
+              }),
+              msdyn_severity: template.severity,
+              msdyn_iotalertstatus: status,
+              "msdyn_Account@odata.bind": `/accounts(${accountId})`,
+              "msdyn_CustomerAsset@odata.bind": `/msdyn_customerassets(${assetId})`,
+            });
+            trackCreated(result, "iotAlerts", alertId);
+          } catch {
+            /* IoT entity may not be enabled in this org — skip silently */
+          }
+        }
+        done++;
+        onProgress({ step: "IoT Alerts", done, total: totalAlerts });
+      }
+    }
+  }
+
   return result;
 }
 
@@ -1257,6 +1334,13 @@ export async function resetDemoData(
     "msdyn_workordersummary",
   );
   // Phase 2 — assets / locations / task-type catalog (WOs referenced these).
+  // Phase 6 IoT alerts reference assets, must go first.
+  await sweep(
+    "IoT Alerts",
+    "msdyn_iotalerts",
+    "msdyn_iotalertid",
+    "msdyn_description",
+  );
   await sweep(
     "Customer Assets",
     "msdyn_customerassets",

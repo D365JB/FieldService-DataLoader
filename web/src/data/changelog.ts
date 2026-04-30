@@ -7,9 +7,21 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.13.0";
+export const APP_VERSION = "v1.14.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.14.0",
+    date: "May 28, 2026",
+    tag: "CONNECTED",
+    features: [
+      "**IoT Alerts** — Connected Field Service mock alerts now seed automatically. Each Customer Asset gets an alert with realistic severity (Info / Warning / Critical), status (mostly Active with some In Progress and Closed), and a believable telemetry payload — so the IoT Alerts dashboard isn't empty during demos.",
+      "Alerts are linked to both the Account and the Customer Asset so drill-downs from either entity work out of the box.",
+      "Skipped from this phase by design: **Inspections** (require a hand-authored form schema per vertical) and **Resource Pay Types** (rare in demos). Both can be added later if there's customer demand.",
+      "Reset and per-run delete clean up IoT Alerts before Customer Assets (correct child-first order).",
+      "Internal cleanup: phase2EntityOrder reorganised into clear beforeWo/afterWo blocks for easier maintenance as new entities are added.",
+    ],
+  },
   {
     version: "v1.13.0",
     date: "May 21, 2026",
