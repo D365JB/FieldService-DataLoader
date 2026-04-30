@@ -8,6 +8,7 @@ export default {
         // FS-themed dark palette (modeled on reference, slightly cooler accent)
         bg: {
           DEFAULT: "#0b0f17",
+          base: "#0b0f17",
           elevated: "#121826",
           card: "#161d2e",
         },
