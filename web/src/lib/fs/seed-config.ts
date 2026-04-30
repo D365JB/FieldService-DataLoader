@@ -452,10 +452,10 @@ export async function seedFromPreset(
           statecode: 0, // Draft (cannot create as Active without a price list).
         };
         if (defaultUomScheduleId) {
-          payload["DefaultUoMSchedule@odata.bind"] = `/uomschedules(${defaultUomScheduleId})`;
+          payload["DefaultUoMScheduleId@odata.bind"] = `/uomschedules(${defaultUomScheduleId})`;
         }
         if (defaultUomId) {
-          payload["DefaultUoM@odata.bind"] = `/uoms(${defaultUomId})`;
+          payload["DefaultUoMId@odata.bind"] = `/uoms(${defaultUomId})`;
         }
         return payload;
       },

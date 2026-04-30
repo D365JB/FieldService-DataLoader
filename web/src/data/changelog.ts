@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.18.5";
+export const APP_VERSION = "v1.18.6";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.18.6",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Product create now uses the correct nav-property names** — `DefaultUoMScheduleId` + `DefaultUoMId` instead of `DefaultUoMSchedule`/`DefaultUoM`. Resolves the “undeclared property 'DefaultUoMSchedule'” 400.",
+    ],
+  },
   {
     version: "v1.18.5",
     date: "April 30, 2026",
