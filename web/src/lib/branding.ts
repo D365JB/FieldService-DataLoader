@@ -118,7 +118,7 @@ interface ApplyThemeArgs {
 interface ThemeRecord {
   themeid: string;
   name: string;
-  type: number;
+  type: boolean;
   isdefaulttheme: boolean;
 }
 
@@ -142,17 +142,19 @@ export async function applyTheme({
     await publishWebResource(client, webResourceId);
   }
 
-  // 2) Find existing theme by name (custom themes are type=0).
+  // 2) Find existing theme by name (custom themes have type=false; the OOTB
+  // CRM Default Theme is type=true). The `type` column is Edm.Boolean — using
+  // `eq 0` triggers a 400 "incompatible operand types" so we compare to false.
   onStatus?.("Looking up existing theme…");
   const existing = await client.query<ThemeRecord>("themes", {
-    filter: `name eq '${themeName.replace(/'/g, "''")}' and type eq 0`,
+    filter: `name eq '${themeName.replace(/'/g, "''")}' and type eq false`,
     select: ["themeid", "name", "type", "isdefaulttheme"],
     top: 1,
   });
 
   const body: Record<string, unknown> = {
     name: themeName,
-    type: 0,
+    type: false,
     navbarbackgroundcolor: colors.navbarBackground,
     navbarshelfcolor: colors.navbarShelf,
     maincolor: colors.main,

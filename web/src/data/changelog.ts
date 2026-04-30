@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.15.0";
+export const APP_VERSION = "v1.15.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.15.1",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Branding fix** — theme lookup was failing with `400 A binary operator with incompatible types was detected` because the `theme.type` column is Edm.Boolean (system vs custom flag), not an integer. Filter now uses `type eq false` and the create payload sends `type: false`. Branding apply works again.",
+    ],
+  },
   {
     version: "v1.15.0",
     date: "June 4, 2026",
