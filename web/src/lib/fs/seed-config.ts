@@ -43,53 +43,26 @@ export interface SeedResult {
 type ProgressFn = (p: SeedProgress) => void;
 
 /**
- * Resource sourcing for the bookable-resource step. Default is "create" which
- * builds Equipment-type resources from `preset.sampleTechnicians`. Pass
- * `mode: "existing"` plus a list of resource IDs already in the org and the
- * seeder will skip creation and use those for booking work orders instead.
+ * Per-entity sourcing. Same three-mode choice for every step:
+ *   - "create"   → look up by name, create if absent (idempotent default).
+ *   - "existing" → skip creation entirely; register caller-picked records so
+ *                  downstream steps (e.g. work orders) reference them.
+ *   - "skip"     → do nothing for this entity.
  */
 export interface SeedOptions {
-  resources?:
-    | { mode: "create" }
-    | {
-        mode: "existing";
-        existing: Array<{
-          id: string;
-          name: string;
-          /** Optional territory code from the preset to bind to. */
-          territoryCode?: string;
-          /** Optional characteristic name from the preset to bind to. */
-          primarySkill?: string;
-        }>;
-        /**
-         * If true, also create the preset's technicians in addition to the
-         * existing ones. Default false (existing only).
-         */
-        alsoCreateFromPreset?: boolean;
-      };
-  /**
-   * Per-entity sourcing for the catalog tier. For each, "create" (default)
-   * keeps the original behaviour: query-by-name then create from preset.
-   * "existing" skips creation and registers the picked records in the result
-   * map so downstream steps (work orders, bookings) reference them.
-   * "both" does both.
-   */
   territories?: EntityChoice;
   workOrderTypes?: EntityChoice;
   characteristics?: EntityChoice;
   incidentTypes?: EntityChoice;
   products?: EntityChoice;
   accounts?: EntityChoice;
-  /**
-   * Whether to generate work orders + bookings from preset, or skip them
-   * entirely (e.g. when the user just wants the catalog seeded).
-   */
-  workOrders?: { mode: "create" | "skip" };
-  bookings?: { mode: "create" | "skip" };
+  resources?: EntityChoice;
+  workOrders?: EntityChoice;
+  bookings?: EntityChoice;
 }
 
 export interface EntityChoice {
-  mode: "create" | "existing" | "both";
+  mode: "create" | "existing" | "skip";
   existing?: Array<{ id: string; name: string }>;
 }
 
@@ -130,10 +103,15 @@ function registerExisting(
   choice: EntityChoice | undefined,
 ): void {
   if (!choice) return;
-  if (choice.mode === "create") return;
+  if (choice.mode !== "existing") return;
   for (const r of choice.existing ?? []) {
     target[r.name] = r.id;
   }
+}
+
+/** True when this entity step should run preset creation. */
+function shouldCreate(choice: EntityChoice | undefined): boolean {
+  return !choice || choice.mode === "create";
 }
 
 export async function seedFromPreset(
@@ -158,13 +136,13 @@ export async function seedFromPreset(
   // ── Territories ──────────────────────────────────────────────────────────
   const territoryChoice = options.territories ?? { mode: "create" };
   registerExisting(result.territoryIds, territoryChoice);
-  const skipTerritoriesPreset = territoryChoice.mode === "existing";
+  const createTerritories = shouldCreate(territoryChoice);
   onProgress({
     step: "Territories",
     done: 0,
-    total: skipTerritoriesPreset ? 0 : preset.territories.length,
+    total: createTerritories ? preset.territories.length : 0,
   });
-  if (!skipTerritoriesPreset) {
+  if (createTerritories) {
     for (let i = 0; i < preset.territories.length; i++) {
       const t = preset.territories[i];
       const existing = await findByField(dv, "territories", "name", t.name, "territoryid");
@@ -189,13 +167,13 @@ export async function seedFromPreset(
   // ── Work Order Types ─────────────────────────────────────────────────────
   const woTypeChoice = options.workOrderTypes ?? { mode: "create" };
   registerExisting(result.workOrderTypeIds, woTypeChoice);
-  const skipWoTypePreset = woTypeChoice.mode === "existing";
+  const createWoTypes = shouldCreate(woTypeChoice);
   onProgress({
     step: "Work Order Types",
     done: 0,
-    total: skipWoTypePreset ? 0 : preset.workOrderTypes.length,
+    total: createWoTypes ? preset.workOrderTypes.length : 0,
   });
-  if (!skipWoTypePreset) {
+  if (createWoTypes) {
     for (let i = 0; i < preset.workOrderTypes.length; i++) {
       const wt = preset.workOrderTypes[i];
       const existing = await findByField(
@@ -226,13 +204,13 @@ export async function seedFromPreset(
   // ── Characteristics ──────────────────────────────────────────────────────
   const charChoice = options.characteristics ?? { mode: "create" };
   registerExisting(result.characteristicIds, charChoice);
-  const skipCharPreset = charChoice.mode === "existing";
+  const createChars = shouldCreate(charChoice);
   onProgress({
     step: "Characteristics",
     done: 0,
-    total: skipCharPreset ? 0 : preset.characteristics.length,
+    total: createChars ? preset.characteristics.length : 0,
   });
-  if (!skipCharPreset) {
+  if (createChars) {
     for (let i = 0; i < preset.characteristics.length; i++) {
       const c = preset.characteristics[i];
       const existing = await findByField(
@@ -265,10 +243,10 @@ export async function seedFromPreset(
   // ── Incident Types + Service Tasks ───────────────────────────────────────
   const incChoice = options.incidentTypes ?? { mode: "create" };
   registerExisting(result.incidentTypeIds, incChoice);
-  const skipIncPreset = incChoice.mode === "existing";
-  const totalIncidents = skipIncPreset ? 0 : preset.incidentTypes.length;
+  const createIncidents = shouldCreate(incChoice);
+  const totalIncidents = createIncidents ? preset.incidentTypes.length : 0;
   onProgress({ step: "Incident Types", done: 0, total: totalIncidents });
-  if (!skipIncPreset) {
+  if (createIncidents) {
     for (let i = 0; i < totalIncidents; i++) {
       const inc = preset.incidentTypes[i];
       let incidentId = await findByField(
@@ -320,13 +298,13 @@ export async function seedFromPreset(
   // ── Products ─────────────────────────────────────────────────────────────
   const productChoice = options.products ?? { mode: "create" };
   registerExisting(result.productIds, productChoice);
-  const skipProductsPreset = productChoice.mode === "existing";
+  const createProducts = shouldCreate(productChoice);
   onProgress({
     step: "Products",
     done: 0,
-    total: skipProductsPreset ? 0 : preset.products.length,
+    total: createProducts ? preset.products.length : 0,
   });
-  if (!skipProductsPreset) {
+  if (createProducts) {
     for (let i = 0; i < preset.products.length; i++) {
       const p = preset.products[i];
       // productnumber is a default alternate key on product — we can use upsert.
@@ -363,8 +341,8 @@ export async function seedFromPreset(
   // ── Accounts ─────────────────────────────────────────────────────────────
   const accountChoice = options.accounts ?? { mode: "create" };
   registerExisting(result.accountIds, accountChoice);
-  const skipAccountsPreset = accountChoice.mode === "existing";
-  const accounts = skipAccountsPreset ? [] : preset.sampleAccounts ?? [];
+  const createAccounts = shouldCreate(accountChoice);
+  const accounts = createAccounts ? preset.sampleAccounts ?? [] : [];
   onProgress({ step: "Accounts", done: 0, total: accounts.length });
   for (let i = 0; i < accounts.length; i++) {
     const a = accounts[i];
@@ -390,96 +368,11 @@ export async function seedFromPreset(
   }
 
   // ── Bookable Resources (Equipment-type, no admin needed) ─────────────────
-  const existingResources =
-    options.resources?.mode === "existing" ? options.resources.existing : [];
-  const alsoCreate =
-    options.resources?.mode === "existing"
-      ? options.resources.alsoCreateFromPreset === true
-      : true;
-
-  // First, register any existing resources the caller pre-selected. We optionally
-  // bind their primary skill / territory so bookings + Schedule Assistant
-  // continue to work the same as freshly-created technicians.
-  if (existingResources.length > 0) {
-    onProgress({
-      step: "Bookable Resources",
-      done: 0,
-      total: existingResources.length,
-    });
-    for (let i = 0; i < existingResources.length; i++) {
-      const r = existingResources[i];
-      result.resourceIds[r.name] = r.id;
-
-      // Best-effort skill link.
-      if (r.primarySkill) {
-        const charId = result.characteristicIds[r.primarySkill];
-        if (charId) {
-          try {
-            // Avoid duplicating the link if it already exists.
-            const dup = await dv.query<{
-              bookableresourcecharacteristicid: string;
-            }>("bookableresourcecharacteristics", {
-              filter: `_resource_value eq ${r.id} and _characteristic_value eq ${charId}`,
-              select: ["bookableresourcecharacteristicid"],
-              top: 1,
-            });
-            if (!dup[0]) {
-              await dv.create("bookableresourcecharacteristics", {
-                "Resource@odata.bind": `/bookableresources(${r.id})`,
-                "Characteristic@odata.bind": `/characteristics(${charId})`,
-              });
-            }
-          } catch {
-            /* skill linking is non-critical */
-          }
-        }
-      }
-
-      // Best-effort territory link.
-      if (r.territoryCode) {
-        const terrId = result.territoryIds[r.territoryCode];
-        if (terrId) {
-          try {
-            const dup = await dv.query<{ msdyn_resourceterritoryid: string }>(
-              "msdyn_resourceterritories",
-              {
-                filter: `_msdyn_resource_value eq ${r.id} and _msdyn_territory_value eq ${terrId}`,
-                select: ["msdyn_resourceterritoryid"],
-                top: 1,
-              },
-            );
-            if (!dup[0]) {
-              await dv.create("msdyn_resourceterritories", {
-                "msdyn_Resource@odata.bind": `/bookableresources(${r.id})`,
-                "msdyn_Territory@odata.bind": `/territories(${terrId})`,
-                msdyn_description: tag(),
-              });
-            }
-          } catch {
-            /* territory linking is non-critical */
-          }
-        }
-      }
-
-      onProgress({
-        step: "Bookable Resources",
-        done: i + 1,
-        total: existingResources.length,
-        detail: `${r.name} (existing)`,
-      });
-    }
-  }
-
-  // Then, optionally also create the preset's technicians as Equipment resources.
-  const techs = alsoCreate ? preset.sampleTechnicians ?? [] : [];
-  const totalResources = existingResources.length + techs.length;
-  if (techs.length > 0 || existingResources.length === 0) {
-    onProgress({
-      step: "Bookable Resources",
-      done: existingResources.length,
-      total: totalResources,
-    });
-  }
+  const resourceChoice = options.resources ?? { mode: "create" };
+  registerExisting(result.resourceIds, resourceChoice);
+  const createResources = shouldCreate(resourceChoice);
+  const techs = createResources ? preset.sampleTechnicians ?? [] : [];
+  onProgress({ step: "Bookable Resources", done: 0, total: techs.length });
   for (let i = 0; i < techs.length; i++) {
     const t = techs[i];
     let resourceId = await findByField(
@@ -528,8 +421,8 @@ export async function seedFromPreset(
     result.resourceIds[t.name] = resourceId;
     onProgress({
       step: "Bookable Resources",
-      done: existingResources.length + i + 1,
-      total: totalResources,
+      done: i + 1,
+      total: techs.length,
       detail: t.name,
     });
   }
@@ -551,7 +444,7 @@ export async function seedFromPreset(
   const accountIdList = Object.values(result.accountIds);
   const incidentIdList = Object.values(result.incidentTypeIds);
   const woTypeIdList = Object.values(result.workOrderTypeIds);
-  const skipWorkOrders = options.workOrders?.mode === "skip";
+  const skipWorkOrders = (options.workOrders?.mode ?? "create") !== "create";
   const targetWoCount =
     !skipWorkOrders &&
     accountIdList.length > 0 &&
@@ -618,7 +511,7 @@ export async function seedFromPreset(
   // Bookings populate the schedule board. We only book WOs that we set to
   // Scheduled status above, and we spread them across the next 5 business days.
   const resourceIdList = Object.values(result.resourceIds);
-  const skipBookings = options.bookings?.mode === "skip";
+  const skipBookings = (options.bookings?.mode ?? "create") !== "create";
   let bookingTarget = 0;
   if (!skipBookings && scheduledWoIds.length > 0 && resourceIdList.length > 0) {
     bookingTarget = scheduledWoIds.length;

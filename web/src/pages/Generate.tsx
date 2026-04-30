@@ -7,8 +7,6 @@ import {
   CheckCircle,
   CircleNotch,
   ArrowRight,
-  CaretDown,
-  CaretRight,
 } from "@phosphor-icons/react";
 import { AppHeader } from "@/components/AppHeader";
 import { DataverseClient, deepLink } from "@/lib/dataverse";
@@ -16,7 +14,6 @@ import { seedFromPreset, type SeedProgress, type SeedResult, type SeedOptions, t
 import type { FsPreset } from "@/lib/preset";
 import { orgStore } from "@/lib/orgStore";
 import { runHistory } from "@/lib/runHistory";
-import { ResourcePicker, type PickedResource } from "@/components/ResourcePicker";
 import { EntityPicker, type PickedEntity } from "@/components/EntityPicker";
 
 interface StepState {
@@ -56,31 +53,33 @@ export function Generate() {
   const [error, setError] = useState<string | null>(null);
   const [retryNotice, setRetryNotice] = useState<string | null>(null);
   const [result, setResult] = useState<SeedResult | null>(null);
-  const [resourceMode, setResourceMode] = useState<
-    "create" | "existing" | "both"
-  >("create");
-  const [pickedResources, setPickedResources] = useState<PickedResource[]>([]);
 
-  // Per-catalog-type "use existing" config. Default everything to "create".
-  type CatalogKey =
+  // Per-entity sourcing. Same three-mode choice for every step:
+  // "create" (default) / "existing" / "skip".
+  type EntityKey =
     | "territories"
     | "workOrderTypes"
     | "characteristics"
     | "incidentTypes"
     | "products"
-    | "accounts";
-  const [catalogModes, setCatalogModes] = useState<
-    Record<CatalogKey, "create" | "existing" | "both">
-  >({
+    | "accounts"
+    | "resources"
+    | "workOrders"
+    | "bookings";
+  type Mode = "create" | "existing" | "skip";
+  const [entityModes, setEntityModes] = useState<Record<EntityKey, Mode>>({
     territories: "create",
     workOrderTypes: "create",
     characteristics: "create",
     incidentTypes: "create",
     products: "create",
     accounts: "create",
+    resources: "create",
+    workOrders: "create",
+    bookings: "create",
   });
-  const [catalogPicks, setCatalogPicks] = useState<
-    Record<CatalogKey, PickedEntity[]>
+  const [entityPicks, setEntityPicks] = useState<
+    Record<EntityKey, PickedEntity[]>
   >({
     territories: [],
     workOrderTypes: [],
@@ -88,10 +87,16 @@ export function Generate() {
     incidentTypes: [],
     products: [],
     accounts: [],
+    resources: [],
+    workOrders: [],
+    bookings: [],
   });
-  const [woMode, setWoMode] = useState<"create" | "skip">("create");
-  const [bookingMode, setBookingMode] = useState<"create" | "skip">("create");
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  function setMode(k: EntityKey, m: Mode) {
+    setEntityModes((s) => ({ ...s, [k]: m }));
+  }
+  function setPicks(k: EntityKey, v: PickedEntity[]) {
+    setEntityPicks((s) => ({ ...s, [k]: v }));
+  }
 
   useEffect(() => {
     if (!accounts[0]) navigate("/");
@@ -137,37 +142,23 @@ export function Generate() {
         },
       });
       const seedOptions: SeedOptions = {};
-      if (resourceMode === "existing") {
-        seedOptions.resources = {
-          mode: "existing",
-          existing: pickedResources,
-          alsoCreateFromPreset: false,
-        };
-      } else if (resourceMode === "both") {
-        seedOptions.resources = {
-          mode: "existing",
-          existing: pickedResources,
-          alsoCreateFromPreset: true,
-        };
-      }
-      // Wire per-catalog-type choices.
-      const cats: CatalogKey[] = [
+      const keys: EntityKey[] = [
         "territories",
         "workOrderTypes",
         "characteristics",
         "incidentTypes",
         "products",
         "accounts",
+        "resources",
+        "workOrders",
+        "bookings",
       ];
-      for (const k of cats) {
-        const mode = catalogModes[k];
+      for (const k of keys) {
+        const mode = entityModes[k];
         if (mode === "create") continue;
-        const choice: EntityChoice = { mode, existing: catalogPicks[k] };
-        // Type-narrowed assignment — each key is keyof SeedOptions.
+        const choice: EntityChoice = { mode, existing: entityPicks[k] };
         (seedOptions as Record<string, unknown>)[k] = choice;
       }
-      if (woMode === "skip") seedOptions.workOrders = { mode: "skip" };
-      if (bookingMode === "skip") seedOptions.bookings = { mode: "skip" };
       const seedResult = await seedFromPreset(
         dv,
         preset,
@@ -202,285 +193,151 @@ export function Generate() {
 
         {!result && !running && (
           <div className="card p-6 mb-6">
-            <button
-              type="button"
-              onClick={() => setAdvancedOpen((v) => !v)}
-              className="w-full flex items-center justify-between gap-2 text-left"
-            >
-              <div>
-                <h3 className="font-semibold text-white">
-                  Catalog sourcing (advanced)
-                </h3>
-                <p className="text-xs text-muted">
-                  By default we create everything from the preset. Open this
-                  to reuse records that already exist in your org.
-                </p>
-              </div>
-              {advancedOpen ? (
-                <CaretDown size={18} className="text-muted flex-shrink-0" />
-              ) : (
-                <CaretRight size={18} className="text-muted flex-shrink-0" />
-              )}
-            </button>
-
-            {advancedOpen && (
-              <div className="mt-4 space-y-3">
-                <CatalogSourceRow
-                  label="Territories"
-                  hint={`Preset has ${preset.territories.length}.`}
-                  mode={catalogModes.territories}
-                  onModeChange={(m) =>
-                    setCatalogModes((s) => ({ ...s, territories: m }))
-                  }
-                  picker={
-                    <EntityPicker
-                      label="territories"
-                      orgUrl={orgUrl}
-                      entitySet="territories"
-                      idField="territoryid"
-                      nameField="name"
-                      value={catalogPicks.territories}
-                      onChange={(v) =>
-                        setCatalogPicks((s) => ({ ...s, territories: v }))
-                      }
-                    />
-                  }
-                />
-                <CatalogSourceRow
-                  label="Work Order Types"
-                  hint={`Preset has ${preset.workOrderTypes.length}.`}
-                  mode={catalogModes.workOrderTypes}
-                  onModeChange={(m) =>
-                    setCatalogModes((s) => ({ ...s, workOrderTypes: m }))
-                  }
-                  picker={
-                    <EntityPicker
-                      label="work order types"
-                      orgUrl={orgUrl}
-                      entitySet="msdyn_workordertypes"
-                      idField="msdyn_workordertypeid"
-                      nameField="msdyn_name"
-                      value={catalogPicks.workOrderTypes}
-                      onChange={(v) =>
-                        setCatalogPicks((s) => ({ ...s, workOrderTypes: v }))
-                      }
-                    />
-                  }
-                />
-                <CatalogSourceRow
-                  label="Characteristics"
-                  hint={`Preset has ${preset.characteristics.length}.`}
-                  mode={catalogModes.characteristics}
-                  onModeChange={(m) =>
-                    setCatalogModes((s) => ({ ...s, characteristics: m }))
-                  }
-                  picker={
-                    <EntityPicker
-                      label="characteristics"
-                      orgUrl={orgUrl}
-                      entitySet="characteristics"
-                      idField="characteristicid"
-                      nameField="name"
-                      value={catalogPicks.characteristics}
-                      onChange={(v) =>
-                        setCatalogPicks((s) => ({ ...s, characteristics: v }))
-                      }
-                    />
-                  }
-                />
-                <CatalogSourceRow
-                  label="Incident Types"
-                  hint={`Preset has ${preset.incidentTypes.length}.`}
-                  mode={catalogModes.incidentTypes}
-                  onModeChange={(m) =>
-                    setCatalogModes((s) => ({ ...s, incidentTypes: m }))
-                  }
-                  picker={
-                    <EntityPicker
-                      label="incident types"
-                      orgUrl={orgUrl}
-                      entitySet="msdyn_incidenttypes"
-                      idField="msdyn_incidenttypeid"
-                      nameField="msdyn_name"
-                      value={catalogPicks.incidentTypes}
-                      onChange={(v) =>
-                        setCatalogPicks((s) => ({ ...s, incidentTypes: v }))
-                      }
-                    />
-                  }
-                />
-                <CatalogSourceRow
-                  label="Products"
-                  hint={`Preset has ${preset.products.length}.`}
-                  mode={catalogModes.products}
-                  onModeChange={(m) =>
-                    setCatalogModes((s) => ({ ...s, products: m }))
-                  }
-                  picker={
-                    <EntityPicker
-                      label="products"
-                      orgUrl={orgUrl}
-                      entitySet="products"
-                      idField="productid"
-                      nameField="name"
-                      filter="statecode eq 0"
-                      value={catalogPicks.products}
-                      onChange={(v) =>
-                        setCatalogPicks((s) => ({ ...s, products: v }))
-                      }
-                    />
-                  }
-                />
-                <CatalogSourceRow
-                  label="Accounts"
-                  hint={`Preset has ${preset.sampleAccounts?.length ?? 0}.`}
-                  mode={catalogModes.accounts}
-                  onModeChange={(m) =>
-                    setCatalogModes((s) => ({ ...s, accounts: m }))
-                  }
-                  picker={
-                    <EntityPicker
-                      label="accounts"
-                      orgUrl={orgUrl}
-                      entitySet="accounts"
-                      idField="accountid"
-                      nameField="name"
-                      filter="statecode eq 0"
-                      value={catalogPicks.accounts}
-                      onChange={(v) =>
-                        setCatalogPicks((s) => ({ ...s, accounts: v }))
-                      }
-                    />
-                  }
-                />
-
-                <div className="border border-border rounded-lg p-3 bg-bg-base/40">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold text-white">
-                        Work Orders
-                      </div>
-                      <div className="text-xs text-muted">
-                        Generate sample WOs across Open / Scheduled / Closed.
-                      </div>
-                    </div>
-                    <select
-                      aria-label="Work order generation mode"
-                      value={woMode}
-                      onChange={(e) =>
-                        setWoMode(e.target.value as "create" | "skip")
-                      }
-                      className="bg-bg-elevated border border-border rounded px-2 py-1 text-xs text-white"
-                    >
-                      <option value="create">Create from preset</option>
-                      <option value="skip">Skip</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="border border-border rounded-lg p-3 bg-bg-base/40">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold text-white">
-                        Bookings
-                      </div>
-                      <div className="text-xs text-muted">
-                        One booking per Scheduled WO across the next 5 business days.
-                      </div>
-                    </div>
-                    <select
-                      aria-label="Booking generation mode"
-                      value={bookingMode}
-                      onChange={(e) =>
-                        setBookingMode(e.target.value as "create" | "skip")
-                      }
-                      className="bg-bg-elevated border border-border rounded px-2 py-1 text-xs text-white"
-                    >
-                      <option value="create">Create</option>
-                      <option value="skip">Skip</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {!result && !running && (
-          <div className="card p-6 mb-6">
-            <h3 className="font-semibold text-white mb-1">Technicians</h3>
+            <h3 className="font-semibold text-white mb-1">
+              What to load
+            </h3>
             <p className="text-xs text-muted mb-4">
-              Choose where bookable resources for the work-order bookings will
-              come from. Existing resources stay untouched in your org —
-              they're just linked to the new skills, territories, and bookings
-              we generate.
+              For each entity, choose to create from the preset, reuse records
+              already in your org, or skip entirely.
             </p>
-            <div className="space-y-2 mb-3">
-              <label className="flex items-start gap-3 p-3 rounded-lg border border-border bg-bg-base/40 cursor-pointer hover:border-accent/50 transition-colors">
-                <input
-                  type="radio"
-                  name="resourceMode"
-                  className="mt-1 accent-accent"
-                  checked={resourceMode === "create"}
-                  onChange={() => setResourceMode("create")}
-                />
-                <div className="flex-1">
-                  <div className="text-sm font-semibold text-white">
-                    Create from preset
-                  </div>
-                  <div className="text-xs text-muted">
-                    Add the {preset.sampleTechnicians.length} technicians from
-                    your preset as Equipment-type bookable resources. No admin
-                    rights required.
-                  </div>
-                </div>
-              </label>
-              <label className="flex items-start gap-3 p-3 rounded-lg border border-border bg-bg-base/40 cursor-pointer hover:border-accent/50 transition-colors">
-                <input
-                  type="radio"
-                  name="resourceMode"
-                  className="mt-1 accent-accent"
-                  checked={resourceMode === "existing"}
-                  onChange={() => setResourceMode("existing")}
-                />
-                <div className="flex-1">
-                  <div className="text-sm font-semibold text-white">
-                    Use my existing resources
-                  </div>
-                  <div className="text-xs text-muted">
-                    Pick from bookable resources already in your org. Bookings
-                    will be assigned to them instead.
-                  </div>
-                </div>
-              </label>
-              <label className="flex items-start gap-3 p-3 rounded-lg border border-border bg-bg-base/40 cursor-pointer hover:border-accent/50 transition-colors">
-                <input
-                  type="radio"
-                  name="resourceMode"
-                  className="mt-1 accent-accent"
-                  checked={resourceMode === "both"}
-                  onChange={() => setResourceMode("both")}
-                />
-                <div className="flex-1">
-                  <div className="text-sm font-semibold text-white">
-                    Use existing + add preset techs
-                  </div>
-                  <div className="text-xs text-muted">
-                    Combine both — your real resources keep their identity, and
-                    the preset techs are added alongside them.
-                  </div>
-                </div>
-              </label>
-            </div>
-
-            {(resourceMode === "existing" || resourceMode === "both") && (
-              <ResourcePicker
-                orgUrl={orgUrl}
-                preset={preset}
-                value={pickedResources}
-                onChange={setPickedResources}
+            <div className="space-y-3">
+              <EntityRow
+                label="Territories"
+                hint={`Preset has ${preset.territories.length}.`}
+                mode={entityModes.territories}
+                onModeChange={(m) => setMode("territories", m)}
+                picker={
+                  <EntityPicker
+                    label="territories"
+                    orgUrl={orgUrl}
+                    entitySet="territories"
+                    idField="territoryid"
+                    nameField="name"
+                    value={entityPicks.territories}
+                    onChange={(v) => setPicks("territories", v)}
+                  />
+                }
               />
-            )}
+              <EntityRow
+                label="Work Order Types"
+                hint={`Preset has ${preset.workOrderTypes.length}.`}
+                mode={entityModes.workOrderTypes}
+                onModeChange={(m) => setMode("workOrderTypes", m)}
+                picker={
+                  <EntityPicker
+                    label="work order types"
+                    orgUrl={orgUrl}
+                    entitySet="msdyn_workordertypes"
+                    idField="msdyn_workordertypeid"
+                    nameField="msdyn_name"
+                    value={entityPicks.workOrderTypes}
+                    onChange={(v) => setPicks("workOrderTypes", v)}
+                  />
+                }
+              />
+              <EntityRow
+                label="Characteristics"
+                hint={`Preset has ${preset.characteristics.length}.`}
+                mode={entityModes.characteristics}
+                onModeChange={(m) => setMode("characteristics", m)}
+                picker={
+                  <EntityPicker
+                    label="characteristics"
+                    orgUrl={orgUrl}
+                    entitySet="characteristics"
+                    idField="characteristicid"
+                    nameField="name"
+                    value={entityPicks.characteristics}
+                    onChange={(v) => setPicks("characteristics", v)}
+                  />
+                }
+              />
+              <EntityRow
+                label="Incident Types"
+                hint={`Preset has ${preset.incidentTypes.length}.`}
+                mode={entityModes.incidentTypes}
+                onModeChange={(m) => setMode("incidentTypes", m)}
+                picker={
+                  <EntityPicker
+                    label="incident types"
+                    orgUrl={orgUrl}
+                    entitySet="msdyn_incidenttypes"
+                    idField="msdyn_incidenttypeid"
+                    nameField="msdyn_name"
+                    value={entityPicks.incidentTypes}
+                    onChange={(v) => setPicks("incidentTypes", v)}
+                  />
+                }
+              />
+              <EntityRow
+                label="Products"
+                hint={`Preset has ${preset.products.length}.`}
+                mode={entityModes.products}
+                onModeChange={(m) => setMode("products", m)}
+                picker={
+                  <EntityPicker
+                    label="products"
+                    orgUrl={orgUrl}
+                    entitySet="products"
+                    idField="productid"
+                    nameField="name"
+                    filter="statecode eq 0"
+                    value={entityPicks.products}
+                    onChange={(v) => setPicks("products", v)}
+                  />
+                }
+              />
+              <EntityRow
+                label="Accounts"
+                hint={`Preset has ${preset.sampleAccounts?.length ?? 0}.`}
+                mode={entityModes.accounts}
+                onModeChange={(m) => setMode("accounts", m)}
+                picker={
+                  <EntityPicker
+                    label="accounts"
+                    orgUrl={orgUrl}
+                    entitySet="accounts"
+                    idField="accountid"
+                    nameField="name"
+                    filter="statecode eq 0"
+                    value={entityPicks.accounts}
+                    onChange={(v) => setPicks("accounts", v)}
+                  />
+                }
+              />
+              <EntityRow
+                label="Bookable Resources"
+                hint={`Preset has ${preset.sampleTechnicians.length}.`}
+                mode={entityModes.resources}
+                onModeChange={(m) => setMode("resources", m)}
+                picker={
+                  <EntityPicker
+                    label="bookable resources"
+                    orgUrl={orgUrl}
+                    entitySet="bookableresources"
+                    idField="bookableresourceid"
+                    nameField="name"
+                    filter="statecode eq 0 and (resourcetype eq 1 or resourcetype eq 3 or resourcetype eq 4)"
+                    value={entityPicks.resources}
+                    onChange={(v) => setPicks("resources", v)}
+                  />
+                }
+              />
+              <EntityRow
+                label="Work Orders"
+                hint="Sample WOs across Open / Scheduled / Closed."
+                mode={entityModes.workOrders}
+                onModeChange={(m) => setMode("workOrders", m)}
+                hideExisting
+              />
+              <EntityRow
+                label="Bookings"
+                hint="One booking per Scheduled WO across the next 5 business days."
+                mode={entityModes.bookings}
+                onModeChange={(m) => setMode("bookings", m)}
+                hideExisting
+              />
+            </div>
           </div>
         )}
 
@@ -514,14 +371,12 @@ export function Generate() {
                 onClick={handleStart}
                 disabled={
                   running ||
-                  ((resourceMode === "existing" || resourceMode === "both") &&
-                    pickedResources.length === 0) ||
                   (
-                    Object.keys(catalogModes) as Array<keyof typeof catalogModes>
+                    Object.keys(entityModes) as Array<keyof typeof entityModes>
                   ).some(
                     (k) =>
-                      catalogModes[k] === "existing" &&
-                      catalogPicks[k].length === 0,
+                      entityModes[k] === "existing" &&
+                      entityPicks[k].length === 0,
                   )
                 }
                 className="btn-primary flex items-center gap-2 disabled:opacity-50"
@@ -601,18 +456,21 @@ function StepRow({ step }: { step: StepState }) {
   );
 }
 
-function CatalogSourceRow({
+function EntityRow({
   label,
   hint,
   mode,
   onModeChange,
   picker,
+  hideExisting,
 }: {
   label: string;
   hint: string;
-  mode: "create" | "existing" | "both";
-  onModeChange: (m: "create" | "existing" | "both") => void;
-  picker: React.ReactNode;
+  mode: "create" | "existing" | "skip";
+  onModeChange: (m: "create" | "existing" | "skip") => void;
+  picker?: React.ReactNode;
+  /** When true, hide the "Use existing" option (e.g. for Work Orders / Bookings). */
+  hideExisting?: boolean;
 }) {
   return (
     <div className="border border-border rounded-lg p-3 bg-bg-base/40">
@@ -625,16 +483,16 @@ function CatalogSourceRow({
           aria-label={`Sourcing mode for ${label}`}
           value={mode}
           onChange={(e) =>
-            onModeChange(e.target.value as "create" | "existing" | "both")
+            onModeChange(e.target.value as "create" | "existing" | "skip")
           }
           className="bg-bg-elevated border border-border rounded px-2 py-1 text-xs text-white flex-shrink-0"
         >
           <option value="create">Create from preset</option>
-          <option value="existing">Use existing only</option>
-          <option value="both">Use existing + create</option>
+          {!hideExisting && <option value="existing">Use existing</option>}
+          <option value="skip">Skip</option>
         </select>
       </div>
-      {(mode === "existing" || mode === "both") && picker}
+      {mode === "existing" && picker}
     </div>
   );
 }

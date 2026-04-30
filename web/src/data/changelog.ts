@@ -7,9 +7,20 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.7.1";
+export const APP_VERSION = "v1.8.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.8.0",
+    date: "April 30, 2026",
+    tag: "UNIFIED",
+    features: [
+      "Generate page now shows a single, uniform list — every entity (Territories, WO Types, Characteristics, Incident Types, Products, Accounts, Bookable Resources, Work Orders, Bookings) gets the same dropdown: Create from preset / Use existing / Skip.",
+      "Bookable Resources joined the unified list — the dedicated 'Technicians' card and resource picker are gone, plus their old territory/skill side-bindings.",
+      "Removed the 'Use existing + create' combo mode in favour of a clean three-way choice. Reuse means reuse, create means create.",
+      "Work Orders and Bookings keep Create / Skip (no Existing — there's no incoming demo data to reuse for those).",
+    ],
+  },
   {
     version: "v1.7.1",
     date: "April 30, 2026",
