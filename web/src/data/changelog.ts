@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.18.10";
+export const APP_VERSION = "v1.18.11";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.18.11",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Functional Locations / Customer Assets / IoT Alerts now create cleanly.** Verified nav-property casing against `$metadata`: dropped the bogus `msdyn_Account` binding on Functional Locations (it's a many-to-many, not a lookup), switched Customer Assets to lowercase `msdyn_account` / `msdyn_product` plus the correct self-ref nav `msdyn_parentasset_msdyn_customerasset`, and dropped the unsupported account binding on IoT Alerts.",
+    ],
+  },
   {
     version: "v1.18.10",
     date: "April 30, 2026",

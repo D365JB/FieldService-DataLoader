@@ -565,15 +565,14 @@ export async function seedFromPreset(
       findValue: (fl) => fl.name,
       mapKey: (fl) => fl.name,
       build: (fl) => {
-        const accountId = result.accountIds[fl.accountName];
+        // NOTE: Functional Location ↔ Account is a many-to-many relationship
+        // (`msdyn_msdyn_functionallocation_account`), NOT a single lookup, so
+        // we cannot bind an account on create. Verified via $metadata.
         const parentId = fl.parentName ? flMap[fl.parentName] : undefined;
         const payload: Record<string, unknown> = {
           msdyn_name: fl.name,
           msdyn_description: tag(fl.description),
         };
-        if (accountId) {
-          payload["msdyn_Account@odata.bind"] = `/accounts(${accountId})`;
-        }
         if (parentId) {
           payload["msdyn_ParentFunctionalLocation@odata.bind"] =
             `/msdyn_functionallocations(${parentId})`;
@@ -624,18 +623,21 @@ export async function seedFromPreset(
         if (a.serialNumber) {
           payload["msdyn_serialnumber"] = a.serialNumber;
         }
+        // Verified via $metadata: lowercase msdyn_account / msdyn_product,
+        // PascalCase msdyn_FunctionalLocation, and parent-asset uses the
+        // self-relationship nav `msdyn_parentasset_msdyn_customerasset`.
         if (accountId) {
-          payload["msdyn_Account@odata.bind"] = `/accounts(${accountId})`;
+          payload["msdyn_account@odata.bind"] = `/accounts(${accountId})`;
         }
         if (productId) {
-          payload["msdyn_Product@odata.bind"] = `/products(${productId})`;
+          payload["msdyn_product@odata.bind"] = `/products(${productId})`;
         }
         if (flId) {
           payload["msdyn_FunctionalLocation@odata.bind"] =
             `/msdyn_functionallocations(${flId})`;
         }
         if (parentAssetId) {
-          payload["msdyn_ParentAsset@odata.bind"] =
+          payload["msdyn_parentasset_msdyn_customerasset@odata.bind"] =
             `/msdyn_customerassets(${parentAssetId})`;
         }
         return payload;
@@ -1299,7 +1301,8 @@ export async function seedFromPreset(
               }),
               msdyn_severity: template.severity,
               msdyn_iotalertstatus: status,
-              "msdyn_Account@odata.bind": `/accounts(${accountId})`,
+              // msdyn_iotalert has no Account lookup — relationship is
+              // resolved via msdyn_CustomerAsset → msdyn_account. Verified via $metadata.
               "msdyn_CustomerAsset@odata.bind": `/msdyn_customerassets(${assetId})`,
             });
             trackCreated(result, "iotAlerts", alertId);
