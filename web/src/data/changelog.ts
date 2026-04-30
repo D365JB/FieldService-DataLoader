@@ -7,9 +7,19 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.20.1";
+export const APP_VERSION = "v1.20.2";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.20.2",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Products now created with `msdyn_fieldservicetype = Non-Inventory`** so the Field Service plugin allows them on incident-type and work-order product lines. Without this, the FS plugin rejected the link with *“The Field Service product type must be Inventory or Non-Inventory.”*",
+      "**Auto-heals existing products** missing the field service type — the Incident Type Products step now patches any product on the fly when it's neither Inventory nor Non-Inventory, so older runs don't have to be reset first.",
+      "Added a generic `update()` method to the Dataverse client (`PATCH /entityset(id)` with `If-Match: *`) used by the auto-heal path.",
+    ],
+  },
   {
     version: "v1.20.1",
     date: "April 30, 2026",

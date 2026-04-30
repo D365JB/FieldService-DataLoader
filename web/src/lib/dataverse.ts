@@ -215,6 +215,25 @@ export class DataverseClient {
     return "";
   }
 
+  /** PATCH an existing record by id. Use `If-Match: *` to prevent accidental upsert. */
+  async update(
+    entitySet: string,
+    id: string,
+    body: Record<string, unknown>,
+  ): Promise<void> {
+    const res = await this.request(`/${entitySet}(${id})`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "If-Match": "*",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      await this.json(res, `update ${entitySet}`);
+    }
+  }
+
   /** DELETE by id. */
   async delete(entitySet: string, id: string): Promise<void> {
     const res = await this.request(`/${entitySet}(${id})`, { method: "DELETE" });

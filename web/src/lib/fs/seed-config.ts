@@ -456,6 +456,11 @@ export async function seedFromPreset(
           // Sensible defaults to avoid required-field rejections:
           productstructure: 1, // Product
           statecode: 0, // Draft (cannot create as Active without a price list).
+          // Field Service requires a product type for any product referenced
+          // by msdyn_incidenttypeproduct / msdyn_workorderproduct. Default to
+          // Non-Inventory (690970001) so it works without warehouse stock.
+          // 690970000 = Inventory, 690970001 = Non-Inventory, 690970002 = Service.
+          msdyn_fieldservicetype: 690970001,
         };
         if (defaultUomScheduleId) {
           payload["defaultuomscheduleid@odata.bind"] = `/uomschedules(${defaultUomScheduleId})`;
@@ -514,13 +519,29 @@ export async function seedFromPreset(
         });
         let id = existing[0]?.msdyn_incidenttypeproductid;
         if (!id) {
-          // Look up the product's default UoM (msdyn_estimateunit is required).
+          // Look up the product's default UoM (msdyn_unit is required).
           let uomId: string | null = null;
           try {
             const prod = await dv.retrieve<{
               _defaultuomid_value: string;
-            }>("products", productId, ["_defaultuomid_value"]);
+              msdyn_fieldservicetype: number | null;
+            }>("products", productId, [
+              "_defaultuomid_value",
+              "msdyn_fieldservicetype",
+            ]);
             uomId = prod._defaultuomid_value ?? null;
+            // FS plugin requires Inventory (690970000) or Non-Inventory (690970001)
+            // before a product can be referenced by msdyn_incidenttypeproduct.
+            // Patch any product that's missing it (e.g. seeded by v1.20.0 or
+            // earlier) up to Non-Inventory so the link succeeds.
+            if (
+              prod.msdyn_fieldservicetype !== 690970000 &&
+              prod.msdyn_fieldservicetype !== 690970001
+            ) {
+              await dv.update("products", productId, {
+                msdyn_fieldservicetype: 690970001,
+              });
+            }
           } catch {
             /* fall through — we'll create without UoM if Dataverse allows */
           }
