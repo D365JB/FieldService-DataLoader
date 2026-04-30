@@ -10,9 +10,10 @@ import {
 } from "@phosphor-icons/react";
 import { AppHeader } from "@/components/AppHeader";
 import { DataverseClient, deepLink } from "@/lib/dataverse";
-import { seedFromPreset, type SeedProgress, type SeedResult } from "@/lib/fs/seed-config";
+import { seedFromPreset, type SeedProgress, type SeedResult, type SeedOptions } from "@/lib/fs/seed-config";
 import type { FsPreset } from "@/lib/preset";
 import { orgStore } from "@/lib/orgStore";
+import { ResourcePicker, type PickedResource } from "@/components/ResourcePicker";
 
 interface StepState {
   name: string;
@@ -51,6 +52,10 @@ export function Generate() {
   const [error, setError] = useState<string | null>(null);
   const [retryNotice, setRetryNotice] = useState<string | null>(null);
   const [result, setResult] = useState<SeedResult | null>(null);
+  const [resourceMode, setResourceMode] = useState<
+    "create" | "existing" | "both"
+  >("create");
+  const [pickedResources, setPickedResources] = useState<PickedResource[]>([]);
 
   useEffect(() => {
     if (!accounts[0]) navigate("/");
@@ -95,7 +100,26 @@ export function Generate() {
           );
         },
       });
-      const seedResult = await seedFromPreset(dv, preset, applyProgress);
+      const seedOptions: SeedOptions = {};
+      if (resourceMode === "existing") {
+        seedOptions.resources = {
+          mode: "existing",
+          existing: pickedResources,
+          alsoCreateFromPreset: false,
+        };
+      } else if (resourceMode === "both") {
+        seedOptions.resources = {
+          mode: "existing",
+          existing: pickedResources,
+          alsoCreateFromPreset: true,
+        };
+      }
+      const seedResult = await seedFromPreset(
+        dv,
+        preset,
+        applyProgress,
+        seedOptions,
+      );
       setResult(seedResult);
       // Mark all steps complete (in case last step had total 0).
       setSteps((prev) => prev.map((s) => ({ ...s, status: "complete" })));
@@ -120,6 +144,84 @@ export function Generate() {
           <strong className="text-white">{preset.companyName}</strong> into{" "}
           <code className="text-accent">{new URL(orgUrl).host}</code>.
         </p>
+
+        {!result && !running && (
+          <div className="card p-6 mb-6">
+            <h3 className="font-semibold text-white mb-1">Technicians</h3>
+            <p className="text-xs text-muted mb-4">
+              Choose where bookable resources for the work-order bookings will
+              come from. Existing resources stay untouched in your org —
+              they're just linked to the new skills, territories, and bookings
+              we generate.
+            </p>
+            <div className="space-y-2 mb-3">
+              <label className="flex items-start gap-3 p-3 rounded-lg border border-border bg-bg-base/40 cursor-pointer hover:border-accent/50 transition-colors">
+                <input
+                  type="radio"
+                  name="resourceMode"
+                  className="mt-1 accent-accent"
+                  checked={resourceMode === "create"}
+                  onChange={() => setResourceMode("create")}
+                />
+                <div className="flex-1">
+                  <div className="text-sm font-semibold text-white">
+                    Create from preset
+                  </div>
+                  <div className="text-xs text-muted">
+                    Add the {preset.sampleTechnicians.length} technicians from
+                    your preset as Equipment-type bookable resources. No admin
+                    rights required.
+                  </div>
+                </div>
+              </label>
+              <label className="flex items-start gap-3 p-3 rounded-lg border border-border bg-bg-base/40 cursor-pointer hover:border-accent/50 transition-colors">
+                <input
+                  type="radio"
+                  name="resourceMode"
+                  className="mt-1 accent-accent"
+                  checked={resourceMode === "existing"}
+                  onChange={() => setResourceMode("existing")}
+                />
+                <div className="flex-1">
+                  <div className="text-sm font-semibold text-white">
+                    Use my existing resources
+                  </div>
+                  <div className="text-xs text-muted">
+                    Pick from bookable resources already in your org. Bookings
+                    will be assigned to them instead.
+                  </div>
+                </div>
+              </label>
+              <label className="flex items-start gap-3 p-3 rounded-lg border border-border bg-bg-base/40 cursor-pointer hover:border-accent/50 transition-colors">
+                <input
+                  type="radio"
+                  name="resourceMode"
+                  className="mt-1 accent-accent"
+                  checked={resourceMode === "both"}
+                  onChange={() => setResourceMode("both")}
+                />
+                <div className="flex-1">
+                  <div className="text-sm font-semibold text-white">
+                    Use existing + add preset techs
+                  </div>
+                  <div className="text-xs text-muted">
+                    Combine both — your real resources keep their identity, and
+                    the preset techs are added alongside them.
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            {(resourceMode === "existing" || resourceMode === "both") && (
+              <ResourcePicker
+                orgUrl={orgUrl}
+                preset={preset}
+                value={pickedResources}
+                onChange={setPickedResources}
+              />
+            )}
+          </div>
+        )}
 
         <div className="card p-6 mb-6">
           <div className="space-y-3">
@@ -149,7 +251,11 @@ export function Generate() {
             {!result ? (
               <button
                 onClick={handleStart}
-                disabled={running}
+                disabled={
+                  running ||
+                  ((resourceMode === "existing" || resourceMode === "both") &&
+                    pickedResources.length === 0)
+                }
                 className="btn-primary flex items-center gap-2 disabled:opacity-50"
               >
                 <Sparkle size={18} weight="bold" />

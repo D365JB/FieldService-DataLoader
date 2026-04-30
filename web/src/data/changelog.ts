@@ -7,9 +7,19 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.3.0";
+export const APP_VERSION = "v1.4.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.4.0",
+    date: "April 30, 2026",
+    tag: "RESOURCES",
+    features: [
+      "New \u201cTechnicians\u201d step on the Generate screen lets you pick where bookable resources come from: create the preset technicians as Equipment-type resources (default), use existing resources already in your D365 org, or combine both.",
+      "Resource picker queries your org's active User, Contact, and Equipment bookable resources and lets you multi-select them, with optional per-resource territory and primary-skill bindings.",
+      "When existing resources are selected, work-order bookings round-robin across them \u2014 no synthetic Equipment records are created unless you ask for them.",
+    ],
+  },
   {
     version: "v1.3.0",
     date: "April 30, 2026",

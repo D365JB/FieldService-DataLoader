@@ -33,6 +33,33 @@ export interface SeedResult {
 
 type ProgressFn = (p: SeedProgress) => void;
 
+/**
+ * Resource sourcing for the bookable-resource step. Default is "create" which
+ * builds Equipment-type resources from `preset.sampleTechnicians`. Pass
+ * `mode: "existing"` plus a list of resource IDs already in the org and the
+ * seeder will skip creation and use those for booking work orders instead.
+ */
+export interface SeedOptions {
+  resources?:
+    | { mode: "create" }
+    | {
+        mode: "existing";
+        existing: Array<{
+          id: string;
+          name: string;
+          /** Optional territory code from the preset to bind to. */
+          territoryCode?: string;
+          /** Optional characteristic name from the preset to bind to. */
+          primarySkill?: string;
+        }>;
+        /**
+         * If true, also create the preset's technicians in addition to the
+         * existing ones. Default false (existing only).
+         */
+        alsoCreateFromPreset?: boolean;
+      };
+}
+
 function tag(description?: string): string {
   return `${DEMO_TAG}: ${description ?? ""}`.trim();
 }
@@ -58,6 +85,7 @@ export async function seedFromPreset(
   dv: DataverseClient,
   preset: FsPreset,
   onProgress: ProgressFn,
+  options: SeedOptions = {},
 ): Promise<SeedResult> {
   const result: SeedResult = {
     territoryIds: {},
@@ -270,8 +298,96 @@ export async function seedFromPreset(
   }
 
   // ── Bookable Resources (Equipment-type, no admin needed) ─────────────────
-  const techs = preset.sampleTechnicians ?? [];
-  onProgress({ step: "Bookable Resources", done: 0, total: techs.length });
+  const existingResources =
+    options.resources?.mode === "existing" ? options.resources.existing : [];
+  const alsoCreate =
+    options.resources?.mode === "existing"
+      ? options.resources.alsoCreateFromPreset === true
+      : true;
+
+  // First, register any existing resources the caller pre-selected. We optionally
+  // bind their primary skill / territory so bookings + Schedule Assistant
+  // continue to work the same as freshly-created technicians.
+  if (existingResources.length > 0) {
+    onProgress({
+      step: "Bookable Resources",
+      done: 0,
+      total: existingResources.length,
+    });
+    for (let i = 0; i < existingResources.length; i++) {
+      const r = existingResources[i];
+      result.resourceIds[r.name] = r.id;
+
+      // Best-effort skill link.
+      if (r.primarySkill) {
+        const charId = result.characteristicIds[r.primarySkill];
+        if (charId) {
+          try {
+            // Avoid duplicating the link if it already exists.
+            const dup = await dv.query<{
+              bookableresourcecharacteristicid: string;
+            }>("bookableresourcecharacteristics", {
+              filter: `_resource_value eq ${r.id} and _characteristic_value eq ${charId}`,
+              select: ["bookableresourcecharacteristicid"],
+              top: 1,
+            });
+            if (!dup[0]) {
+              await dv.create("bookableresourcecharacteristics", {
+                "Resource@odata.bind": `/bookableresources(${r.id})`,
+                "Characteristic@odata.bind": `/characteristics(${charId})`,
+              });
+            }
+          } catch {
+            /* skill linking is non-critical */
+          }
+        }
+      }
+
+      // Best-effort territory link.
+      if (r.territoryCode) {
+        const terrId = result.territoryIds[r.territoryCode];
+        if (terrId) {
+          try {
+            const dup = await dv.query<{ msdyn_resourceterritoryid: string }>(
+              "msdyn_resourceterritories",
+              {
+                filter: `_msdyn_resource_value eq ${r.id} and _msdyn_territory_value eq ${terrId}`,
+                select: ["msdyn_resourceterritoryid"],
+                top: 1,
+              },
+            );
+            if (!dup[0]) {
+              await dv.create("msdyn_resourceterritories", {
+                "msdyn_Resource@odata.bind": `/bookableresources(${r.id})`,
+                "msdyn_Territory@odata.bind": `/territories(${terrId})`,
+                msdyn_description: tag(),
+              });
+            }
+          } catch {
+            /* territory linking is non-critical */
+          }
+        }
+      }
+
+      onProgress({
+        step: "Bookable Resources",
+        done: i + 1,
+        total: existingResources.length,
+        detail: `${r.name} (existing)`,
+      });
+    }
+  }
+
+  // Then, optionally also create the preset's technicians as Equipment resources.
+  const techs = alsoCreate ? preset.sampleTechnicians ?? [] : [];
+  const totalResources = existingResources.length + techs.length;
+  if (techs.length > 0 || existingResources.length === 0) {
+    onProgress({
+      step: "Bookable Resources",
+      done: existingResources.length,
+      total: totalResources,
+    });
+  }
   for (let i = 0; i < techs.length; i++) {
     const t = techs[i];
     let resourceId = await findByField(
@@ -319,8 +435,8 @@ export async function seedFromPreset(
     result.resourceIds[t.name] = resourceId;
     onProgress({
       step: "Bookable Resources",
-      done: i + 1,
-      total: techs.length,
+      done: existingResources.length + i + 1,
+      total: totalResources,
       detail: t.name,
     });
   }
