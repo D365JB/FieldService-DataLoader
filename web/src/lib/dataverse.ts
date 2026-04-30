@@ -258,6 +258,7 @@ function entitySetToLogical(entitySet: string): string {
     msdyn_workordertypes: "msdyn_workordertype",
     msdyn_incidenttypes: "msdyn_incidenttype",
     msdyn_incidenttypeservicetasks: "msdyn_incidenttypeservicetask",
+    msdyn_incidenttypeproducts: "msdyn_incidenttypeproduct",
     characteristics: "characteristic",
   };
   return map[entitySet] ?? entitySet.replace(/s$/, "");

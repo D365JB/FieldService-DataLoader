@@ -7,9 +7,21 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.19.1";
+export const APP_VERSION = "v1.20.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.20.0",
+    date: "April 30, 2026",
+    tag: "FIX + FEATURE",
+    features: [
+      "**Work orders now actually land in Dataverse.** The WO loop previously had a `try/catch` that swallowed every Dataverse 400 and still ticked the progress bar to 16/16 — so the UI showed all green even when zero rows were created. The catch is gone; real errors now surface immediately.",
+      "**Work orders bind a price list.** Most Field Service configs require `msdyn_pricelist` on `msdyn_workorder`. The price-list resolver from v1.19.1 is now shared between agreements and work orders, and is called before the WO loop starts (auto-creates one if the org has none).",
+      "**🆕 Incident Type ↔ Product mappings.** New step (`msdyn_incidenttypeproduct`) runs after Products. Each incident type gets ~3 products attached as Estimated lines with quantity 1. When a tech opens a work order with that incident type, Field Service auto-copies these as `msdyn_workorderproduct` rows — exactly the demo flow customers ask about.",
+      "**Per-run delete cleans up the new mappings + price list** in the right order (mappings → WOs → agreements → price list).",
+      "**Reset breakdown** lists \"Incident Type Products\" alongside the rest of the entities.",
+    ],
+  },
   {
     version: "v1.19.1",
     date: "April 30, 2026",

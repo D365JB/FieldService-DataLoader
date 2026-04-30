@@ -39,6 +39,9 @@ const phase2EntityOrder: Array<{
   { key: "workOrderServiceTasks", label: "WO Service Tasks", entitySet: "msdyn_workorderservicetasks", phase: "beforeWo" },
   { key: "workOrderProducts", label: "WO Products", entitySet: "msdyn_workorderproducts", phase: "beforeWo" },
   { key: "timeEntries", label: "Time Entries", entitySet: "msdyn_timeentries", phase: "beforeWo" },
+  // Incident-type → product mapping rows. Safe to delete before WOs since
+  // the relationship is one-way (msdyn_workorderproduct does not FK back).
+  { key: "incidentTypeProducts", label: "Incident Type Products", entitySet: "msdyn_incidenttypeproducts", phase: "beforeWo" },
 
   // ── afterWo (delete AFTER work orders, child-first) ────────────────────
   // Phase 6 — IoT alerts reference customer assets, delete before them.
@@ -134,6 +137,7 @@ export interface SeedOptions {
   workOrderProducts?: EntityChoice;
   timeEntries?: EntityChoice;
   iotAlerts?: EntityChoice;
+  incidentTypeProducts?: EntityChoice;
 }
 
 export interface EntityChoice {
@@ -465,6 +469,81 @@ export async function seedFromPreset(
     onProgress,
   );
 
+  // ── Incident Type ↔ Product mappings ─────────────────────────────────────
+  // Incident types must be created BEFORE products (Field Service ordering),
+  // so we attach the products in a separate pass once both catalogs exist.
+  // Each incident type gets ~3 products bound via msdyn_incidenttypeproduct,
+  // marked Estimated (690970000) with quantity 1. When a work order is later
+  // created with that incident type, FS auto-copies these as msdyn_workorderproduct.
+  const itpMap = getIdMap(result, "incidentTypeProducts");
+  const skipIncidentTypeProducts =
+    (options.incidentTypeProducts?.mode ?? "create") !== "create";
+  const incidentIdsForLink = Object.values(result.incidentTypeIds);
+  const productIdsForLink = Object.values(result.productIds);
+  if (
+    !skipIncidentTypeProducts &&
+    incidentIdsForLink.length > 0 &&
+    productIdsForLink.length > 0
+  ) {
+    const productsPerIncident = Math.min(3, productIdsForLink.length);
+    const total = incidentIdsForLink.length * productsPerIncident;
+    onProgress({ step: "Incident Type Products", done: 0, total });
+    let done = 0;
+    for (let i = 0; i < incidentIdsForLink.length; i++) {
+      const incidentId = incidentIdsForLink[i];
+      // Resolve each product's default UoM lazily (cached).
+      for (let j = 0; j < productsPerIncident; j++) {
+        const productId = productIdsForLink[(i + j) % productIdsForLink.length];
+        const linkKey = `${incidentId}:${productId}`;
+        if (itpMap[linkKey]) {
+          done += 1;
+          onProgress({ step: "Incident Type Products", done, total });
+          continue;
+        }
+        // Idempotency: skip if a row for this (incident,product) pair already
+        // exists in the org from a prior run.
+        const filter =
+          `_msdyn_incidenttype_value eq ${incidentId} ` +
+          `and _msdyn_product_value eq ${productId}`;
+        const existing = await dv.query<{
+          msdyn_incidenttypeproductid: string;
+        }>("msdyn_incidenttypeproducts", {
+          filter,
+          select: ["msdyn_incidenttypeproductid"],
+          top: 1,
+        });
+        let id = existing[0]?.msdyn_incidenttypeproductid;
+        if (!id) {
+          // Look up the product's default UoM (msdyn_estimateunit is required).
+          let uomId: string | null = null;
+          try {
+            const prod = await dv.retrieve<{
+              _defaultuomid_value: string;
+            }>("products", productId, ["_defaultuomid_value"]);
+            uomId = prod._defaultuomid_value ?? null;
+          } catch {
+            /* fall through — we'll create without UoM if Dataverse allows */
+          }
+          const payload: Record<string, unknown> = {
+            "msdyn_incidenttype@odata.bind": `/msdyn_incidenttypes(${incidentId})`,
+            "msdyn_product@odata.bind": `/products(${productId})`,
+            msdyn_estimateduration: 1,
+            // 690970000 = Estimated, 690970001 = Used.
+            msdyn_lineitemtype: 690970000,
+          };
+          if (uomId) {
+            payload["msdyn_estimateunit@odata.bind"] = `/uoms(${uomId})`;
+          }
+          id = await dv.create("msdyn_incidenttypeproducts", payload);
+          trackCreated(result, "incidentTypeProducts", id);
+        }
+        itpMap[linkKey] = id;
+        done += 1;
+        onProgress({ step: "Incident Type Products", done, total });
+      }
+    }
+  }
+
   // ── Accounts ─────────────────────────────────────────────────────────────
   await runEntityStep(
     dv,
@@ -707,8 +786,13 @@ export async function seedFromPreset(
   // default once — prefer any active price list in the org. If none exists
   // (fresh / minimal orgs), auto-create one tied to the org's base currency
   // so demo generation can proceed without manual setup.
+  // The resolver is memoized: once we've found / created a price list, both
+  // agreements AND work orders bind to the same one.
   let defaultPriceListId: string | null = null;
-  if (agreements.length && options.agreements?.mode !== "skip") {
+  let priceListResolved = false;
+  async function ensurePriceList(): Promise<string | null> {
+    if (priceListResolved) return defaultPriceListId;
+    priceListResolved = true;
     try {
       const priceLists = await dv.query<{ pricelevelid: string }>(
         "pricelevels",
@@ -720,54 +804,57 @@ export async function seedFromPreset(
       );
       if (priceLists[0]) {
         defaultPriceListId = priceLists[0].pricelevelid;
-      } else {
-        // No price list in the org — try to create a demo one. Need a
-        // currency; prefer the org's base currency, fall back to any.
-        let currencyId: string | null = null;
-        try {
-          const orgs = await dv.query<{
-            _basecurrencyid_value: string;
-          }>("organizations", {
-            select: ["_basecurrencyid_value"],
-            top: 1,
-          });
-          currencyId = orgs[0]?._basecurrencyid_value ?? null;
-        } catch {
-          /* fall through to any-currency lookup */
-        }
-        if (!currencyId) {
-          const currencies = await dv.query<{ transactioncurrencyid: string }>(
-            "transactioncurrencies",
-            {
-              select: ["transactioncurrencyid"],
-              filter: "statecode eq 0",
-              top: 1,
-            },
-          );
-          currencyId = currencies[0]?.transactioncurrencyid ?? null;
-        }
-        if (!currencyId) {
-          throw new Error(
-            "Cannot create agreements: this org has no price list and no active currency to attach one to. Create a price list in Sales → Price Lists, then re-run.",
-          );
-        }
-        const newId = await dv.create("pricelevels", {
-          name: tag("FSDL Demo Price List"),
-          "transactioncurrencyid@odata.bind":
-            `/transactioncurrencies(${currencyId})`,
-        });
-        defaultPriceListId = newId;
-        // Track so per-run delete can clean it up.
-        trackCreated(result, "priceLists", newId);
+        return defaultPriceListId;
       }
+      // No price list in the org — try to create a demo one. Need a
+      // currency; prefer the org's base currency, fall back to any.
+      let currencyId: string | null = null;
+      try {
+        const orgs = await dv.query<{
+          _basecurrencyid_value: string;
+        }>("organizations", {
+          select: ["_basecurrencyid_value"],
+          top: 1,
+        });
+        currencyId = orgs[0]?._basecurrencyid_value ?? null;
+      } catch {
+        /* fall through to any-currency lookup */
+      }
+      if (!currencyId) {
+        const currencies = await dv.query<{ transactioncurrencyid: string }>(
+          "transactioncurrencies",
+          {
+            select: ["transactioncurrencyid"],
+            filter: "statecode eq 0",
+            top: 1,
+          },
+        );
+        currencyId = currencies[0]?.transactioncurrencyid ?? null;
+      }
+      if (!currencyId) {
+        throw new Error(
+          "This org has no price list and no active currency to attach one to. Create a price list in Sales → Price Lists, then re-run.",
+        );
+      }
+      const newId = await dv.create("pricelevels", {
+        name: tag("FSDL Demo Price List"),
+        "transactioncurrencyid@odata.bind":
+          `/transactioncurrencies(${currencyId})`,
+      });
+      defaultPriceListId = newId;
+      // Track so per-run delete can clean it up.
+      trackCreated(result, "priceLists", newId);
+      return defaultPriceListId;
     } catch (err) {
-      // Surface the failure now — agreement create would fail anyway with a
-      // less actionable "The price list must be set." error.
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(
-        `Could not resolve or create a price list (required for msdyn_agreement). ${msg}`,
+        `Could not resolve or create a price list (required by Field Service for agreements and work orders). ${msg}`,
       );
     }
+  }
+
+  if (agreements.length && options.agreements?.mode !== "skip") {
+    await ensurePriceList();
   }
   await runEntityStep(
     dv,
@@ -988,6 +1075,11 @@ export async function seedFromPreset(
     woTypeIdList.length > 0
       ? Math.min(accountIdList.length * 2, 24)
       : 0;
+  // Work orders also require msdyn_pricelist in most FS configs. Resolve
+  // (and auto-create if needed) BEFORE the loop so we don't silently fail
+  // 16 times in a row.
+  const woPriceListId =
+    targetWoCount > 0 ? await ensurePriceList() : null;
   onProgress({ step: "Work Orders", done: 0, total: targetWoCount });
   const scheduledWoIds: string[] = [];
   // Per-WO metadata used by Phase 4 (WO Products + Time Entries) so we don't
@@ -1011,38 +1103,32 @@ export async function seedFromPreset(
     );
     let woId = existing[0]?.msdyn_workorderid;
     if (!woId) {
-      try {
-        const woPayload: Record<string, unknown> = {
-          msdyn_workordersummary: summary,
-          msdyn_systemstatus: status,
-          "msdyn_serviceaccount@odata.bind": `/accounts(${accountId})`,
-          "msdyn_billingaccount@odata.bind": `/accounts(${accountId})`,
-          "msdyn_workordertype@odata.bind": `/msdyn_workordertypes(${woTypeId})`,
-          "msdyn_primaryincidenttype@odata.bind": `/msdyn_incidenttypes(${incidentId})`,
-        };
-        // Phase 2: attach a customer asset for this account if we have one.
-        // Round-robin through the account's assets so multiple WOs against
-        // the same account spread across different equipment.
-        const accountAssets = assetsByAccount[accountId] ?? [];
-        if (accountAssets.length > 0) {
-          const assetId = accountAssets[i % accountAssets.length];
-          woPayload["msdyn_customerasset@odata.bind"] =
-            `/msdyn_customerassets(${assetId})`;
-        }
-        woId = await dv.create("msdyn_workorders", woPayload);
-      } catch (e) {
-        // Some FS configs require additional fields (price list, tax code). Skip
-        // gracefully — the catalog is still seeded; just no WOs.
-        onProgress({
-          step: "Work Orders",
-          done: i + 1,
-          total: targetWoCount,
-          detail: `Skipped (${(e as Error).message?.slice(0, 60) ?? "error"})`,
-        });
-        continue;
+      const woPayload: Record<string, unknown> = {
+        msdyn_workordersummary: summary,
+        msdyn_systemstatus: status,
+        "msdyn_serviceaccount@odata.bind": `/accounts(${accountId})`,
+        "msdyn_billingaccount@odata.bind": `/accounts(${accountId})`,
+        "msdyn_workordertype@odata.bind": `/msdyn_workordertypes(${woTypeId})`,
+        "msdyn_primaryincidenttype@odata.bind": `/msdyn_incidenttypes(${incidentId})`,
+      };
+      if (woPriceListId) {
+        woPayload["msdyn_pricelist@odata.bind"] = `/pricelevels(${woPriceListId})`;
       }
+      // Phase 2: attach a customer asset for this account if we have one.
+      // Round-robin through the account's assets so multiple WOs against
+      // the same account spread across different equipment.
+      const accountAssets = assetsByAccount[accountId] ?? [];
+      if (accountAssets.length > 0) {
+        const assetId = accountAssets[i % accountAssets.length];
+        woPayload["msdyn_customerasset@odata.bind"] =
+          `/msdyn_customerassets(${assetId})`;
+      }
+      // Surface real failures instead of silently swallowing them — historically
+      // the catch here marked all 16 WOs "complete" while none actually landed.
+      woId = await dv.create("msdyn_workorders", woPayload);
     }
     result.workOrderIds.push(woId);
+    trackCreated(result, "workOrders", woId);
     woMeta.push({ woId, status, accountId });
     if (status === 690970001) {
       scheduledWoIds.push(woId);

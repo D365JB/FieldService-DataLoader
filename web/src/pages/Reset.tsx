@@ -34,6 +34,7 @@ function summarizeRun(run: RunRecord): Array<{ label: string; count: number }> {
     { label: "Incident Types", count: Object.keys(r.incidentTypeIds).length },
     { label: "Characteristics (Skills)", count: Object.keys(r.characteristicIds).length },
     { label: "Products", count: Object.keys(r.productIds).length },
+    { label: "Incident Type Products", count: Object.keys(idMaps.incidentTypeProducts ?? {}).length },
     { label: "Accounts", count: Object.keys(r.accountIds).length },
     { label: "Bookable Resources (created)", count: r.createdResourceIds.length },
     { label: "Functional Locations", count: Object.keys(idMaps.functionalLocations ?? {}).length },

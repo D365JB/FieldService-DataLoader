@@ -31,6 +31,7 @@ const STEP_ORDER = [
   "Characteristics",
   "Incident Types",
   "Products",
+  "Incident Type Products",
   "Accounts",
   "Bookable Resources",
   "Functional Locations",
@@ -63,6 +64,7 @@ const DEPENDENCIES: Record<string, string[]> = {
   timeEntries: ["bookings"],
   iotAlerts: ["customerAssets"],
   productInventory: ["warehouses", "products"],
+  incidentTypeProducts: ["incidentTypes", "products"],
 };
 
 const ENTITY_LABELS: Record<string, string> = {
@@ -85,6 +87,7 @@ const ENTITY_LABELS: Record<string, string> = {
   workOrderProducts: "WO Products",
   timeEntries: "Time Entries",
   iotAlerts: "IoT Alerts",
+  incidentTypeProducts: "Incident Type Products",
 };
 
 export function Generate() {
@@ -770,6 +773,7 @@ function ResultSummary({
     { title: "Incident Types", entitySet: "msdyn_incidenttypes", ids: result.incidentTypeIds },
     { title: "Characteristics", entitySet: "characteristics", ids: result.characteristicIds },
     { title: "Products", entitySet: "products", ids: result.productIds },
+    { title: "Incident Type Products", entitySet: "msdyn_incidenttypeproducts", ids: fromIdMap("incidentTypeProducts") },
     { title: "Accounts", entitySet: "accounts", ids: result.accountIds },
     { title: "Bookable Resources", entitySet: "bookableresources", ids: result.resourceIds },
     { title: "Functional Locations", entitySet: "msdyn_functionallocations", ids: fromIdMap("functionalLocations") },
