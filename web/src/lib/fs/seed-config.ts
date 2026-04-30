@@ -460,7 +460,7 @@ export async function seedFromPreset(
           // by msdyn_incidenttypeproduct / msdyn_workorderproduct. Default to
           // Non-Inventory (690970001) so it works without warehouse stock.
           // 690970000 = Inventory, 690970001 = Non-Inventory, 690970002 = Service.
-          msdyn_fieldservicetype: 690970001,
+          msdyn_fieldserviceproducttype: 690970001,
         };
         if (defaultUomScheduleId) {
           payload["defaultuomscheduleid@odata.bind"] = `/uomschedules(${defaultUomScheduleId})`;
@@ -519,31 +519,30 @@ export async function seedFromPreset(
         });
         let id = existing[0]?.msdyn_incidenttypeproductid;
         if (!id) {
-          // Look up the product's default UoM (msdyn_unit is required).
+          // Look up the product's default UoM (msdyn_unit is required) and
+          // verify its Field Service product type. Errors here surface
+          // directly so schema mismatches don't masquerade as FS-plugin
+          // failures (we wasted a few iterations on that).
           let uomId: string | null = null;
-          try {
-            const prod = await dv.retrieve<{
-              _defaultuomid_value: string;
-              msdyn_fieldservicetype: number | null;
-            }>("products", productId, [
-              "_defaultuomid_value",
-              "msdyn_fieldservicetype",
-            ]);
-            uomId = prod._defaultuomid_value ?? null;
-            // FS plugin requires Inventory (690970000) or Non-Inventory (690970001)
-            // before a product can be referenced by msdyn_incidenttypeproduct.
-            // Patch any product that's missing it (e.g. seeded by v1.20.0 or
-            // earlier) up to Non-Inventory so the link succeeds.
-            if (
-              prod.msdyn_fieldservicetype !== 690970000 &&
-              prod.msdyn_fieldservicetype !== 690970001
-            ) {
-              await dv.update("products", productId, {
-                msdyn_fieldservicetype: 690970001,
-              });
-            }
-          } catch {
-            /* fall through — we'll create without UoM if Dataverse allows */
+          const prod = await dv.retrieve<{
+            _defaultuomid_value: string;
+            msdyn_fieldserviceproducttype: number | null;
+          }>("products", productId, [
+            "_defaultuomid_value",
+            "msdyn_fieldserviceproducttype",
+          ]);
+          uomId = prod._defaultuomid_value ?? null;
+          // FS plugin requires Inventory (690970000) or Non-Inventory (690970001)
+          // before a product can be referenced by msdyn_incidenttypeproduct.
+          // Patch any product missing it (e.g. seeded by v1.20.0/.1) up to
+          // Non-Inventory so the link succeeds without a reset.
+          if (
+            prod.msdyn_fieldserviceproducttype !== 690970000 &&
+            prod.msdyn_fieldserviceproducttype !== 690970001
+          ) {
+            await dv.update("products", productId, {
+              msdyn_fieldserviceproducttype: 690970001,
+            });
           }
           const payload: Record<string, unknown> = {
             "msdyn_incidenttype@odata.bind": `/msdyn_incidenttypes(${incidentId})`,

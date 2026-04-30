@@ -7,9 +7,18 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.20.2";
+export const APP_VERSION = "v1.20.3";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.20.3",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Correct column name for Field Service product type.** v1.20.2 used `msdyn_fieldservicetype`, but the actual column on `product` is **`msdyn_fieldserviceproducttype`** — verified via `$metadata`. The wrong name was silently swallowed by a try/catch, so the auto-heal never fired and the FS plugin kept rejecting the link.",
+      "**Removed the silent catch** around the product retrieve/heal step so schema mismatches surface as real errors instead of hiding behind generic FS plugin messages.",
+    ],
+  },
   {
     version: "v1.20.2",
     date: "April 30, 2026",
