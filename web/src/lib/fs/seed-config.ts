@@ -26,8 +26,19 @@ const phase2EntityOrder: Array<{
   key: string;
   label: string;
   entitySet: string;
+  /**
+   * When to delete relative to Work Orders.
+   *   "beforeWo" — entity references WO (FK from this → WO). Must be deleted
+   *                first or WO deletion fails.
+   *   "afterWo"  — WO references this entity. Delete only after WOs are gone.
+   */
+  phase: "beforeWo" | "afterWo";
 }> = [
-  // Populated as Phase 2+ entities are added.
+  // Phase 2 — child-first delete order:
+  { key: "workOrderServiceTasks", label: "WO Service Tasks", entitySet: "msdyn_workorderservicetasks", phase: "beforeWo" },
+  { key: "customerAssets", label: "Customer Assets", entitySet: "msdyn_customerassets", phase: "afterWo" },
+  { key: "functionalLocations", label: "Functional Locations", entitySet: "msdyn_functionallocations", phase: "afterWo" },
+  { key: "serviceTaskTypes", label: "Service Task Types", entitySet: "msdyn_servicetasktypes", phase: "afterWo" },
 ];
 
 export interface SeedProgress {
@@ -472,6 +483,149 @@ export async function seedFromPreset(
     onProgress,
   );
 
+  // ── Functional Locations (Phase 2) ───────────────────────────────────────
+  // Hierarchical: each node may reference a parent node by name within the
+  // same preset list. We rely on the AI / preset producer to list parents
+  // before children. Cross-account references aren't allowed.
+  const functionalLocations = preset.functionalLocations ?? [];
+  const flMap = getIdMap(result, "functionalLocations");
+  await runEntityStep(
+    dv,
+    {
+      label: "Functional Locations",
+      items: functionalLocations,
+      // Phase 2 entities don't have a per-entity choice yet — we treat them
+      // as "create" by default and skip if the preset section is empty.
+      choice: undefined,
+      target: flMap,
+      entitySet: "msdyn_functionallocations",
+      idField: "msdyn_functionallocationid",
+      findField: "msdyn_name",
+      findValue: (fl) => fl.name,
+      mapKey: (fl) => fl.name,
+      build: (fl) => {
+        const accountId = result.accountIds[fl.accountName];
+        const parentId = fl.parentName ? flMap[fl.parentName] : undefined;
+        const payload: Record<string, unknown> = {
+          msdyn_name: fl.name,
+          msdyn_description: tag(fl.description),
+        };
+        if (accountId) {
+          payload["msdyn_Account@odata.bind"] = `/accounts(${accountId})`;
+        }
+        if (parentId) {
+          payload["msdyn_ParentFunctionalLocation@odata.bind"] =
+            `/msdyn_functionallocations(${parentId})`;
+        }
+        return payload;
+      },
+      onCreated: (id) => {
+        trackCreated(result, "functionalLocations", id);
+      },
+    },
+    onProgress,
+  );
+
+  // ── Customer Assets (Phase 2) ───────────────────────────────────────────
+  // Linked to account + optional functional location + optional product. Also
+  // builds a side-index `assetsByAccount` so the WO step can wire one asset
+  // per WO without an extra Dataverse query.
+  const customerAssets = preset.customerAssets ?? [];
+  const assetMap = getIdMap(result, "customerAssets");
+  const assetsByAccount: Record<string, string[]> = {};
+  await runEntityStep(
+    dv,
+    {
+      label: "Customer Assets",
+      items: customerAssets,
+      choice: undefined,
+      target: assetMap,
+      entitySet: "msdyn_customerassets",
+      idField: "msdyn_customerassetid",
+      findField: "msdyn_name",
+      findValue: (a) => a.name,
+      mapKey: (a) => a.name,
+      build: (a) => {
+        const accountId = result.accountIds[a.accountName];
+        const productId = a.productNumber
+          ? result.productIds[a.productNumber]
+          : undefined;
+        const flId = a.functionalLocationName
+          ? flMap[a.functionalLocationName]
+          : undefined;
+        const parentAssetId = a.parentAssetName
+          ? assetMap[a.parentAssetName]
+          : undefined;
+        const payload: Record<string, unknown> = {
+          msdyn_name: a.name,
+          msdyn_description: tag(a.description),
+        };
+        if (a.serialNumber) {
+          payload["msdyn_serialnumber"] = a.serialNumber;
+        }
+        if (accountId) {
+          payload["msdyn_Account@odata.bind"] = `/accounts(${accountId})`;
+        }
+        if (productId) {
+          payload["msdyn_Product@odata.bind"] = `/products(${productId})`;
+        }
+        if (flId) {
+          payload["msdyn_FunctionalLocation@odata.bind"] =
+            `/msdyn_functionallocations(${flId})`;
+        }
+        if (parentAssetId) {
+          payload["msdyn_ParentAsset@odata.bind"] =
+            `/msdyn_customerassets(${parentAssetId})`;
+        }
+        return payload;
+      },
+      onResolved: (id, a) => {
+        const accountId = result.accountIds[a.accountName];
+        if (accountId) {
+          (assetsByAccount[accountId] ??= []).push(id);
+        }
+      },
+      onCreated: (id) => {
+        trackCreated(result, "customerAssets", id);
+      },
+    },
+    onProgress,
+  );
+
+  // ── Service Task Types (Phase 2) ────────────────────────────────────────
+  // Reusable task catalog. WOs created later will randomly attach 2–4 of
+  // these as msdyn_workorderservicetask rows.
+  const serviceTaskTypes = preset.serviceTaskTypes ?? [];
+  const taskTypeMap = getIdMap(result, "serviceTaskTypes");
+  await runEntityStep(
+    dv,
+    {
+      label: "Service Task Types",
+      items: serviceTaskTypes,
+      choice: undefined,
+      target: taskTypeMap,
+      entitySet: "msdyn_servicetasktypes",
+      idField: "msdyn_servicetasktypeid",
+      findField: "msdyn_name",
+      findValue: (s) => s.name,
+      mapKey: (s) => s.name,
+      build: (s) => {
+        const payload: Record<string, unknown> = {
+          msdyn_name: s.name,
+          msdyn_description: tag(s.description),
+        };
+        if (typeof s.estimatedDurationMinutes === "number") {
+          payload["msdyn_estimatedduration"] = s.estimatedDurationMinutes;
+        }
+        return payload;
+      },
+      onCreated: (id) => {
+        trackCreated(result, "serviceTaskTypes", id);
+      },
+    },
+    onProgress,
+  );
+
   // ── Work Orders (mixed statuses) ─────────────────────────────────────────
   // Synthesize ~2 work orders per account across 3 status buckets so the
   // dispatcher board / KPI tiles have something to show on first load.
@@ -518,14 +672,24 @@ export async function seedFromPreset(
     let woId = existing[0]?.msdyn_workorderid;
     if (!woId) {
       try {
-        woId = await dv.create("msdyn_workorders", {
+        const woPayload: Record<string, unknown> = {
           msdyn_workordersummary: summary,
           msdyn_systemstatus: status,
           "msdyn_ServiceAccount@odata.bind": `/accounts(${accountId})`,
           "msdyn_BillingAccount@odata.bind": `/accounts(${accountId})`,
           "msdyn_WorkOrderType@odata.bind": `/msdyn_workordertypes(${woTypeId})`,
           "msdyn_PrimaryIncidentType@odata.bind": `/msdyn_incidenttypes(${incidentId})`,
-        });
+        };
+        // Phase 2: attach a customer asset for this account if we have one.
+        // Round-robin through the account's assets so multiple WOs against
+        // the same account spread across different equipment.
+        const accountAssets = assetsByAccount[accountId] ?? [];
+        if (accountAssets.length > 0) {
+          const assetId = accountAssets[i % accountAssets.length];
+          woPayload["msdyn_CustomerAsset@odata.bind"] =
+            `/msdyn_customerassets(${assetId})`;
+        }
+        woId = await dv.create("msdyn_workorders", woPayload);
       } catch (e) {
         // Some FS configs require additional fields (price list, tax code). Skip
         // gracefully — the catalog is still seeded; just no WOs.
@@ -550,6 +714,54 @@ export async function seedFromPreset(
         status === 690970004 ? "Closed" : status === 690970001 ? "Scheduled" : "Open"
       })`,
     });
+  }
+
+  // ── WO Service Tasks (Phase 2) ───────────────────────────────────────────
+  // For each created WO, attach 2–4 service tasks from the catalog so the
+  // checklist surfaces in demos. Skipped silently if no service-task types
+  // were seeded.
+  const taskTypeIds = Object.values(taskTypeMap);
+  if (taskTypeIds.length > 0 && result.workOrderIds.length > 0) {
+    const tasksPerWo = Math.min(4, Math.max(2, Math.floor(taskTypeIds.length / 2)));
+    onProgress({
+      step: "WO Service Tasks",
+      done: 0,
+      total: result.workOrderIds.length,
+    });
+    for (let i = 0; i < result.workOrderIds.length; i++) {
+      const woId = result.workOrderIds[i];
+      for (let j = 0; j < tasksPerWo; j++) {
+        const taskTypeId = taskTypeIds[(i + j) % taskTypeIds.length];
+        const taskName = tag(`WO #${i + 1} task ${j + 1}`);
+        // Idempotency: skip if a task with this synthetic name already exists
+        // on this WO.
+        const existing = await dv.query<{ msdyn_workorderservicetaskid: string }>(
+          "msdyn_workorderservicetasks",
+          {
+            filter: `msdyn_name eq '${oencode(taskName)}' and _msdyn_workorder_value eq ${woId}`,
+            select: ["msdyn_workorderservicetaskid"],
+            top: 1,
+          },
+        );
+        if (existing[0]) continue;
+        try {
+          const id = await dv.create("msdyn_workorderservicetasks", {
+            msdyn_name: taskName,
+            msdyn_description: tag(),
+            "msdyn_WorkOrder@odata.bind": `/msdyn_workorders(${woId})`,
+            "msdyn_TaskType@odata.bind": `/msdyn_servicetasktypes(${taskTypeId})`,
+          });
+          trackCreated(result, "workOrderServiceTasks", id);
+        } catch {
+          /* per-WO best effort — keep going */
+        }
+      }
+      onProgress({
+        step: "WO Service Tasks",
+        done: i + 1,
+        total: result.workOrderIds.length,
+      });
+    }
   }
 
   // ── Bookings (one per Scheduled WO) ──────────────────────────────────────
@@ -686,12 +898,38 @@ export async function resetDemoData(
     "bookableresourcebookingid",
     "name",
   );
+  // Phase 2 — WO Service Tasks reference WOs, must go before WO sweep.
+  await sweep(
+    "WO Service Tasks",
+    "msdyn_workorderservicetasks",
+    "msdyn_workorderservicetaskid",
+    "msdyn_description",
+  );
   // Work-order-level associations next.
   await sweep(
     "Work Orders",
     "msdyn_workorders",
     "msdyn_workorderid",
     "msdyn_workordersummary",
+  );
+  // Phase 2 — assets / locations / task-type catalog (WOs referenced these).
+  await sweep(
+    "Customer Assets",
+    "msdyn_customerassets",
+    "msdyn_customerassetid",
+    "msdyn_description",
+  );
+  await sweep(
+    "Functional Locations",
+    "msdyn_functionallocations",
+    "msdyn_functionallocationid",
+    "msdyn_description",
+  );
+  await sweep(
+    "Service Task Types",
+    "msdyn_servicetasktypes",
+    "msdyn_servicetasktypeid",
+    "msdyn_description",
   );
   // Resource-level associations next.
   await sweep(
@@ -774,15 +1012,26 @@ export async function deleteRun(
 
   // Children → parents.
   await sweepIds("Bookings", "bookableresourcebookings", result.bookingIds);
+
+  // Phase 2 entries that reference WOs (e.g. WO Service Tasks) — must be
+  // deleted before the WOs themselves.
+  const handled = new Set<string>();
+  if (result.createdIds) {
+    for (const entry of phase2EntityOrder.filter((e) => e.phase === "beforeWo")) {
+      const ids = result.createdIds[entry.key];
+      if (ids?.length) {
+        await sweepIds(entry.label, entry.entitySet, ids);
+        handled.add(entry.key);
+      }
+    }
+  }
+
   await sweepIds("Work Orders", "msdyn_workorders", result.workOrderIds);
 
-  // Phase 2+ entities tracked in the generic registry. Each Phase registers
-  // its entries here in the right child-first order via the `phase2EntityOrder`
-  // array (extended as new phases ship). Anything in `createdIds` not listed
-  // explicitly gets a final best-effort sweep at the end.
+  // Phase 2 entries that WOs reference (assets, locations, task types) — safe
+  // to delete now that WOs are gone.
   if (result.createdIds) {
-    const handled = new Set<string>();
-    for (const entry of phase2EntityOrder) {
+    for (const entry of phase2EntityOrder.filter((e) => e.phase === "afterWo")) {
       const ids = result.createdIds[entry.key];
       if (ids?.length) {
         await sweepIds(entry.label, entry.entitySet, ids);
@@ -792,9 +1041,9 @@ export async function deleteRun(
     for (const [key, ids] of Object.entries(result.createdIds)) {
       if (handled.has(key)) continue;
       if (!ids?.length) continue;
-      // Unknown key — best effort. Caller forgot to register it; we don't
-      // know the entitySet so skip rather than guess.
-      // (Logged via progress for visibility.)
+      // Unknown key — caller forgot to register it; we don't know the
+      // entitySet so skip rather than guess. Logged via progress for
+      // visibility.
       onProgress({
         step: `Skipped unknown entity "${key}"`,
         done: 0,

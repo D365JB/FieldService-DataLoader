@@ -55,6 +55,47 @@ export interface FsPreset {
     /** Must match one of the territories[].code above. */
     primaryTerritoryCode: string;
   }>;
+  /**
+   * Phase 2 — Functional location tree per account. Optional; older presets
+   * without this section just skip the Functional Locations step.
+   *
+   * `parentName` references another node's `name` within the same array, or is
+   * undefined for the root of an account's tree.
+   * `accountName` references one of the `sampleAccounts[].name` above.
+   */
+  functionalLocations?: Array<{
+    name: string;
+    accountName: string;
+    parentName?: string;
+    description?: string;
+  }>;
+  /**
+   * Phase 2 — Customer assets owned by accounts, optionally hung off a
+   * functional location and a product (asset → product gives the asset its
+   * model/SKU). 5–10 per top-N accounts is plenty for demos.
+   */
+  customerAssets?: Array<{
+    name: string;
+    accountName: string;
+    /** Optional — must match a functionalLocations[].name. */
+    functionalLocationName?: string;
+    /** Optional — must match a products[].productNumber. */
+    productNumber?: string;
+    /** Optional — references another customerAssets[].name for hierarchy. */
+    parentAssetName?: string;
+    serialNumber?: string;
+    description?: string;
+  }>;
+  /**
+   * Phase 2 — Reusable service-task catalog. Each Closed/Scheduled WO gets
+   * 2–4 of these attached as msdyn_workorderservicetask rows so demos have
+   * checklist data. 5–10 entries is enough.
+   */
+  serviceTaskTypes?: Array<{
+    name: string;
+    description?: string;
+    estimatedDurationMinutes?: number;
+  }>;
   /** Reasoning the AI gave for picking this vertical — surfaced in review UI. */
   rationale: string;
 }
@@ -70,6 +111,10 @@ Constraints:
 - 6–12 products/parts with realistic SKU-style productNumber and list prices in USD.
 - 8–12 sample customer accounts (companies the field crew would service) with city/state matching the territories above.
 - 6–10 sample technicians with realistic first+last names. Each technician's primarySkill must match one of the characteristics[].name above, and primaryTerritoryCode must match one of the territories[].code above.
+- Phase 2 sections (functionalLocations, customerAssets, serviceTaskTypes) are required:
+  - 8–12 functional locations distributed across the top 3–4 accounts as a 2-level tree (Building → Floor / Zone). parentName references another node within this list. accountName must match a sampleAccounts[].name.
+  - 8–14 customer assets distributed across those accounts. Each asset has an industry-appropriate name (e.g. "RTU-A1-01" for HVAC, "Generator-DC-A" for telecom, "Elevator Bank North" for elevator). accountName must match a sampleAccounts[].name. functionalLocationName, when set, must match a functionalLocations[].name. productNumber, when set, must match a products[].productNumber. Add a unique serialNumber to each.
+  - 6–10 reusable serviceTaskTypes covering safety, diagnostic, repair, verify, and sign-off steps. Realistic for the vertical.
 - All names must be realistic — never lorem ipsum, never "Sample".
 - The rationale field should be 1–2 sentences explaining why this vertical fits the company.`;
 
@@ -97,6 +142,9 @@ Generate a Field Service preset for this company as JSON matching exactly this s
   "products": [{ "name": "<string>", "productNumber": "<SKU>", "description": "<optional>", "listPrice": <number> }],
   "sampleAccounts": [{ "name": "<string>", "city": "<string>", "state": "<2-letter>", "siteDescription": "<optional>" }],
   "sampleTechnicians": [{ "name": "<First Last>", "primarySkill": "<must match a characteristics[].name>", "primaryTerritoryCode": "<must match a territories[].code>" }],
+  "functionalLocations": [{ "name": "<string>", "accountName": "<must match a sampleAccounts[].name>", "parentName": "<optional, must match another functionalLocations[].name>", "description": "<optional>" }],
+  "customerAssets": [{ "name": "<string>", "accountName": "<must match a sampleAccounts[].name>", "functionalLocationName": "<optional>", "productNumber": "<optional, must match a products[].productNumber>", "parentAssetName": "<optional>", "serialNumber": "<string>", "description": "<optional>" }],
+  "serviceTaskTypes": [{ "name": "<string>", "description": "<optional>", "estimatedDurationMinutes": <int> }],
   "rationale": "<1-2 sentences>"
 }`;
 

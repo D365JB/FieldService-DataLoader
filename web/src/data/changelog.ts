@@ -7,9 +7,22 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.9.0";
+export const APP_VERSION = "v1.10.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.10.0",
+    date: "April 30, 2026",
+    tag: "ASSETS",
+    features: [
+      "**Customer Assets** — generates 8–14 named, serial-numbered assets per run distributed across the top accounts, linked to product SKUs and functional locations. Work Orders auto-attach a customer asset for the right account so the WO form lights up like a real demo.",
+      "**Functional Locations** — 2-level location tree per top accounts (Building → Floor / Zone). Customer Assets hang off the right location.",
+      "**Service Task Types** — reusable safety / diagnostic / repair / sign-off task catalog (8 entries by default).",
+      "**WO Service Tasks** — every generated Work Order auto-attaches 2–4 service tasks from the catalog, so the checklist tab is populated.",
+      "AI preset generator and the generic skip-preset both produce all three new sections out of the box.",
+      "Reset and per-run delete clean up everything in the right child-first order — assets, locations, task types, WO tasks — automatically.",
+    ],
+  },
   {
     version: "v1.9.0",
     date: "April 30, 2026",
