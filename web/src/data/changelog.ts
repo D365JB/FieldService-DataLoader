@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.18.8";
+export const APP_VERSION = "v1.18.9";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.18.9",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Bookable resource create now sets a default `timezone`.** Required field on this Dataverse schema; defaults to `4` (Pacific Time, US & Canada). No UI needed — picking a per-resource timezone or work-hour calendar is overkill for demo data.",
+    ],
+  },
   {
     version: "v1.18.8",
     date: "April 30, 2026",

@@ -505,10 +505,12 @@ export async function seedFromPreset(
       mapKey: (t) => t.name,
       build: (t) => ({
         name: t.name,
-        // bookableresource has no `description` column; primary skill/territory
-        // get linked below via bookableresourcecharacteristic + msdyn_resourceterritory.
+        // bookableresource has no `description` column on this org's schema.
         // 4 = Equipment. Avoids needing to create a systemuser.
         resourcetype: 4,
+        // Required field on this org. 4 = Pacific Time (US & Canada).
+        // Standard Windows TimeZoneCode; safe US default for demo data.
+        timezone: 4,
       }),
       onCreated: async (resourceId, t) => {
         result.createdResourceIds.push(resourceId);
