@@ -39,6 +39,9 @@ const phase2EntityOrder: Array<{
   { key: "customerAssets", label: "Customer Assets", entitySet: "msdyn_customerassets", phase: "afterWo" },
   { key: "functionalLocations", label: "Functional Locations", entitySet: "msdyn_functionallocations", phase: "afterWo" },
   { key: "serviceTaskTypes", label: "Service Task Types", entitySet: "msdyn_servicetasktypes", phase: "afterWo" },
+  // Phase 4 — WO execution detail. All reference WOs, must delete first.
+  { key: "workOrderProducts", label: "WO Products", entitySet: "msdyn_workorderproducts", phase: "beforeWo" },
+  { key: "timeEntries", label: "Time Entries", entitySet: "msdyn_timeentries", phase: "beforeWo" },
   // Phase 3 — agreement subtree (child-first). All afterWo because none
   // reference work orders directly:
   { key: "agreementBookingIncidents", label: "Agreement Booking Incidents", entitySet: "msdyn_agreementbookingincidents", phase: "afterWo" },
@@ -763,6 +766,9 @@ export async function seedFromPreset(
       : 0;
   onProgress({ step: "Work Orders", done: 0, total: targetWoCount });
   const scheduledWoIds: string[] = [];
+  // Per-WO metadata used by Phase 4 (WO Products + Time Entries) so we don't
+  // need a second query pass.
+  const woMeta: Array<{ woId: string; status: number; accountId: string }> = [];
   for (let i = 0; i < targetWoCount; i++) {
     const accountId = accountIdList[i % accountIdList.length];
     const incidentId = incidentIdList[i % incidentIdList.length];
@@ -813,6 +819,7 @@ export async function seedFromPreset(
       }
     }
     result.workOrderIds.push(woId);
+    woMeta.push({ woId, status, accountId });
     if (status === 690970001) {
       scheduledWoIds.push(woId);
     }
@@ -884,6 +891,15 @@ export async function seedFromPreset(
     bookingTarget = scheduledWoIds.length;
   }
   onProgress({ step: "Bookings", done: 0, total: bookingTarget });
+  // Captured per booking so Phase 4 Time Entries can mirror the resource's
+  // working window without re-querying.
+  const bookingMeta: Array<{
+    bookingId: string;
+    woId: string;
+    resourceId: string;
+    start: Date;
+    end: Date;
+  }> = [];
 
   // Resolve "Scheduled" booking status once. Statecode=0 (Active) filters out
   // any inactive/customised duplicates.
@@ -953,11 +969,124 @@ export async function seedFromPreset(
         }
       }
       result.bookingIds.push(bookingId);
+      bookingMeta.push({ bookingId, woId, resourceId, start, end });
       onProgress({
         step: "Bookings",
         done: i + 1,
         total: bookingTarget,
         detail: `${bookingName} → ${start.toLocaleDateString()}`,
+      });
+    }
+  }
+
+  // ── WO Products (Phase 4) ───────────────────────────────────────────────
+  // 1–3 product lines per WO. linestatus = Estimated for Open/Scheduled, Used
+  // for Closed-Posted so closed WOs look "actually serviced" in the demo.
+  const productIdList = Object.values(result.productIds);
+  if (productIdList.length > 0 && woMeta.length > 0) {
+    onProgress({
+      step: "WO Products",
+      done: 0,
+      total: woMeta.length,
+    });
+    for (let i = 0; i < woMeta.length; i++) {
+      const { woId, status } = woMeta[i];
+      const linesForThisWo = 1 + (i % 3); // 1, 2, or 3
+      // Closed (690970004) → Used (690970001). Anything else → Estimated.
+      const lineStatus = status === 690970004 ? 690970001 : 690970000;
+      for (let j = 0; j < linesForThisWo; j++) {
+        const productId = productIdList[(i + j) % productIdList.length];
+        const lineName = tag(`WO #${i + 1} part ${j + 1}`);
+
+        const existing = await dv.query<{ msdyn_workorderproductid: string }>(
+          "msdyn_workorderproducts",
+          {
+            filter: `msdyn_name eq '${oencode(lineName)}' and _msdyn_workorder_value eq ${woId}`,
+            select: ["msdyn_workorderproductid"],
+            top: 1,
+          },
+        );
+        if (existing[0]) continue;
+
+        try {
+          const lineId = await dv.create("msdyn_workorderproducts", {
+            msdyn_name: lineName,
+            msdyn_description: tag(),
+            msdyn_linestatus: lineStatus,
+            msdyn_estimatequantity: 1 + (j % 2),
+            msdyn_quantity: lineStatus === 690970001 ? 1 + (j % 2) : 0,
+            msdyn_lineorder: j + 1,
+            "msdyn_WorkOrder@odata.bind": `/msdyn_workorders(${woId})`,
+            "msdyn_Product@odata.bind": `/products(${productId})`,
+          });
+          trackCreated(result, "workOrderProducts", lineId);
+        } catch {
+          /* per-line best effort — FS may require a price list */
+        }
+      }
+      onProgress({
+        step: "WO Products",
+        done: i + 1,
+        total: woMeta.length,
+      });
+    }
+  }
+
+  // ── Time Entries (Phase 4) ──────────────────────────────────────────────
+  // One Time Entry per booking spanning its full window, type=Work,
+  // entrystatus=Submitted. This populates the resource's timesheet view.
+  if (bookingMeta.length > 0) {
+    onProgress({
+      step: "Time Entries",
+      done: 0,
+      total: bookingMeta.length,
+    });
+    for (let i = 0; i < bookingMeta.length; i++) {
+      const { woId, resourceId, start, end } = bookingMeta[i];
+      const durationMinutes = Math.max(
+        1,
+        Math.round((end.getTime() - start.getTime()) / 60000),
+      );
+      const entryName = tag(`Time entry for booking ${i + 1}`);
+
+      const existing = await dv.query<{ msdyn_timeentryid: string }>(
+        "msdyn_timeentries",
+        {
+          filter: `msdyn_description eq '${oencode(entryName)}'`,
+          select: ["msdyn_timeentryid"],
+          top: 1,
+        },
+      );
+      if (existing[0]) {
+        onProgress({
+          step: "Time Entries",
+          done: i + 1,
+          total: bookingMeta.length,
+        });
+        continue;
+      }
+
+      try {
+        const teId = await dv.create("msdyn_timeentries", {
+          msdyn_description: entryName,
+          msdyn_start: start.toISOString(),
+          msdyn_end: end.toISOString(),
+          msdyn_duration: durationMinutes,
+          // 192350000 = Work
+          msdyn_type: 192350000,
+          // 192350000 = Submitted
+          msdyn_entrystatus: 192350000,
+          "msdyn_bookableresource@odata.bind": `/bookableresources(${resourceId})`,
+          "msdyn_workorder@odata.bind": `/msdyn_workorders(${woId})`,
+        });
+        trackCreated(result, "timeEntries", teId);
+      } catch {
+        /* per-row best effort — entity may not be enabled in this org */
+      }
+      onProgress({
+        step: "Time Entries",
+        done: i + 1,
+        total: bookingMeta.length,
       });
     }
   }
@@ -1013,6 +1142,19 @@ export async function resetDemoData(
     "WO Service Tasks",
     "msdyn_workorderservicetasks",
     "msdyn_workorderservicetaskid",
+    "msdyn_description",
+  );
+  // Phase 4 — WO execution detail (products + time entries) — reference WOs.
+  await sweep(
+    "WO Products",
+    "msdyn_workorderproducts",
+    "msdyn_workorderproductid",
+    "msdyn_description",
+  );
+  await sweep(
+    "Time Entries",
+    "msdyn_timeentries",
+    "msdyn_timeentryid",
     "msdyn_description",
   );
   // Work-order-level associations next.

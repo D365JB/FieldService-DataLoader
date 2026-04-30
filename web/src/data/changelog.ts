@@ -7,9 +7,20 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.11.0";
+export const APP_VERSION = "v1.12.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.12.0",
+    date: "May 14, 2026",
+    tag: "EXECUTION",
+    features: [
+      "**WO Products** — every Work Order now ships with 1–3 product/parts lines so the WO form's products tab is populated. Open & Scheduled WOs get **Estimated** lines; Closed-Posted WOs get **Used** lines so historical costs roll up.",
+      "**Time Entries** — every Booking automatically gets a Time Entry of type *Work* spanning the full booking window, status *Submitted*. The resource's timesheet view lights up out of the box.",
+      "Per-run delete and tag-sweep reset clean up WO Products and Time Entries before WOs (correct child-first order).",
+      "No new preset fields required — Phase 4 piggybacks on existing products + bookings, so AI-analyzed and generic presets both benefit immediately.",
+    ],
+  },
   {
     version: "v1.11.0",
     date: "May 7, 2026",
