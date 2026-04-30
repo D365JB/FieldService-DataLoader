@@ -7,9 +7,19 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.8.0";
+export const APP_VERSION = "v1.9.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.9.0",
+    date: "April 30, 2026",
+    tag: "INFRA",
+    improvements: [
+      "Internal refactor: every catalog step (Territories, WO Types, Characteristics, Incident Types, Products, Accounts, Bookable Resources) now flows through a single generic engine. Behaviour is unchanged — but adding new entity types in upcoming releases is now ~20 lines instead of ~80 each.",
+      "New generic id registry on each run result. Phase 2+ entities (Customer Assets, Functional Locations, Agreements, Inspections, etc.) plug into per-run delete automatically.",
+      "Reset / per-run delete is now driven by an ordered dependency list, so future entity types get cleaned up safely without bespoke code.",
+    ],
+  },
   {
     version: "v1.8.0",
     date: "April 30, 2026",

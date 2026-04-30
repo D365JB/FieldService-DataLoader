@@ -12,6 +12,24 @@ import type { FsPreset } from "@/lib/preset";
 
 export const DEMO_TAG = "DEMO-FS";
 
+/**
+ * Per-run delete order for entities tracked in `SeedResult.createdIds`. Keep
+ * this list **child-first** so foreign-key constraints don't fail on delete.
+ * Each phase prepends its own entries here as it ships:
+ *   Phase 2: WO Service Tasks → Customer Assets → Functional Locations →
+ *            Service Task Types
+ *   Phase 3: Agreement Booking Products/Services/Incidents → Agreements →
+ *            Agreement Booking Setup
+ *   etc.
+ */
+const phase2EntityOrder: Array<{
+  key: string;
+  label: string;
+  entitySet: string;
+}> = [
+  // Populated as Phase 2+ entities are added.
+];
+
 export interface SeedProgress {
   step: string;
   done: number;
@@ -38,6 +56,21 @@ export interface SeedResult {
   createdResourceIds: string[];
   workOrderIds: string[];
   bookingIds: string[];
+  /**
+   * Generic id registry used by Phase 2+ entities (Functional Locations,
+   * Customer Assets, Agreements, etc.). Keyed by a logical entity name —
+   * e.g. `idMaps.functionalLocations[code] = guid`. The flat *Ids fields above
+   * stay for backward compatibility with v1.5–v1.8 run history.
+   *
+   * Optional so v1.5–v1.8 history records (which don't have it) keep working.
+   */
+  idMaps?: Record<string, Record<string, string>>;
+  /**
+   * Subset of `idMaps` records we actually created (vs reused from "Use
+   * existing"). Mirrors `createdResourceIds` for the new entity types.
+   * Keyed the same way as `idMaps`. Optional for backward compat.
+   */
+  createdIds?: Record<string, string[]>;
 }
 
 type ProgressFn = (p: SeedProgress) => void;
@@ -114,6 +147,97 @@ function shouldCreate(choice: EntityChoice | undefined): boolean {
   return !choice || choice.mode === "create";
 }
 
+/**
+ * Generic, idempotent "create or reuse" loop used by every catalog step.
+ *
+ * Behaviour matrix:
+ *   choice.mode === "existing" → register caller picks into `target`, do nothing else.
+ *   choice.mode === "skip"     → do nothing.
+ *   choice.mode === "create"   → for each item: find by `findField` = findValue;
+ *                                 create if absent; record id under `mapKey(item)`.
+ *
+ * Hooks:
+ *   onCreated  fires only when we actually inserted a row (use for child rows or
+ *              tracking which ids we own — e.g. createdResourceIds).
+ *   onResolved fires after every item regardless of whether we created or reused;
+ *              the `isNew` flag tells you which.
+ */
+interface EntityStepConfig<T> {
+  label: string;
+  items: T[];
+  choice: EntityChoice | undefined;
+  target: Record<string, string>;
+  entitySet: string;
+  idField: string;
+  findField: string;
+  findValue: (item: T) => string;
+  mapKey: (item: T) => string;
+  build: (item: T) => Record<string, unknown>;
+  onCreated?: (id: string, item: T) => Promise<void> | void;
+  onResolved?: (id: string, item: T, isNew: boolean) => Promise<void> | void;
+}
+
+async function runEntityStep<T>(
+  dv: DataverseClient,
+  cfg: EntityStepConfig<T>,
+  onProgress: ProgressFn,
+): Promise<void> {
+  registerExisting(cfg.target, cfg.choice);
+  const create = shouldCreate(cfg.choice);
+  const total = create ? cfg.items.length : 0;
+  onProgress({ step: cfg.label, done: 0, total });
+  if (!create) return;
+
+  for (let i = 0; i < cfg.items.length; i++) {
+    const item = cfg.items[i];
+    const findVal = cfg.findValue(item);
+    let id = await findByField(
+      dv,
+      cfg.entitySet,
+      cfg.findField,
+      findVal,
+      cfg.idField,
+    );
+    let isNew = false;
+    if (!id) {
+      id = await dv.create(cfg.entitySet, cfg.build(item));
+      isNew = true;
+      if (cfg.onCreated) await cfg.onCreated(id, item);
+    }
+    cfg.target[cfg.mapKey(item)] = id;
+    if (cfg.onResolved) await cfg.onResolved(id, item, isNew);
+    onProgress({
+      step: cfg.label,
+      done: i + 1,
+      total: cfg.items.length,
+      detail: cfg.mapKey(item),
+    });
+  }
+}
+
+/**
+ * Lookup-or-init the id map for a given logical entity key on the result.
+ * Phase 2+ entities (functional locations, customer assets, agreements, etc.)
+ * use this instead of adding new top-level fields to `SeedResult`.
+ */
+export function getIdMap(
+  result: SeedResult,
+  key: string,
+): Record<string, string> {
+  result.idMaps ??= {};
+  return (result.idMaps[key] ??= {});
+}
+
+/** Record that we created (vs reused) `id` for a given logical entity key. */
+export function trackCreated(
+  result: SeedResult,
+  key: string,
+  id: string,
+): void {
+  result.createdIds ??= {};
+  (result.createdIds[key] ??= []).push(id);
+}
+
 export async function seedFromPreset(
   dv: DataverseClient,
   preset: FsPreset,
@@ -131,301 +255,222 @@ export async function seedFromPreset(
     createdResourceIds: [],
     workOrderIds: [],
     bookingIds: [],
+    idMaps: {},
+    createdIds: {},
   };
 
   // ── Territories ──────────────────────────────────────────────────────────
-  const territoryChoice = options.territories ?? { mode: "create" };
-  registerExisting(result.territoryIds, territoryChoice);
-  const createTerritories = shouldCreate(territoryChoice);
-  onProgress({
-    step: "Territories",
-    done: 0,
-    total: createTerritories ? preset.territories.length : 0,
-  });
-  if (createTerritories) {
-    for (let i = 0; i < preset.territories.length; i++) {
-      const t = preset.territories[i];
-      const existing = await findByField(dv, "territories", "name", t.name, "territoryid");
-      if (existing) {
-        result.territoryIds[t.code] = existing;
-      } else {
-        const id = await dv.create("territories", {
-          name: t.name,
-          description: tag(t.description),
-        });
-        result.territoryIds[t.code] = id;
-      }
-      onProgress({
-        step: "Territories",
-        done: i + 1,
-        total: preset.territories.length,
-        detail: t.name,
-      });
-    }
-  }
+  await runEntityStep(
+    dv,
+    {
+      label: "Territories",
+      items: preset.territories,
+      choice: options.territories,
+      target: result.territoryIds,
+      entitySet: "territories",
+      idField: "territoryid",
+      findField: "name",
+      findValue: (t) => t.name,
+      mapKey: (t) => t.code,
+      build: (t) => ({ name: t.name, description: tag(t.description) }),
+    },
+    onProgress,
+  );
 
   // ── Work Order Types ─────────────────────────────────────────────────────
-  const woTypeChoice = options.workOrderTypes ?? { mode: "create" };
-  registerExisting(result.workOrderTypeIds, woTypeChoice);
-  const createWoTypes = shouldCreate(woTypeChoice);
-  onProgress({
-    step: "Work Order Types",
-    done: 0,
-    total: createWoTypes ? preset.workOrderTypes.length : 0,
-  });
-  if (createWoTypes) {
-    for (let i = 0; i < preset.workOrderTypes.length; i++) {
-      const wt = preset.workOrderTypes[i];
-      const existing = await findByField(
-        dv,
-        "msdyn_workordertypes",
-        "msdyn_name",
-        wt.name,
-        "msdyn_workordertypeid",
-      );
-      if (existing) {
-        result.workOrderTypeIds[wt.code] = existing;
-      } else {
-        const id = await dv.create("msdyn_workordertypes", {
-          msdyn_name: wt.name,
-          msdyn_description: tag(wt.description),
-        });
-        result.workOrderTypeIds[wt.code] = id;
-      }
-      onProgress({
-        step: "Work Order Types",
-        done: i + 1,
-        total: preset.workOrderTypes.length,
-        detail: wt.name,
-      });
-    }
-  }
+  await runEntityStep(
+    dv,
+    {
+      label: "Work Order Types",
+      items: preset.workOrderTypes,
+      choice: options.workOrderTypes,
+      target: result.workOrderTypeIds,
+      entitySet: "msdyn_workordertypes",
+      idField: "msdyn_workordertypeid",
+      findField: "msdyn_name",
+      findValue: (wt) => wt.name,
+      mapKey: (wt) => wt.code,
+      build: (wt) => ({
+        msdyn_name: wt.name,
+        msdyn_description: tag(wt.description),
+      }),
+    },
+    onProgress,
+  );
 
   // ── Characteristics ──────────────────────────────────────────────────────
-  const charChoice = options.characteristics ?? { mode: "create" };
-  registerExisting(result.characteristicIds, charChoice);
-  const createChars = shouldCreate(charChoice);
-  onProgress({
-    step: "Characteristics",
-    done: 0,
-    total: createChars ? preset.characteristics.length : 0,
-  });
-  if (createChars) {
-    for (let i = 0; i < preset.characteristics.length; i++) {
-      const c = preset.characteristics[i];
-      const existing = await findByField(
-        dv,
-        "characteristics",
-        "name",
-        c.name,
-        "characteristicid",
-      );
-      if (existing) {
-        result.characteristicIds[c.name] = existing;
-      } else {
-        const id = await dv.create("characteristics", {
-          name: c.name,
-          description: tag(c.description),
-          // 1 = Skill (most common for FS demo certifications)
-          characteristictype: 1,
-        });
-        result.characteristicIds[c.name] = id;
-      }
-      onProgress({
-        step: "Characteristics",
-        done: i + 1,
-        total: preset.characteristics.length,
-        detail: c.name,
-      });
-    }
-  }
+  await runEntityStep(
+    dv,
+    {
+      label: "Characteristics",
+      items: preset.characteristics,
+      choice: options.characteristics,
+      target: result.characteristicIds,
+      entitySet: "characteristics",
+      idField: "characteristicid",
+      findField: "name",
+      findValue: (c) => c.name,
+      mapKey: (c) => c.name,
+      build: (c) => ({
+        name: c.name,
+        description: tag(c.description),
+        // 1 = Skill (most common for FS demo certifications).
+        characteristictype: 1,
+      }),
+    },
+    onProgress,
+  );
 
   // ── Incident Types + Service Tasks ───────────────────────────────────────
-  const incChoice = options.incidentTypes ?? { mode: "create" };
-  registerExisting(result.incidentTypeIds, incChoice);
-  const createIncidents = shouldCreate(incChoice);
-  const totalIncidents = createIncidents ? preset.incidentTypes.length : 0;
-  onProgress({ step: "Incident Types", done: 0, total: totalIncidents });
-  if (createIncidents) {
-    for (let i = 0; i < totalIncidents; i++) {
-      const inc = preset.incidentTypes[i];
-      let incidentId = await findByField(
-        dv,
-        "msdyn_incidenttypes",
-        "msdyn_name",
-        inc.name,
-        "msdyn_incidenttypeid",
-      );
-      if (!incidentId) {
-        incidentId = await dv.create("msdyn_incidenttypes", {
-          msdyn_name: inc.name,
-          msdyn_description: tag(inc.description),
-          msdyn_estimatedduration: inc.estimatedDurationMinutes,
-        });
-      }
-      result.incidentTypeIds[inc.name] = incidentId;
-
-      // Child service tasks — link via @odata.bind on the incident lookup.
-      for (let j = 0; j < inc.serviceTasks.length; j++) {
-        const taskName = inc.serviceTasks[j];
-        const taskFilter = `msdyn_name eq '${oencode(taskName)}' and _msdyn_incidenttype_value eq ${incidentId}`;
-        const existing = await dv.query<{ msdyn_incidenttypeservicetaskid: string }>(
-          "msdyn_incidenttypeservicetasks",
-          {
+  // Service tasks are children of the incident — created in onResolved so they
+  // run for both freshly-created and pre-existing incidents (the per-task call
+  // is itself idempotent against the parent incident id).
+  await runEntityStep(
+    dv,
+    {
+      label: "Incident Types",
+      items: preset.incidentTypes,
+      choice: options.incidentTypes,
+      target: result.incidentTypeIds,
+      entitySet: "msdyn_incidenttypes",
+      idField: "msdyn_incidenttypeid",
+      findField: "msdyn_name",
+      findValue: (inc) => inc.name,
+      mapKey: (inc) => inc.name,
+      build: (inc) => ({
+        msdyn_name: inc.name,
+        msdyn_description: tag(inc.description),
+        msdyn_estimatedduration: inc.estimatedDurationMinutes,
+      }),
+      onResolved: async (incidentId, inc) => {
+        for (const taskName of inc.serviceTasks) {
+          const taskFilter = `msdyn_name eq '${oencode(taskName)}' and _msdyn_incidenttype_value eq ${incidentId}`;
+          const existing = await dv.query<{
+            msdyn_incidenttypeservicetaskid: string;
+          }>("msdyn_incidenttypeservicetasks", {
             filter: taskFilter,
             select: ["msdyn_incidenttypeservicetaskid"],
             top: 1,
-          },
-        );
-        if (!existing[0]) {
-          await dv.create("msdyn_incidenttypeservicetasks", {
-            msdyn_name: taskName,
-            msdyn_description: tag(),
-            "msdyn_IncidentType@odata.bind": `/msdyn_incidenttypes(${incidentId})`,
           });
+          if (!existing[0]) {
+            await dv.create("msdyn_incidenttypeservicetasks", {
+              msdyn_name: taskName,
+              msdyn_description: tag(),
+              "msdyn_IncidentType@odata.bind": `/msdyn_incidenttypes(${incidentId})`,
+            });
+          }
         }
-      }
-
-      onProgress({
-        step: "Incident Types",
-        done: i + 1,
-        total: totalIncidents,
-        detail: `${inc.name} (${inc.serviceTasks.length} tasks)`,
-      });
-    }
-  }
+      },
+    },
+    onProgress,
+  );
 
   // ── Products ─────────────────────────────────────────────────────────────
-  const productChoice = options.products ?? { mode: "create" };
-  registerExisting(result.productIds, productChoice);
-  const createProducts = shouldCreate(productChoice);
-  onProgress({
-    step: "Products",
-    done: 0,
-    total: createProducts ? preset.products.length : 0,
-  });
-  if (createProducts) {
-    for (let i = 0; i < preset.products.length; i++) {
-      const p = preset.products[i];
-      // productnumber is a default alternate key on product — we can use upsert.
-      const existing = await findByField(
-        dv,
-        "products",
-        "productnumber",
-        p.productNumber,
-        "productid",
-      );
-      if (existing) {
-        result.productIds[p.productNumber] = existing;
-      } else {
-        const id = await dv.create("products", {
-          name: p.name,
-          productnumber: p.productNumber,
-          description: tag(p.description),
-          price: p.listPrice ?? 0,
-          // Sensible defaults to avoid required-field rejections:
-          productstructure: 1, // Product
-          statecode: 0, // Draft (cannot create as Active without a price list)
-        });
-        result.productIds[p.productNumber] = id;
-      }
-      onProgress({
-        step: "Products",
-        done: i + 1,
-        total: preset.products.length,
-        detail: p.name,
-      });
-    }
-  }
+  await runEntityStep(
+    dv,
+    {
+      label: "Products",
+      items: preset.products,
+      choice: options.products,
+      target: result.productIds,
+      entitySet: "products",
+      idField: "productid",
+      // productnumber is a default alternate key on product.
+      findField: "productnumber",
+      findValue: (p) => p.productNumber,
+      mapKey: (p) => p.productNumber,
+      build: (p) => ({
+        name: p.name,
+        productnumber: p.productNumber,
+        description: tag(p.description),
+        price: p.listPrice ?? 0,
+        // Sensible defaults to avoid required-field rejections:
+        productstructure: 1, // Product
+        statecode: 0, // Draft (cannot create as Active without a price list).
+      }),
+    },
+    onProgress,
+  );
 
   // ── Accounts ─────────────────────────────────────────────────────────────
-  const accountChoice = options.accounts ?? { mode: "create" };
-  registerExisting(result.accountIds, accountChoice);
-  const createAccounts = shouldCreate(accountChoice);
-  const accounts = createAccounts ? preset.sampleAccounts ?? [] : [];
-  onProgress({ step: "Accounts", done: 0, total: accounts.length });
-  for (let i = 0; i < accounts.length; i++) {
-    const a = accounts[i];
-    const existing = await findByField(dv, "accounts", "name", a.name, "accountid");
-    if (existing) {
-      result.accountIds[a.name] = existing;
-    } else {
-      const id = await dv.create("accounts", {
+  await runEntityStep(
+    dv,
+    {
+      label: "Accounts",
+      items: preset.sampleAccounts ?? [],
+      choice: options.accounts,
+      target: result.accountIds,
+      entitySet: "accounts",
+      idField: "accountid",
+      findField: "name",
+      findValue: (a) => a.name,
+      mapKey: (a) => a.name,
+      build: (a) => ({
         name: a.name,
         description: tag(a.siteDescription),
         address1_city: a.city,
         address1_stateorprovince: a.state,
         address1_country: "United States",
-      });
-      result.accountIds[a.name] = id;
-    }
-    onProgress({
-      step: "Accounts",
-      done: i + 1,
-      total: accounts.length,
-      detail: a.name,
-    });
-  }
+      }),
+    },
+    onProgress,
+  );
 
   // ── Bookable Resources (Equipment-type, no admin needed) ─────────────────
-  const resourceChoice = options.resources ?? { mode: "create" };
-  registerExisting(result.resourceIds, resourceChoice);
-  const createResources = shouldCreate(resourceChoice);
-  const techs = createResources ? preset.sampleTechnicians ?? [] : [];
-  onProgress({ step: "Bookable Resources", done: 0, total: techs.length });
-  for (let i = 0; i < techs.length; i++) {
-    const t = techs[i];
-    let resourceId = await findByField(
-      dv,
-      "bookableresources",
-      "name",
-      t.name,
-      "bookableresourceid",
-    );
-    if (!resourceId) {
-      resourceId = await dv.create("bookableresources", {
+  // We need post-create side-effects (track createdResourceIds, link primary
+  // skill + territory) that only fire when we actually inserted the row, so we
+  // use onCreated rather than onResolved.
+  await runEntityStep(
+    dv,
+    {
+      label: "Bookable Resources",
+      items: preset.sampleTechnicians ?? [],
+      choice: options.resources,
+      target: result.resourceIds,
+      entitySet: "bookableresources",
+      idField: "bookableresourceid",
+      findField: "name",
+      findValue: (t) => t.name,
+      mapKey: (t) => t.name,
+      build: (t) => ({
         name: t.name,
         description: tag(`Technician — ${t.primarySkill} (${t.primaryTerritoryCode})`),
-        // 4 = Equipment. We use this so we don't need to create a systemuser.
+        // 4 = Equipment. Avoids needing to create a systemuser.
         resourcetype: 4,
-      });
-      result.createdResourceIds.push(resourceId);
+      }),
+      onCreated: async (resourceId, t) => {
+        result.createdResourceIds.push(resourceId);
 
-      // Best-effort: link primary skill via bookableresourcecharacteristic.
-      const charId = result.characteristicIds[t.primarySkill];
-      if (charId) {
-        try {
-          await dv.create("bookableresourcecharacteristics", {
-            "Resource@odata.bind": `/bookableresources(${resourceId})`,
-            "Characteristic@odata.bind": `/characteristics(${charId})`,
-          });
-        } catch {
-          /* skill linking is non-critical for the demo */
+        // Best-effort: link primary skill via bookableresourcecharacteristic.
+        const charId = result.characteristicIds[t.primarySkill];
+        if (charId) {
+          try {
+            await dv.create("bookableresourcecharacteristics", {
+              "Resource@odata.bind": `/bookableresources(${resourceId})`,
+              "Characteristic@odata.bind": `/characteristics(${charId})`,
+            });
+          } catch {
+            /* skill linking is non-critical for the demo */
+          }
         }
-      }
 
-      // Best-effort: link primary territory via msdyn_resourceterritory.
-      const terrId = result.territoryIds[t.primaryTerritoryCode];
-      if (terrId) {
-        try {
-          await dv.create("msdyn_resourceterritories", {
-            "msdyn_Resource@odata.bind": `/bookableresources(${resourceId})`,
-            "msdyn_Territory@odata.bind": `/territories(${terrId})`,
-            msdyn_description: tag(),
-          });
-        } catch {
-          /* territory linking is non-critical for the demo */
+        // Best-effort: link primary territory via msdyn_resourceterritory.
+        const terrId = result.territoryIds[t.primaryTerritoryCode];
+        if (terrId) {
+          try {
+            await dv.create("msdyn_resourceterritories", {
+              "msdyn_Resource@odata.bind": `/bookableresources(${resourceId})`,
+              "msdyn_Territory@odata.bind": `/territories(${terrId})`,
+              msdyn_description: tag(),
+            });
+          } catch {
+            /* territory linking is non-critical for the demo */
+          }
         }
-      }
-    }
-    result.resourceIds[t.name] = resourceId;
-    onProgress({
-      step: "Bookable Resources",
-      done: i + 1,
-      total: techs.length,
-      detail: t.name,
-    });
-  }
+      },
+    },
+    onProgress,
+  );
 
   // ── Work Orders (mixed statuses) ─────────────────────────────────────────
   // Synthesize ~2 work orders per account across 3 status buckets so the
@@ -730,6 +775,34 @@ export async function deleteRun(
   // Children → parents.
   await sweepIds("Bookings", "bookableresourcebookings", result.bookingIds);
   await sweepIds("Work Orders", "msdyn_workorders", result.workOrderIds);
+
+  // Phase 2+ entities tracked in the generic registry. Each Phase registers
+  // its entries here in the right child-first order via the `phase2EntityOrder`
+  // array (extended as new phases ship). Anything in `createdIds` not listed
+  // explicitly gets a final best-effort sweep at the end.
+  if (result.createdIds) {
+    const handled = new Set<string>();
+    for (const entry of phase2EntityOrder) {
+      const ids = result.createdIds[entry.key];
+      if (ids?.length) {
+        await sweepIds(entry.label, entry.entitySet, ids);
+        handled.add(entry.key);
+      }
+    }
+    for (const [key, ids] of Object.entries(result.createdIds)) {
+      if (handled.has(key)) continue;
+      if (!ids?.length) continue;
+      // Unknown key — best effort. Caller forgot to register it; we don't
+      // know the entitySet so skip rather than guess.
+      // (Logged via progress for visibility.)
+      onProgress({
+        step: `Skipped unknown entity "${key}"`,
+        done: 0,
+        total: 0,
+        detail: `${ids.length} record(s) — register in phase2EntityOrder to clean up`,
+      });
+    }
+  }
 
   // Bookable resources: only delete the ones we created. v1.6+ runs track
   // these explicitly in `createdResourceIds`. For older v1.5 history entries
