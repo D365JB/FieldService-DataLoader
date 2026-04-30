@@ -7,9 +7,18 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.15.3";
+export const APP_VERSION = "v1.15.4";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.15.4",
+    date: "April 30, 2026",
+    tag: "POLISH",
+    features: [
+      "**Reset page** — legacy tag-sweep blurb now lists every entity the sweep actually deletes (IoT alerts, time entries, WO products, WO service tasks, agreements + booking subtree, customer assets, functional locations, service task types, product inventory, warehouses, and the original catalog), instead of just the v1.0 set.",
+      "**Changelog dates** — corrected v1.11.0–v1.15.0 dates that were stamped with future May/June values during the rapid-fire polish session. All entries now correctly show April 30, 2026.",
+    ],
+  },
   {
     version: "v1.15.3",
     date: "April 30, 2026",
@@ -37,7 +46,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "v1.15.0",
-    date: "June 4, 2026",
+    date: "April 30, 2026",
     tag: "DEMO PACKS",
     features: [
       "**Curated Demo Packs** — pick a pre-tuned vertical pack on the Analyze page instead of running web analysis or starting from generic. Four packs ship today: **Generic**, **HVAC** (RTUs / chillers / refrigerant), **Telecom** (towers / generators / 5G), and **Property / Facilities** (lighting / plumbing / elevator coord).",
@@ -47,7 +56,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "v1.14.0",
-    date: "May 28, 2026",
+    date: "April 30, 2026",
     tag: "CONNECTED",
     features: [
       "**IoT Alerts** — Connected Field Service mock alerts now seed automatically. Each Customer Asset gets an alert with realistic severity (Info / Warning / Critical), status (mostly Active with some In Progress and Closed), and a believable telemetry payload — so the IoT Alerts dashboard isn't empty during demos.",
@@ -59,7 +68,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "v1.13.0",
-    date: "May 21, 2026",
+    date: "April 30, 2026",
     tag: "INVENTORY",
     features: [
       "**Warehouses** — depots and service-van stock locations now seed automatically (3 by default in the generic preset).",
@@ -71,7 +80,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "v1.12.0",
-    date: "May 14, 2026",
+    date: "April 30, 2026",
     tag: "EXECUTION",
     features: [
       "**WO Products** — every Work Order now ships with 1–3 product/parts lines so the WO form's products tab is populated. Open & Scheduled WOs get **Estimated** lines; Closed-Posted WOs get **Used** lines so historical costs roll up.",
@@ -82,7 +91,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "v1.11.0",
-    date: "May 7, 2026",
+    date: "April 30, 2026",
     tag: "AGREEMENTS",
     features: [
       "**Service Agreements** — recurring service contracts now seed automatically. Each top account gets an annual agreement with a recurrence pattern, covered incident types, and estimated parts.",

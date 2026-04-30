@@ -237,10 +237,14 @@ export function Reset() {
           <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-sm flex items-start gap-2 mb-4">
             <Warning size={18} className="flex-shrink-0 mt-0.5" />
             <div>
-              Deletes service tasks, incident types, work order types,
-              characteristics, products, accounts, work orders, bookings, and
-              demo-tagged bookable resources from{" "}
-              <strong>{expectedConfirm}</strong>. Cannot be undone.
+              Deletes every <code>{DEMO_TAG}:</code>-tagged record from{" "}
+              <strong>{expectedConfirm}</strong>: IoT alerts, time entries, WO
+              products, WO service tasks, bookings, work orders, agreement
+              booking incidents/products/services/setups, agreements, customer
+              assets, functional locations, service task types, product
+              inventory, warehouses, accounts, products, characteristics,
+              incident types, work order types, and demo-tagged bookable
+              resources. Cannot be undone.
             </div>
           </div>
 
