@@ -7,9 +7,18 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.16.3";
+export const APP_VERSION = "v1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.17.0",
+    date: "April 30, 2026",
+    tag: "GENERATE",
+    features: [
+      "**Dependency warnings on Generate.** Each entity row now flashes an amber alert when an upstream prerequisite is set to Skip — so you'll know before you click Start that, e.g., Skipping Accounts will leave Functional Locations, Customer Assets, Agreements, and Work Orders with nothing to attach to.",
+      "**'Use existing' clarified for AI-generated entities.** Functional Locations, Customer Assets, Service Task Types, Agreements, Warehouses, Product Inventory, WO Service Tasks, WO Products, Time Entries, and IoT Alerts now show an info icon explaining why 'Use existing' isn't offered: their records are tied to *this* run's preset (accounts, products, incident types) and wouldn't connect to anything if pulled from your org. Skip is the way to opt out.",
+    ],
+  },
   {
     version: "v1.16.3",
     date: "April 30, 2026",

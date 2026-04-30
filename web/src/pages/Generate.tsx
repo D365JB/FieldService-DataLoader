@@ -7,6 +7,7 @@ import {
   CheckCircle,
   CircleNotch,
   ArrowRight,
+  Info,
 } from "@phosphor-icons/react";
 import { AppHeader } from "@/components/AppHeader";
 import { DataverseClient, deepLink } from "@/lib/dataverse";
@@ -45,6 +46,46 @@ const STEP_ORDER = [
   "Time Entries",
   "IoT Alerts",
 ];
+
+// Map each entity to the entities it needs upstream. If any of those is
+// skipped, this entity will either be empty or fail outright — we surface
+// that as an inline warning on the entity row.
+const DEPENDENCIES: Record<string, string[]> = {
+  accounts: ["territories"],
+  resources: ["territories", "characteristics"],
+  functionalLocations: ["accounts"],
+  customerAssets: ["accounts"],
+  agreements: ["accounts", "incidentTypes", "products"],
+  workOrders: ["accounts", "workOrderTypes", "incidentTypes", "territories"],
+  workOrderServiceTasks: ["workOrders", "serviceTaskTypes"],
+  bookings: ["workOrders", "resources"],
+  workOrderProducts: ["workOrders", "products"],
+  timeEntries: ["bookings"],
+  iotAlerts: ["customerAssets"],
+  productInventory: ["warehouses", "products"],
+};
+
+const ENTITY_LABELS: Record<string, string> = {
+  territories: "Territories",
+  workOrderTypes: "Work Order Types",
+  characteristics: "Characteristics",
+  incidentTypes: "Incident Types",
+  products: "Products",
+  accounts: "Accounts",
+  resources: "Bookable Resources",
+  workOrders: "Work Orders",
+  bookings: "Bookings",
+  functionalLocations: "Functional Locations",
+  customerAssets: "Customer Assets",
+  serviceTaskTypes: "Service Task Types",
+  agreements: "Agreements",
+  warehouses: "Warehouses",
+  productInventory: "Product Inventory",
+  workOrderServiceTasks: "WO Service Tasks",
+  workOrderProducts: "WO Products",
+  timeEntries: "Time Entries",
+  iotAlerts: "IoT Alerts",
+};
 
 export function Generate() {
   const { accounts } = useMsal();
@@ -136,6 +177,17 @@ export function Generate() {
   }
   function setPicks(k: EntityKey, v: PickedEntity[]) {
     setEntityPicks((s) => ({ ...s, [k]: v }));
+  }
+  // If this entity is enabled (create or existing) but any of its upstream
+  // dependencies is set to "skip", show an inline warning so the user knows
+  // this row will be empty or may fail.
+  function warningFor(k: EntityKey): string | null {
+    if (entityModes[k] === "skip") return null;
+    const deps = DEPENDENCIES[k] ?? [];
+    const skipped = deps.filter((d) => entityModes[d as EntityKey] === "skip");
+    if (skipped.length === 0) return null;
+    const names = skipped.map((d) => ENTITY_LABELS[d] ?? d).join(", ");
+    return `Depends on ${names}, which ${skipped.length === 1 ? "is" : "are"} set to Skip. This step will be empty or fail \u2014 set ${skipped.length === 1 ? "it" : "them"} back to Create or pick existing records.`;
   }
 
   useEffect(() => {
@@ -256,6 +308,7 @@ export function Generate() {
                 hint={`Preset has ${preset.territories.length}.`}
                 mode={entityModes.territories}
                 onModeChange={(m) => setMode("territories", m)}
+                warning={warningFor("territories")}
                 picker={
                   <EntityPicker
                     label="territories"
@@ -273,6 +326,7 @@ export function Generate() {
                 hint={`Preset has ${preset.workOrderTypes.length}.`}
                 mode={entityModes.workOrderTypes}
                 onModeChange={(m) => setMode("workOrderTypes", m)}
+                warning={warningFor("workOrderTypes")}
                 picker={
                   <EntityPicker
                     label="work order types"
@@ -290,6 +344,7 @@ export function Generate() {
                 hint={`Preset has ${preset.characteristics.length}.`}
                 mode={entityModes.characteristics}
                 onModeChange={(m) => setMode("characteristics", m)}
+                warning={warningFor("characteristics")}
                 picker={
                   <EntityPicker
                     label="characteristics"
@@ -307,6 +362,7 @@ export function Generate() {
                 hint={`Preset has ${preset.incidentTypes.length}.`}
                 mode={entityModes.incidentTypes}
                 onModeChange={(m) => setMode("incidentTypes", m)}
+                warning={warningFor("incidentTypes")}
                 picker={
                   <EntityPicker
                     label="incident types"
@@ -324,6 +380,7 @@ export function Generate() {
                 hint={`Preset has ${preset.products.length}.`}
                 mode={entityModes.products}
                 onModeChange={(m) => setMode("products", m)}
+                warning={warningFor("products")}
                 picker={
                   <EntityPicker
                     label="products"
@@ -342,6 +399,7 @@ export function Generate() {
                 hint={`Preset has ${preset.sampleAccounts?.length ?? 0}.`}
                 mode={entityModes.accounts}
                 onModeChange={(m) => setMode("accounts", m)}
+                warning={warningFor("accounts")}
                 picker={
                   <EntityPicker
                     label="accounts"
@@ -360,6 +418,7 @@ export function Generate() {
                 hint={`Preset has ${preset.sampleTechnicians.length}.`}
                 mode={entityModes.resources}
                 onModeChange={(m) => setMode("resources", m)}
+                warning={warningFor("resources")}
                 picker={
                   <EntityPicker
                     label="bookable resources"
@@ -378,42 +437,49 @@ export function Generate() {
                 hint={`Preset has ${preset.functionalLocations?.length ?? 0}.`}
                 mode={entityModes.functionalLocations}
                 onModeChange={(m) => setMode("functionalLocations", m)}
+                warning={warningFor("functionalLocations")}
               />
               <AutoLoadRow
                 label="Customer Assets"
                 hint={`Preset has ${preset.customerAssets?.length ?? 0}.`}
                 mode={entityModes.customerAssets}
                 onModeChange={(m) => setMode("customerAssets", m)}
+                warning={warningFor("customerAssets")}
               />
               <AutoLoadRow
                 label="Service Task Types"
                 hint={`Preset has ${preset.serviceTaskTypes?.length ?? 0}. WO Service Tasks pull from this catalog.`}
                 mode={entityModes.serviceTaskTypes}
                 onModeChange={(m) => setMode("serviceTaskTypes", m)}
+                warning={warningFor("serviceTaskTypes")}
               />
               <AutoLoadRow
                 label="Agreements"
                 hint={`Preset has ${preset.agreements?.length ?? 0}. Booking setups + line items included.`}
                 mode={entityModes.agreements}
                 onModeChange={(m) => setMode("agreements", m)}
+                warning={warningFor("agreements")}
               />
               <AutoLoadRow
                 label="Warehouses"
                 hint={`Preset has ${preset.warehouses?.length ?? 0}.`}
                 mode={entityModes.warehouses}
                 onModeChange={(m) => setMode("warehouses", m)}
+                warning={warningFor("warehouses")}
               />
               <AutoLoadRow
                 label="Product Inventory"
                 hint="On-hand stock per warehouse × product."
                 mode={entityModes.productInventory}
                 onModeChange={(m) => setMode("productInventory", m)}
+                warning={warningFor("productInventory")}
               />
               <EntityRow
                 label="Work Orders"
                 hint="Sample WOs across Open / Scheduled / Closed."
                 mode={entityModes.workOrders}
                 onModeChange={(m) => setMode("workOrders", m)}
+                warning={warningFor("workOrders")}
                 hideExisting
               />
               <AutoLoadRow
@@ -421,12 +487,14 @@ export function Generate() {
                 hint="2–4 tasks per WO from the Service Task Type catalog."
                 mode={entityModes.workOrderServiceTasks}
                 onModeChange={(m) => setMode("workOrderServiceTasks", m)}
+                warning={warningFor("workOrderServiceTasks")}
               />
               <EntityRow
                 label="Bookings"
                 hint="One booking per Scheduled WO across the next 5 business days."
                 mode={entityModes.bookings}
                 onModeChange={(m) => setMode("bookings", m)}
+                warning={warningFor("bookings")}
                 hideExisting
               />
               <AutoLoadRow
@@ -434,18 +502,21 @@ export function Generate() {
                 hint="1–3 product lines per WO (Estimated for open, Used for closed)."
                 mode={entityModes.workOrderProducts}
                 onModeChange={(m) => setMode("workOrderProducts", m)}
+                warning={warningFor("workOrderProducts")}
               />
               <AutoLoadRow
                 label="Time Entries"
                 hint="One submitted Work entry per booking."
                 mode={entityModes.timeEntries}
                 onModeChange={(m) => setMode("timeEntries", m)}
+                warning={warningFor("timeEntries")}
               />
               <AutoLoadRow
                 label="IoT Alerts"
                 hint="One Connected Field Service alert per Customer Asset."
                 mode={entityModes.iotAlerts}
                 onModeChange={(m) => setMode("iotAlerts", m)}
+                warning={warningFor("iotAlerts")}
               />
             </div>
           </div>
@@ -573,6 +644,7 @@ function EntityRow({
   onModeChange,
   picker,
   hideExisting,
+  warning,
 }: {
   label: string;
   hint: string;
@@ -581,6 +653,8 @@ function EntityRow({
   picker?: React.ReactNode;
   /** When true, hide the "Use existing" option (e.g. for Work Orders / Bookings). */
   hideExisting?: boolean;
+  /** Optional warning text shown inline when upstream deps are skipped. */
+  warning?: string | null;
 }) {
   return (
     <div className="border border-border rounded-lg p-3 bg-bg-base/40">
@@ -602,6 +676,12 @@ function EntityRow({
           <option value="skip">Skip</option>
         </select>
       </div>
+      {warning && (
+        <div className="mt-2 text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1.5 flex items-start gap-1.5">
+          <Warning size={12} className="flex-shrink-0 mt-0.5" />
+          <span>{warning}</span>
+        </div>
+      )}
       {mode === "existing" && picker}
     </div>
   );
@@ -612,17 +692,27 @@ function AutoLoadRow({
   hint,
   mode,
   onModeChange,
+  warning,
 }: {
   label: string;
   hint: string;
   mode: "create" | "existing" | "skip";
   onModeChange: (m: "create" | "existing" | "skip") => void;
+  warning?: string | null;
 }) {
   return (
     <div className="border border-border rounded-lg p-3 bg-bg-base/40">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-sm font-semibold text-white truncate">{label}</div>
+          <div className="flex items-center gap-1.5">
+            <div className="text-sm font-semibold text-white truncate">{label}</div>
+            <span
+              title="AI-generated for this preset and tied to this run's accounts/products. 'Use existing' isn't offered — pick Skip if you don't want this loaded."
+              className="text-muted hover:text-slate-300 cursor-help"
+            >
+              <Info size={12} />
+            </span>
+          </div>
           <div className="text-xs text-muted">{hint}</div>
         </div>
         <select
@@ -637,6 +727,12 @@ function AutoLoadRow({
           <option value="skip">Skip</option>
         </select>
       </div>
+      {warning && (
+        <div className="mt-2 text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1.5 flex items-start gap-1.5">
+          <Warning size={12} className="flex-shrink-0 mt-0.5" />
+          <span>{warning}</span>
+        </div>
+      )}
     </div>
   );
 }
