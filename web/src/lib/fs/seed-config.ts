@@ -67,6 +67,30 @@ export interface SeedOptions {
          */
         alsoCreateFromPreset?: boolean;
       };
+  /**
+   * Per-entity sourcing for the catalog tier. For each, "create" (default)
+   * keeps the original behaviour: query-by-name then create from preset.
+   * "existing" skips creation and registers the picked records in the result
+   * map so downstream steps (work orders, bookings) reference them.
+   * "both" does both.
+   */
+  territories?: EntityChoice;
+  workOrderTypes?: EntityChoice;
+  characteristics?: EntityChoice;
+  incidentTypes?: EntityChoice;
+  products?: EntityChoice;
+  accounts?: EntityChoice;
+  /**
+   * Whether to generate work orders + bookings from preset, or skip them
+   * entirely (e.g. when the user just wants the catalog seeded).
+   */
+  workOrders?: { mode: "create" | "skip" };
+  bookings?: { mode: "create" | "skip" };
+}
+
+export interface EntityChoice {
+  mode: "create" | "existing" | "both";
+  existing?: Array<{ id: string; name: string }>;
 }
 
 function tag(description?: string): string {
@@ -95,6 +119,23 @@ async function findByField(
   return rows[0]?.[idField] ?? null;
 }
 
+/**
+ * If the caller provided existing records for a catalog entity, register them
+ * up-front in the result map keyed by name. This way Object.values(...) on the
+ * map (used by work-order/booking generation) will pick them up regardless of
+ * whether the preset records were also created.
+ */
+function registerExisting(
+  target: Record<string, string>,
+  choice: EntityChoice | undefined,
+): void {
+  if (!choice) return;
+  if (choice.mode === "create") return;
+  for (const r of choice.existing ?? []) {
+    target[r.name] = r.id;
+  }
+}
+
 export async function seedFromPreset(
   dv: DataverseClient,
   preset: FsPreset,
@@ -115,179 +156,215 @@ export async function seedFromPreset(
   };
 
   // ── Territories ──────────────────────────────────────────────────────────
-  onProgress({ step: "Territories", done: 0, total: preset.territories.length });
-  for (let i = 0; i < preset.territories.length; i++) {
-    const t = preset.territories[i];
-    const existing = await findByField(dv, "territories", "name", t.name, "territoryid");
-    if (existing) {
-      result.territoryIds[t.code] = existing;
-    } else {
-      const id = await dv.create("territories", {
-        name: t.name,
-        description: tag(t.description),
+  const territoryChoice = options.territories ?? { mode: "create" };
+  registerExisting(result.territoryIds, territoryChoice);
+  const skipTerritoriesPreset = territoryChoice.mode === "existing";
+  onProgress({
+    step: "Territories",
+    done: 0,
+    total: skipTerritoriesPreset ? 0 : preset.territories.length,
+  });
+  if (!skipTerritoriesPreset) {
+    for (let i = 0; i < preset.territories.length; i++) {
+      const t = preset.territories[i];
+      const existing = await findByField(dv, "territories", "name", t.name, "territoryid");
+      if (existing) {
+        result.territoryIds[t.code] = existing;
+      } else {
+        const id = await dv.create("territories", {
+          name: t.name,
+          description: tag(t.description),
+        });
+        result.territoryIds[t.code] = id;
+      }
+      onProgress({
+        step: "Territories",
+        done: i + 1,
+        total: preset.territories.length,
+        detail: t.name,
       });
-      result.territoryIds[t.code] = id;
     }
-    onProgress({
-      step: "Territories",
-      done: i + 1,
-      total: preset.territories.length,
-      detail: t.name,
-    });
   }
 
   // ── Work Order Types ─────────────────────────────────────────────────────
+  const woTypeChoice = options.workOrderTypes ?? { mode: "create" };
+  registerExisting(result.workOrderTypeIds, woTypeChoice);
+  const skipWoTypePreset = woTypeChoice.mode === "existing";
   onProgress({
     step: "Work Order Types",
     done: 0,
-    total: preset.workOrderTypes.length,
+    total: skipWoTypePreset ? 0 : preset.workOrderTypes.length,
   });
-  for (let i = 0; i < preset.workOrderTypes.length; i++) {
-    const wt = preset.workOrderTypes[i];
-    const existing = await findByField(
-      dv,
-      "msdyn_workordertypes",
-      "msdyn_name",
-      wt.name,
-      "msdyn_workordertypeid",
-    );
-    if (existing) {
-      result.workOrderTypeIds[wt.code] = existing;
-    } else {
-      const id = await dv.create("msdyn_workordertypes", {
-        msdyn_name: wt.name,
-        msdyn_description: tag(wt.description),
+  if (!skipWoTypePreset) {
+    for (let i = 0; i < preset.workOrderTypes.length; i++) {
+      const wt = preset.workOrderTypes[i];
+      const existing = await findByField(
+        dv,
+        "msdyn_workordertypes",
+        "msdyn_name",
+        wt.name,
+        "msdyn_workordertypeid",
+      );
+      if (existing) {
+        result.workOrderTypeIds[wt.code] = existing;
+      } else {
+        const id = await dv.create("msdyn_workordertypes", {
+          msdyn_name: wt.name,
+          msdyn_description: tag(wt.description),
+        });
+        result.workOrderTypeIds[wt.code] = id;
+      }
+      onProgress({
+        step: "Work Order Types",
+        done: i + 1,
+        total: preset.workOrderTypes.length,
+        detail: wt.name,
       });
-      result.workOrderTypeIds[wt.code] = id;
     }
-    onProgress({
-      step: "Work Order Types",
-      done: i + 1,
-      total: preset.workOrderTypes.length,
-      detail: wt.name,
-    });
   }
 
   // ── Characteristics ──────────────────────────────────────────────────────
+  const charChoice = options.characteristics ?? { mode: "create" };
+  registerExisting(result.characteristicIds, charChoice);
+  const skipCharPreset = charChoice.mode === "existing";
   onProgress({
     step: "Characteristics",
     done: 0,
-    total: preset.characteristics.length,
+    total: skipCharPreset ? 0 : preset.characteristics.length,
   });
-  for (let i = 0; i < preset.characteristics.length; i++) {
-    const c = preset.characteristics[i];
-    const existing = await findByField(
-      dv,
-      "characteristics",
-      "name",
-      c.name,
-      "characteristicid",
-    );
-    if (existing) {
-      result.characteristicIds[c.name] = existing;
-    } else {
-      const id = await dv.create("characteristics", {
-        name: c.name,
-        description: tag(c.description),
-        // 1 = Skill (most common for FS demo certifications)
-        characteristictype: 1,
+  if (!skipCharPreset) {
+    for (let i = 0; i < preset.characteristics.length; i++) {
+      const c = preset.characteristics[i];
+      const existing = await findByField(
+        dv,
+        "characteristics",
+        "name",
+        c.name,
+        "characteristicid",
+      );
+      if (existing) {
+        result.characteristicIds[c.name] = existing;
+      } else {
+        const id = await dv.create("characteristics", {
+          name: c.name,
+          description: tag(c.description),
+          // 1 = Skill (most common for FS demo certifications)
+          characteristictype: 1,
+        });
+        result.characteristicIds[c.name] = id;
+      }
+      onProgress({
+        step: "Characteristics",
+        done: i + 1,
+        total: preset.characteristics.length,
+        detail: c.name,
       });
-      result.characteristicIds[c.name] = id;
     }
-    onProgress({
-      step: "Characteristics",
-      done: i + 1,
-      total: preset.characteristics.length,
-      detail: c.name,
-    });
   }
 
   // ── Incident Types + Service Tasks ───────────────────────────────────────
-  const totalIncidents = preset.incidentTypes.length;
+  const incChoice = options.incidentTypes ?? { mode: "create" };
+  registerExisting(result.incidentTypeIds, incChoice);
+  const skipIncPreset = incChoice.mode === "existing";
+  const totalIncidents = skipIncPreset ? 0 : preset.incidentTypes.length;
   onProgress({ step: "Incident Types", done: 0, total: totalIncidents });
-  for (let i = 0; i < totalIncidents; i++) {
-    const inc = preset.incidentTypes[i];
-    let incidentId = await findByField(
-      dv,
-      "msdyn_incidenttypes",
-      "msdyn_name",
-      inc.name,
-      "msdyn_incidenttypeid",
-    );
-    if (!incidentId) {
-      incidentId = await dv.create("msdyn_incidenttypes", {
-        msdyn_name: inc.name,
-        msdyn_description: tag(inc.description),
-        msdyn_estimatedduration: inc.estimatedDurationMinutes,
-      });
-    }
-    result.incidentTypeIds[inc.name] = incidentId;
-
-    // Child service tasks — link via @odata.bind on the incident lookup.
-    for (let j = 0; j < inc.serviceTasks.length; j++) {
-      const taskName = inc.serviceTasks[j];
-      const taskFilter = `msdyn_name eq '${oencode(taskName)}' and _msdyn_incidenttype_value eq ${incidentId}`;
-      const existing = await dv.query<{ msdyn_incidenttypeservicetaskid: string }>(
-        "msdyn_incidenttypeservicetasks",
-        {
-          filter: taskFilter,
-          select: ["msdyn_incidenttypeservicetaskid"],
-          top: 1,
-        },
+  if (!skipIncPreset) {
+    for (let i = 0; i < totalIncidents; i++) {
+      const inc = preset.incidentTypes[i];
+      let incidentId = await findByField(
+        dv,
+        "msdyn_incidenttypes",
+        "msdyn_name",
+        inc.name,
+        "msdyn_incidenttypeid",
       );
-      if (!existing[0]) {
-        await dv.create("msdyn_incidenttypeservicetasks", {
-          msdyn_name: taskName,
-          msdyn_description: tag(),
-          "msdyn_IncidentType@odata.bind": `/msdyn_incidenttypes(${incidentId})`,
+      if (!incidentId) {
+        incidentId = await dv.create("msdyn_incidenttypes", {
+          msdyn_name: inc.name,
+          msdyn_description: tag(inc.description),
+          msdyn_estimatedduration: inc.estimatedDurationMinutes,
         });
       }
-    }
+      result.incidentTypeIds[inc.name] = incidentId;
 
-    onProgress({
-      step: "Incident Types",
-      done: i + 1,
-      total: totalIncidents,
-      detail: `${inc.name} (${inc.serviceTasks.length} tasks)`,
-    });
+      // Child service tasks — link via @odata.bind on the incident lookup.
+      for (let j = 0; j < inc.serviceTasks.length; j++) {
+        const taskName = inc.serviceTasks[j];
+        const taskFilter = `msdyn_name eq '${oencode(taskName)}' and _msdyn_incidenttype_value eq ${incidentId}`;
+        const existing = await dv.query<{ msdyn_incidenttypeservicetaskid: string }>(
+          "msdyn_incidenttypeservicetasks",
+          {
+            filter: taskFilter,
+            select: ["msdyn_incidenttypeservicetaskid"],
+            top: 1,
+          },
+        );
+        if (!existing[0]) {
+          await dv.create("msdyn_incidenttypeservicetasks", {
+            msdyn_name: taskName,
+            msdyn_description: tag(),
+            "msdyn_IncidentType@odata.bind": `/msdyn_incidenttypes(${incidentId})`,
+          });
+        }
+      }
+
+      onProgress({
+        step: "Incident Types",
+        done: i + 1,
+        total: totalIncidents,
+        detail: `${inc.name} (${inc.serviceTasks.length} tasks)`,
+      });
+    }
   }
 
   // ── Products ─────────────────────────────────────────────────────────────
-  onProgress({ step: "Products", done: 0, total: preset.products.length });
-  for (let i = 0; i < preset.products.length; i++) {
-    const p = preset.products[i];
-    // productnumber is a default alternate key on product — we can use upsert.
-    const existing = await findByField(
-      dv,
-      "products",
-      "productnumber",
-      p.productNumber,
-      "productid",
-    );
-    if (existing) {
-      result.productIds[p.productNumber] = existing;
-    } else {
-      const id = await dv.create("products", {
-        name: p.name,
-        productnumber: p.productNumber,
-        description: tag(p.description),
-        price: p.listPrice ?? 0,
-        // Sensible defaults to avoid required-field rejections:
-        productstructure: 1, // Product
-        statecode: 0, // Draft (cannot create as Active without a price list)
+  const productChoice = options.products ?? { mode: "create" };
+  registerExisting(result.productIds, productChoice);
+  const skipProductsPreset = productChoice.mode === "existing";
+  onProgress({
+    step: "Products",
+    done: 0,
+    total: skipProductsPreset ? 0 : preset.products.length,
+  });
+  if (!skipProductsPreset) {
+    for (let i = 0; i < preset.products.length; i++) {
+      const p = preset.products[i];
+      // productnumber is a default alternate key on product — we can use upsert.
+      const existing = await findByField(
+        dv,
+        "products",
+        "productnumber",
+        p.productNumber,
+        "productid",
+      );
+      if (existing) {
+        result.productIds[p.productNumber] = existing;
+      } else {
+        const id = await dv.create("products", {
+          name: p.name,
+          productnumber: p.productNumber,
+          description: tag(p.description),
+          price: p.listPrice ?? 0,
+          // Sensible defaults to avoid required-field rejections:
+          productstructure: 1, // Product
+          statecode: 0, // Draft (cannot create as Active without a price list)
+        });
+        result.productIds[p.productNumber] = id;
+      }
+      onProgress({
+        step: "Products",
+        done: i + 1,
+        total: preset.products.length,
+        detail: p.name,
       });
-      result.productIds[p.productNumber] = id;
     }
-    onProgress({
-      step: "Products",
-      done: i + 1,
-      total: preset.products.length,
-      detail: p.name,
-    });
   }
 
   // ── Accounts ─────────────────────────────────────────────────────────────
-  const accounts = preset.sampleAccounts ?? [];
+  const accountChoice = options.accounts ?? { mode: "create" };
+  registerExisting(result.accountIds, accountChoice);
+  const skipAccountsPreset = accountChoice.mode === "existing";
+  const accounts = skipAccountsPreset ? [] : preset.sampleAccounts ?? [];
   onProgress({ step: "Accounts", done: 0, total: accounts.length });
   for (let i = 0; i < accounts.length; i++) {
     const a = accounts[i];
@@ -474,8 +551,12 @@ export async function seedFromPreset(
   const accountIdList = Object.values(result.accountIds);
   const incidentIdList = Object.values(result.incidentTypeIds);
   const woTypeIdList = Object.values(result.workOrderTypeIds);
+  const skipWorkOrders = options.workOrders?.mode === "skip";
   const targetWoCount =
-    accountIdList.length > 0 && incidentIdList.length > 0 && woTypeIdList.length > 0
+    !skipWorkOrders &&
+    accountIdList.length > 0 &&
+    incidentIdList.length > 0 &&
+    woTypeIdList.length > 0
       ? Math.min(accountIdList.length * 2, 24)
       : 0;
   onProgress({ step: "Work Orders", done: 0, total: targetWoCount });
@@ -537,8 +618,9 @@ export async function seedFromPreset(
   // Bookings populate the schedule board. We only book WOs that we set to
   // Scheduled status above, and we spread them across the next 5 business days.
   const resourceIdList = Object.values(result.resourceIds);
+  const skipBookings = options.bookings?.mode === "skip";
   let bookingTarget = 0;
-  if (scheduledWoIds.length > 0 && resourceIdList.length > 0) {
+  if (!skipBookings && scheduledWoIds.length > 0 && resourceIdList.length > 0) {
     bookingTarget = scheduledWoIds.length;
   }
   onProgress({ step: "Bookings", done: 0, total: bookingTarget });

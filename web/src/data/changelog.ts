@@ -7,9 +7,23 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.6.0";
+export const APP_VERSION = "v1.7.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.7.0",
+    date: "April 30, 2026",
+    tag: "REUSE",
+    features: [
+      "New “Catalog sourcing (advanced)” section on Generate lets you choose “Create from preset”, “Use existing only”, or “Use existing + create” for each catalog type independently: Territories, Work Order Types, Characteristics, Incident Types, Products, and Accounts.",
+      "Picked existing records flow through to Work Order generation — your bookings reference your real accounts and incident types instead of demo copies.",
+      "Work Orders and Bookings can each be skipped entirely if you only want the catalog seeded.",
+      "Brand-your-environment tile is now the first dashboard tile since most demos start there.",
+    ],
+    fixes: [
+      "Fixed white-on-white invisible text in URL input fields when Chrome autofill kicked in — autofill now respects the dark theme everywhere.",
+    ],
+  },
   {
     version: "v1.6.0",
     date: "April 30, 2026",
