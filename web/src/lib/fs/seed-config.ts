@@ -299,6 +299,8 @@ export async function seedFromPreset(
     createdIds: {},
   };
 
+  try {
+
   // ── Territories ──────────────────────────────────────────────────────────
   await runEntityStep(
     dv,
@@ -1279,6 +1281,12 @@ export async function seedFromPreset(
   }
 
   return result;
+  } catch (err) {
+    // Attach the partial result so the UI can record what was created
+    // before the failure (so users can clean it up from the Reset page).
+    (err as { partialResult?: SeedResult }).partialResult = result;
+    throw err;
+  }
 }
 
 /**

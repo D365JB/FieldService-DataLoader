@@ -273,6 +273,17 @@ export function Generate() {
       setSteps((prev) => prev.map((s) => ({ ...s, status: "complete" })));
       setRetryNotice(null);
     } catch (err) {
+      // If seedFromPreset failed mid-run, it attaches whatever was
+      // created up to that point so we can still record it for cleanup.
+      const partial = (err as { partialResult?: typeof result }).partialResult;
+      if (partial) {
+        setResult(partial);
+        try {
+          runHistory.add(orgUrl, `${preset.companyName} (partial)`, partial);
+        } catch {
+          /* localStorage write failures shouldn't mask the original error */
+        }
+      }
       setError((err as Error).message);
     } finally {
       setRunning(false);

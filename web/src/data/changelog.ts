@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.18.2";
+export const APP_VERSION = "v1.18.3";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.18.3",
+    date: "April 30, 2026",
+    tag: "RESET",
+    features: [
+      "**Failed runs now show up in Reset.** When generation crashes mid-run, whatever was already created (territories, work order types, etc.) is recorded as a `(partial)` run on the Reset page so you can clean it up. Previously the run history only captured fully-successful runs, so partial loads became invisible zombies.",
+    ],
+  },
   {
     version: "v1.18.2",
     date: "April 30, 2026",
