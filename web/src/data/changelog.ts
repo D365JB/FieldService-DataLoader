@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.7.0";
+export const APP_VERSION = "v1.7.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.7.1",
+    date: "April 30, 2026",
+    tag: "FIX",
+    fixes: [
+      "Changelog modal now opens as a single, properly centered overlay. Previously the sticky header's backdrop-blur created a containing block that anchored the modal inside the header bar (and the footer rendered a duplicate underneath). Modal now portals to document.body so it always covers the full viewport.",
+    ],
+  },
   {
     version: "v1.7.0",
     date: "April 30, 2026",

@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 import { X, Sparkle, Rocket, Bug, Check } from "@phosphor-icons/react";
 import { CHANGELOG } from "@/data/changelog";
 
@@ -20,7 +21,10 @@ export function ChangelogModal({ open, onClose }: Props) {
 
   if (!open) return null;
 
-  return (
+  // Portal to <body> so ancestor `backdrop-filter` / `transform` / `filter`
+  // styles (e.g. on the sticky header) don't anchor our `position: fixed`
+  // overlay to the parent and crop it to the header's height.
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
       onClick={onClose}
@@ -100,7 +104,8 @@ export function ChangelogModal({ open, onClose }: Props) {
           ))}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
