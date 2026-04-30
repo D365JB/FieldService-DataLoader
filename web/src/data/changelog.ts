@@ -7,9 +7,19 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.14.0";
+export const APP_VERSION = "v1.15.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.15.0",
+    date: "June 4, 2026",
+    tag: "DEMO PACKS",
+    features: [
+      "**Curated Demo Packs** — pick a pre-tuned vertical pack on the Analyze page instead of running web analysis or starting from generic. Four packs ship today: **Generic**, **HVAC** (RTUs / chillers / refrigerant), **Telecom** (towers / generators / 5G), and **Property / Facilities** (lighting / plumbing / elevator coord).",
+      "Each pack swaps in vertical-specific characteristics, incident types with realistic service tasks, and product/parts catalogs. Everything else (territories, accounts, agreements, etc.) is still fully editable in the review step.",
+      "**Phases 1–7 complete** — the seeder now covers every major Field Service entity tier: catalog, accounts, resources, work orders, bookings, customer assets, functional locations, agreements, WO products, time entries, warehouses, product inventory, and IoT alerts. All with idempotent re-runs and child-first cleanup.",
+    ],
+  },
   {
     version: "v1.14.0",
     date: "May 28, 2026",

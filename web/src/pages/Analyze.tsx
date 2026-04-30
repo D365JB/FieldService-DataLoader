@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMsal } from "@azure/msal-react";
-import { Sparkle, Globe, Warning, ArrowRight, FastForward } from "@phosphor-icons/react";
+import { Sparkle, Globe, Warning, ArrowRight, FastForward, Package } from "@phosphor-icons/react";
 import { AppHeader } from "@/components/AppHeader";
 import { PresetReview } from "@/components/PresetReview";
 import { analyzeCompany } from "@/lib/preset";
 import type { FsPreset } from "@/lib/preset";
 import { GENERIC_PRESET } from "@/lib/genericPreset";
+import { DEMO_PACKS } from "@/lib/demoPacks";
 import { orgStore } from "@/lib/orgStore";
 
 export function Analyze() {
@@ -52,6 +53,18 @@ export function Analyze() {
     const next = preset ?? GENERIC_PRESET;
     orgStore.setPreset(JSON.stringify(next));
     navigate("/generate");
+  }
+
+  /**
+   * Phase 7 — load a curated demo pack into review state. The user can still
+   * edit anything before clicking Generate.
+   */
+  function handlePickPack(packId: string) {
+    const pack = DEMO_PACKS.find((p) => p.id === packId);
+    if (!pack) return;
+    setPreset(pack.preset);
+    setError(null);
+    orgStore.setPreset(JSON.stringify(pack.preset));
   }
 
   return (
@@ -113,18 +126,38 @@ export function Analyze() {
             </div>
           )}
 
-          <div className="mt-6 pt-5 border-t border-border flex items-center justify-between gap-3">
-            <div className="text-xs text-muted">
-              Don't want to analyze a website? Skip ahead with a generic
-              Field Service preset and tweak in the next step.
+          <div className="mt-6 pt-5 border-t border-border">
+            <div className="flex items-center gap-2 mb-3">
+              <Package size={18} className="text-accent" weight="duotone" />
+              <div className="text-xs uppercase tracking-wider text-muted">
+                Or pick a curated demo pack
+              </div>
             </div>
-            <button
-              onClick={handleSkip}
-              className="btn-ghost flex items-center gap-2 whitespace-nowrap"
-            >
-              <FastForward size={16} weight="bold" />
-              Skip &amp; use generic preset
-            </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {DEMO_PACKS.map((pack) => (
+                <button
+                  key={pack.id}
+                  onClick={() => handlePickPack(pack.id)}
+                  className="text-left p-4 rounded-lg border border-border bg-bg-elevated hover:border-accent hover:bg-bg-elevated/80 transition-colors"
+                >
+                  <div className="text-sm font-semibold text-white mb-1">
+                    {pack.label}
+                  </div>
+                  <div className="text-xs text-slate-400 leading-relaxed">
+                    {pack.blurb}
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 flex items-center justify-end">
+              <button
+                onClick={handleSkip}
+                className="btn-ghost flex items-center gap-2 whitespace-nowrap text-xs"
+              >
+                <FastForward size={14} weight="bold" />
+                Skip review &amp; generate with current preset
+              </button>
+            </div>
           </div>
         </div>
 
