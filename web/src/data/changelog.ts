@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.16.0";
+export const APP_VERSION = "v1.16.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.16.1",
+    date: "April 30, 2026",
+    tag: "REVIEW",
+    features: [
+      "**Analyze review now shows everything the AI generated.** Added detail sections for Functional Locations, Customer Assets, Service Task Types, Service Agreements (with recurrence + covered incidents/products as chips), and Warehouses — so you can see exactly what will be created before you hit Generate, and tweak it with the AI editor first.",
+    ],
+  },
   {
     version: "v1.16.0",
     date: "April 30, 2026",

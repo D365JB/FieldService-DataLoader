@@ -14,6 +14,11 @@ import {
   CaretUp,
   Clock,
   ListBullets,
+  TreeStructure,
+  HardDrives,
+  ClipboardText,
+  FileText,
+  Warehouse,
 } from "@phosphor-icons/react";
 import type { FsPreset } from "@/lib/preset";
 import { editPreset } from "@/lib/presetEditor";
@@ -296,6 +301,133 @@ export function PresetReview({ preset, onChange }: Props) {
           ])}
         />
       </Section>
+
+      {preset.functionalLocations && preset.functionalLocations.length > 0 && (
+        <Section
+          icon={<TreeStructure size={18} weight="duotone" className="text-accent" />}
+          title="Functional locations"
+          count={preset.functionalLocations.length}
+        >
+          <Table
+            headers={["Name", "Account", "Parent", "Description"]}
+            rows={preset.functionalLocations.map((fl) => [
+              <span className="font-semibold text-white">{fl.name}</span>,
+              <span className="text-slate-300 text-sm">{fl.accountName}</span>,
+              <span className="text-slate-400 text-sm">{fl.parentName ?? "—"}</span>,
+              <span className="text-slate-400 text-sm">{fl.description ?? "—"}</span>,
+            ])}
+          />
+        </Section>
+      )}
+
+      {preset.customerAssets && preset.customerAssets.length > 0 && (
+        <Section
+          icon={<HardDrives size={18} weight="duotone" className="text-accent" />}
+          title="Customer assets"
+          count={preset.customerAssets.length}
+        >
+          <Table
+            headers={["Name", "Account", "Location", "Product", "Serial"]}
+            rows={preset.customerAssets.map((a) => [
+              <span className="font-semibold text-white">{a.name}</span>,
+              <span className="text-slate-300 text-sm">{a.accountName}</span>,
+              <span className="text-slate-400 text-sm">{a.functionalLocationName ?? "—"}</span>,
+              <code className="text-accent text-xs">{a.productNumber ?? "—"}</code>,
+              <code className="text-slate-400 text-xs">{a.serialNumber ?? "—"}</code>,
+            ])}
+          />
+        </Section>
+      )}
+
+      {preset.serviceTaskTypes && preset.serviceTaskTypes.length > 0 && (
+        <Section
+          icon={<ClipboardText size={18} weight="duotone" className="text-accent" />}
+          title="Service task types"
+          count={preset.serviceTaskTypes.length}
+        >
+          <Table
+            headers={["Name", "Description", "Est. duration"]}
+            rows={preset.serviceTaskTypes.map((s) => [
+              <span className="font-semibold text-white">{s.name}</span>,
+              <span className="text-slate-400 text-sm">{s.description ?? "—"}</span>,
+              <span className="inline-flex items-center gap-1 text-xs text-muted whitespace-nowrap">
+                <Clock size={12} />
+                {s.estimatedDurationMinutes ?? "—"} min
+              </span>,
+            ])}
+          />
+        </Section>
+      )}
+
+      {preset.agreements && preset.agreements.length > 0 && (
+        <Section
+          icon={<FileText size={18} weight="duotone" className="text-accent" />}
+          title="Service agreements"
+          count={preset.agreements.length}
+        >
+          <div className="divide-y divide-border">
+            {preset.agreements.map((a, i) => (
+              <div key={i} className="py-3">
+                <div className="flex items-baseline justify-between gap-3">
+                  <div className="font-semibold text-white">{a.name}</div>
+                  <span className="inline-flex items-center gap-1 text-xs text-muted whitespace-nowrap">
+                    <Clock size={12} />
+                    {a.recurrencePattern} · {a.estimatedDurationMinutes ?? "—"} min
+                  </span>
+                </div>
+                <div className="text-sm text-slate-400 mt-1">
+                  {a.accountName} · {a.startOn} → {a.endOn}
+                </div>
+                {a.description && (
+                  <div className="text-sm text-slate-400 mt-1">{a.description}</div>
+                )}
+                {(a.coveredIncidentTypeNames?.length ||
+                  a.coveredProductNumbers?.length) && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {a.coveredIncidentTypeNames?.map((n, j) => (
+                      <span
+                        key={`i${j}`}
+                        className="inline-flex items-center gap-1 text-[11px] text-slate-300 bg-bg-base border border-border rounded-full px-2 py-0.5"
+                      >
+                        <Warning size={10} />
+                        {n}
+                      </span>
+                    ))}
+                    {a.coveredProductNumbers?.map((p, j) => (
+                      <span
+                        key={`p${j}`}
+                        className="inline-flex items-center gap-1 text-[11px] text-emerald-300 bg-bg-base border border-border rounded-full px-2 py-0.5"
+                      >
+                        <Package size={10} />
+                        {p}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {preset.warehouses && preset.warehouses.length > 0 && (
+        <Section
+          icon={<Warehouse size={18} weight="duotone" className="text-accent" />}
+          title="Warehouses"
+          count={preset.warehouses.length}
+        >
+          <Table
+            headers={["Name", "Location", "Description"]}
+            rows={preset.warehouses.map((w) => [
+              <span className="font-semibold text-white">{w.name}</span>,
+              <span className="text-slate-300 text-sm">
+                {[w.city, w.state].filter(Boolean).join(", ") || "—"}
+              </span>,
+              <span className="text-slate-400 text-sm">{w.description ?? "—"}</span>,
+            ])}
+          />
+        </Section>
+      )}
 
       {/* Raw JSON (collapsed) */}
       <div className="card p-4">
