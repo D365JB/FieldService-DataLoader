@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.18.9";
+export const APP_VERSION = "v1.18.10";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.18.10",
+    date: "April 30, 2026",
+    tag: "COPY",
+    features: [
+      "**“Sandbox” → “demo org”** in user-facing copy on Landing and Dashboard.",
+    ],
+  },
   {
     version: "v1.18.9",
     date: "April 30, 2026",

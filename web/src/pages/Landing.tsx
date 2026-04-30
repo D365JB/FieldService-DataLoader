@@ -79,7 +79,7 @@ export function Landing() {
           <p className="text-xl text-slate-300 max-w-2xl mx-auto mb-10">
             Generate work orders, agreements, assets, and the full dispatch
             graph for a believable customer-flavored Field Service demo —
-            powered by AI, written straight to your sandbox.
+            powered by AI, written straight to your demo org.
           </p>
           <div className="flex items-center justify-center gap-4">
             <button

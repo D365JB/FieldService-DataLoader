@@ -16,7 +16,7 @@ const ACTIONS = [
   {
     icon: Sparkle,
     title: "Generate FS demo data",
-    body: "Analyze a customer URL with AI, then populate your sandbox with a full Field Service demo: accounts, work orders + bookings, agreements, customer assets, IoT alerts, and inventory.",
+    body: "Analyze a customer URL with AI, then populate your demo org with a full Field Service demo: accounts, work orders + bookings, agreements, customer assets, IoT alerts, and inventory.",
     cta: "Start AI generator",
     href: "/analyze",
     primary: false,
