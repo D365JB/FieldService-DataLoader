@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMsal } from "@azure/msal-react";
 import { Plug, CheckCircle, Warning } from "@phosphor-icons/react";
 import { AppHeader } from "@/components/AppHeader";
 import { getDataverseToken } from "@/auth/msal";
+import { orgStore } from "@/lib/orgStore";
 
 interface WhoAmIResponse {
   UserId: string;
@@ -22,6 +23,12 @@ export function Connect() {
     name: string;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Pre-fill the previously connected org URL so users don't have to retype it.
+  useEffect(() => {
+    const stored = orgStore.getOrgUrl();
+    if (stored) setOrgUrl(stored);
+  }, []);
 
   async function handleTest() {
     setError(null);
@@ -59,6 +66,7 @@ export function Connect() {
       const user = userRes.ok ? await userRes.json() : { fullname: "Unknown" };
 
       sessionStorage.setItem("orgUrl", trimmed);
+      orgStore.setOrgUrl(trimmed);
       setResult({
         user: whoami.UserId,
         org: whoami.OrganizationId,

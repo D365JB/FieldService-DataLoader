@@ -7,9 +7,23 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.2.0";
+export const APP_VERSION = "v1.2.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.2.1",
+    date: "April 30, 2026",
+    tag: "UX",
+    fixes: [
+      "Disabled EasyAuth on the Function App so the AOAI proxy is reachable from the SPA (was returning 400 \"Login not supported for provider azureStaticWebApps\").",
+    ],
+    improvements: [
+      "Sign-in and connected org URL now persist in localStorage instead of sessionStorage \u2014 you stay logged in and don't have to re-enter your D365 environment URL on every visit.",
+      "Connect screen now pre-fills the previously connected environment URL.",
+      "AppHeader now shows Back and Dashboard buttons on every subpage.",
+      "Analyze screen now offers a Skip & use generic preset button to bypass the AI analysis with a vertical-agnostic Field Service catalog.",
+    ],
+  },
   {
     version: "v1.2.0",
     date: "April 30, 2026",

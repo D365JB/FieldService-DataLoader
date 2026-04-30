@@ -12,6 +12,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { DataverseClient, deepLink } from "@/lib/dataverse";
 import { seedFromPreset, type SeedProgress, type SeedResult } from "@/lib/fs/seed-config";
 import type { FsPreset } from "@/lib/preset";
+import { orgStore } from "@/lib/orgStore";
 
 interface StepState {
   name: string;
@@ -36,10 +37,10 @@ const STEP_ORDER = [
 export function Generate() {
   const { accounts } = useMsal();
   const navigate = useNavigate();
-  const orgUrl = sessionStorage.getItem("orgUrl") ?? "";
+  const orgUrl = orgStore.getOrgUrl() ?? "";
 
   const preset = useMemo<FsPreset | null>(() => {
-    const raw = sessionStorage.getItem("preset");
+    const raw = orgStore.getPreset();
     return raw ? (JSON.parse(raw) as FsPreset) : null;
   }, []);
 

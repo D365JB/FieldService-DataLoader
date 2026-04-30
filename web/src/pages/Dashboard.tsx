@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { useMsal } from "@azure/msal-react";
 import { Sparkle, Trash, Wrench, Palette } from "@phosphor-icons/react";
 import { AppHeader } from "@/components/AppHeader";
+import { orgStore } from "@/lib/orgStore";
 
 const ACTIONS = [
   {
@@ -33,7 +34,7 @@ const ACTIONS = [
 export function Dashboard() {
   const { accounts } = useMsal();
   const navigate = useNavigate();
-  const orgUrl = sessionStorage.getItem("orgUrl") ?? undefined;
+  const orgUrl = orgStore.getOrgUrl() ?? undefined;
 
   if (!accounts[0]) {
     navigate("/");

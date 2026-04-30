@@ -5,11 +5,12 @@ import { Trash, Warning, CheckCircle, CircleNotch } from "@phosphor-icons/react"
 import { AppHeader } from "@/components/AppHeader";
 import { DataverseClient } from "@/lib/dataverse";
 import { resetDemoData, DEMO_TAG, type SeedProgress } from "@/lib/fs/seed-config";
+import { orgStore } from "@/lib/orgStore";
 
 export function Reset() {
   const { accounts } = useMsal();
   const navigate = useNavigate();
-  const orgUrl = sessionStorage.getItem("orgUrl") ?? "";
+  const orgUrl = orgStore.getOrgUrl() ?? "";
 
   const [confirmText, setConfirmText] = useState("");
   const [running, setRunning] = useState(false);

@@ -1,15 +1,17 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMsal } from "@azure/msal-react";
-import { Sparkle, Globe, Warning, ArrowRight } from "@phosphor-icons/react";
+import { Sparkle, Globe, Warning, ArrowRight, FastForward } from "@phosphor-icons/react";
 import { AppHeader } from "@/components/AppHeader";
 import { analyzeCompany } from "@/lib/preset";
 import type { FsPreset } from "@/lib/preset";
+import { GENERIC_PRESET } from "@/lib/genericPreset";
+import { orgStore } from "@/lib/orgStore";
 
 export function Analyze() {
   const { accounts } = useMsal();
   const navigate = useNavigate();
-  const orgUrl = sessionStorage.getItem("orgUrl") ?? undefined;
+  const orgUrl = orgStore.getOrgUrl() ?? undefined;
 
   const [companyUrl, setCompanyUrl] = useState("");
   const [busy, setBusy] = useState(false);
@@ -28,12 +30,17 @@ export function Analyze() {
     try {
       const result = await analyzeCompany(companyUrl);
       setPreset(result);
-      sessionStorage.setItem("preset", JSON.stringify(result));
+      orgStore.setPreset(JSON.stringify(result));
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setBusy(false);
     }
+  }
+
+  function handleSkip() {
+    orgStore.setPreset(JSON.stringify(GENERIC_PRESET));
+    navigate("/generate");
   }
 
   return (
@@ -94,6 +101,20 @@ export function Analyze() {
               </div>
             </div>
           )}
+
+          <div className="mt-6 pt-5 border-t border-border flex items-center justify-between gap-3">
+            <div className="text-xs text-muted">
+              Don't want to analyze a website? Skip ahead with a generic
+              Field Service preset and tweak in the next step.
+            </div>
+            <button
+              onClick={handleSkip}
+              className="btn-ghost flex items-center gap-2 whitespace-nowrap"
+            >
+              <FastForward size={16} weight="bold" />
+              Skip &amp; use generic preset
+            </button>
+          </div>
         </div>
 
         {preset && <PresetSummary preset={preset} />}

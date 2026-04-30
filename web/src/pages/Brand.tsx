@@ -13,6 +13,7 @@ import {
 } from "@phosphor-icons/react";
 import { AppHeader } from "@/components/AppHeader";
 import { DataverseClient } from "@/lib/dataverse";
+import { orgStore } from "@/lib/orgStore";
 import {
   applyTheme,
   deriveColors,
@@ -33,7 +34,7 @@ const STEPS = [
 export function Brand() {
   const { accounts } = useMsal();
   const navigate = useNavigate();
-  const orgUrl = sessionStorage.getItem("orgUrl") ?? undefined;
+  const orgUrl = orgStore.getOrgUrl() ?? undefined;
 
   const [step, setStep] = useState<Step>("input");
   const [url, setUrl] = useState("");
