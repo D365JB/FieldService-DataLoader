@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.18.6";
+export const APP_VERSION = "v1.18.7";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.18.7",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Product create UoM bind names corrected (third try, verified against `$metadata`).** The single-valued navigation properties on `product` are lowercase `defaultuomid` and `defaultuomscheduleid` on this org.",
+    ],
+  },
   {
     version: "v1.18.6",
     date: "April 30, 2026",
