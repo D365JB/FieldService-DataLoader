@@ -7,9 +7,20 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.5.0";
+export const APP_VERSION = "v1.6.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.6.0",
+    date: "April 30, 2026",
+    tag: "CLEAN",
+    features: [
+      "Generated records no longer carry the DEMO-FS: prefix in their descriptions — your demo data looks production-clean.",
+      "Per-run deletion now tracks bookable resources we created in a dedicated id list, so existing-org resources stay protected without needing a tag.",
+      "New “Delete all N runs” button on the Reset page tears down every load in one click.",
+      "Legacy DEMO-FS tag sweep is still available as a fallback for runs created before v1.6 or from another browser.",
+    ],
+  },
   {
     version: "v1.5.0",
     date: "April 30, 2026",

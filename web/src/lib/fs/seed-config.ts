@@ -26,7 +26,16 @@ export interface SeedResult {
   characteristicIds: Record<string, string>;
   productIds: Record<string, string>;
   accountIds: Record<string, string>;
+  /**
+   * All resources used by the run — includes both ones we created and ones the
+   * user picked from existing org records via "use existing" mode.
+   */
   resourceIds: Record<string, string>;
+  /**
+   * Subset of resources we actually created in this run. Per-run delete only
+   * removes these; existing-org resources are protected.
+   */
+  createdResourceIds: string[];
   workOrderIds: string[];
   bookingIds: string[];
 }
@@ -61,7 +70,12 @@ export interface SeedOptions {
 }
 
 function tag(description?: string): string {
-  return `${DEMO_TAG}: ${description ?? ""}`.trim();
+  // Historically prefixed every description with `${DEMO_TAG}:` so a tag-sweep
+  // could find them. As of v1.6 we track every record id in run history
+  // instead, so descriptions stay clean. The function is preserved (and the
+  // DEMO_TAG export retained) so older history entries from v1.5 and earlier
+  // can still be reset via the legacy tag-sweep.
+  return (description ?? "").trim();
 }
 
 /** Find a record by exact name match; return its id or null. */
@@ -95,6 +109,7 @@ export async function seedFromPreset(
     productIds: {},
     accountIds: {},
     resourceIds: {},
+    createdResourceIds: [],
     workOrderIds: [],
     bookingIds: [],
   };
@@ -404,6 +419,7 @@ export async function seedFromPreset(
         // 4 = Equipment. We use this so we don't need to create a systemuser.
         resourcetype: 4,
       });
+      result.createdResourceIds.push(resourceId);
 
       // Best-effort: link primary skill via bookableresourcecharacteristic.
       const charId = result.characteristicIds[t.primarySkill];
@@ -740,22 +756,28 @@ export async function deleteRun(
   await sweepIds("Bookings", "bookableresourcebookings", result.bookingIds);
   await sweepIds("Work Orders", "msdyn_workorders", result.workOrderIds);
 
-  // Bookable resources: only delete the ones we created. We detect that by
-  // re-reading the description and checking it still has the DEMO_TAG prefix.
-  const resourceIds = Object.values(result.resourceIds);
-  const ourResourceIds: string[] = [];
-  for (const rid of resourceIds) {
-    try {
-      const row = await dv.retrieve<{ description?: string }>(
-        "bookableresources",
-        rid,
-        ["description"],
-      );
-      if (row?.description?.startsWith(`${DEMO_TAG}:`)) {
-        ourResourceIds.push(rid);
+  // Bookable resources: only delete the ones we created. v1.6+ runs track
+  // these explicitly in `createdResourceIds`. For older v1.5 history entries
+  // the field is missing — fall back to checking the legacy `DEMO-FS:`
+  // description prefix so those runs can still be cleaned up safely.
+  let ourResourceIds: string[] = [];
+  if (Array.isArray(result.createdResourceIds)) {
+    ourResourceIds = result.createdResourceIds;
+  } else {
+    const legacyIds = Object.values(result.resourceIds);
+    for (const rid of legacyIds) {
+      try {
+        const row = await dv.retrieve<{ description?: string }>(
+          "bookableresources",
+          rid,
+          ["description"],
+        );
+        if (row?.description?.startsWith(`${DEMO_TAG}:`)) {
+          ourResourceIds.push(rid);
+        }
+      } catch {
+        /* skip — record probably already deleted */
       }
-    } catch {
-      /* skip — record probably already deleted */
     }
   }
   await sweepIds("Bookable Resources", "bookableresources", ourResourceIds);

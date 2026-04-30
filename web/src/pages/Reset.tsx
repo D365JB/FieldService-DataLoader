@@ -70,6 +70,37 @@ export function Reset() {
     }
   }
 
+  async function handleDeleteAllRuns() {
+    if (runs.length === 0) return;
+    setError(null);
+    setResult(null);
+    setActiveRunId(null);
+    setMode("running");
+    const totals: Record<string, number> = {};
+    try {
+      const dv = new DataverseClient({ orgUrl });
+      // Snapshot before mutation, since we remove from history as we go.
+      const snapshot = [...runs];
+      for (const run of snapshot) {
+        setActiveRunId(run.id);
+        const r = await deleteRun(dv, run.result, setProgress);
+        for (const [k, v] of Object.entries(r.deletedByEntity)) {
+          totals[k] = (totals[k] ?? 0) + v;
+        }
+        runHistory.remove(orgUrl, run.id);
+        setRuns(runHistory.list(orgUrl));
+      }
+      setActiveRunId(null);
+      setResult(totals);
+      setMode("done");
+    } catch (err) {
+      setError((err as Error).message);
+      setMode("error");
+    } finally {
+      setProgress(null);
+    }
+  }
+
   async function handleFullReset() {
     if (!confirmed) return;
     setError(null);
@@ -172,21 +203,41 @@ export function Reset() {
             Bookable resources you brought from your own org (the “use
             existing” mode) are skipped automatically.
           </p>
+
+          {runs.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-border flex items-center justify-between gap-3">
+              <div className="text-xs text-muted">
+                Delete every load shown above in one go.
+              </div>
+              <button
+                onClick={handleDeleteAllRuns}
+                disabled={running}
+                className="text-xs px-3 py-1.5 rounded-md bg-red-600/80 hover:bg-red-600 text-white flex items-center gap-1.5 disabled:opacity-40"
+              >
+                <Trash size={12} weight="bold" />
+                Delete all {runs.length} runs
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Full reset */}
+        {/* Legacy tag-sweep fallback */}
         <div className="card p-6">
-          <h2 className="font-semibold text-white mb-1">Wipe everything</h2>
+          <h2 className="font-semibold text-white mb-1">
+            Legacy cleanup (tag sweep)
+          </h2>
           <p className="text-xs text-muted mb-3">
-            Catch-all: deletes every record whose description still starts
-            with <code>{DEMO_TAG}:</code>, even runs created on other devices
-            or before history tracking. Real data is untouched.
+            Only needed for runs created before <code>v1.6.0</code> or from a
+            different browser. Finds every record whose description still
+            starts with <code>{DEMO_TAG}:</code> and deletes it. New loads
+            (v1.6+) no longer use this prefix — descriptions stay clean and
+            deletion is tracked by record id instead.
           </p>
 
           <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-sm flex items-start gap-2 mb-4">
             <Warning size={18} className="flex-shrink-0 mt-0.5" />
             <div>
-              This deletes service tasks, incident types, work order types,
+              Deletes service tasks, incident types, work order types,
               characteristics, products, accounts, work orders, bookings, and
               demo-tagged bookable resources from{" "}
               <strong>{expectedConfirm}</strong>. Cannot be undone.
@@ -219,7 +270,7 @@ export function Reset() {
               )}
               {running && activeRunId === null
                 ? "Deleting…"
-                : "Delete all demo data"}
+                : "Run legacy tag sweep"}
             </button>
             <button
               onClick={() => navigate("/dashboard")}
