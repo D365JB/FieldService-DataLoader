@@ -53,6 +53,8 @@ const phase2EntityOrder: Array<{
   { key: "agreementBookingServices", label: "Agreement Booking Services", entitySet: "msdyn_agreementbookingservices", phase: "afterWo" },
   { key: "agreementBookingSetups", label: "Agreement Booking Setups", entitySet: "msdyn_agreementbookingsetups", phase: "afterWo" },
   { key: "agreements", label: "Agreements", entitySet: "msdyn_agreements", phase: "afterWo" },
+  // Auto-created demo price list — must be removed AFTER agreements release it.
+  { key: "priceLists", label: "Price Lists", entitySet: "pricelevels", phase: "afterWo" },
   // Phase 5 — inventory (child-first).
   { key: "productInventory", label: "Product Inventory", entitySet: "msdyn_productinventories", phase: "afterWo" },
   { key: "warehouses", label: "Warehouses", entitySet: "msdyn_warehouses", phase: "afterWo" },
@@ -700,6 +702,73 @@ export async function seedFromPreset(
     result,
     "agreementBookingSetups",
   );
+
+  // Agreement requires msdyn_pricelist (lookup to pricelevel). Resolve a
+  // default once — prefer any active price list in the org. If none exists
+  // (fresh / minimal orgs), auto-create one tied to the org's base currency
+  // so demo generation can proceed without manual setup.
+  let defaultPriceListId: string | null = null;
+  if (agreements.length && options.agreements?.mode !== "skip") {
+    try {
+      const priceLists = await dv.query<{ pricelevelid: string }>(
+        "pricelevels",
+        {
+          select: ["pricelevelid", "name"],
+          filter: "statecode eq 0",
+          top: 1,
+        },
+      );
+      if (priceLists[0]) {
+        defaultPriceListId = priceLists[0].pricelevelid;
+      } else {
+        // No price list in the org — try to create a demo one. Need a
+        // currency; prefer the org's base currency, fall back to any.
+        let currencyId: string | null = null;
+        try {
+          const orgs = await dv.query<{
+            _basecurrencyid_value: string;
+          }>("organizations", {
+            select: ["_basecurrencyid_value"],
+            top: 1,
+          });
+          currencyId = orgs[0]?._basecurrencyid_value ?? null;
+        } catch {
+          /* fall through to any-currency lookup */
+        }
+        if (!currencyId) {
+          const currencies = await dv.query<{ transactioncurrencyid: string }>(
+            "transactioncurrencies",
+            {
+              select: ["transactioncurrencyid"],
+              filter: "statecode eq 0",
+              top: 1,
+            },
+          );
+          currencyId = currencies[0]?.transactioncurrencyid ?? null;
+        }
+        if (!currencyId) {
+          throw new Error(
+            "Cannot create agreements: this org has no price list and no active currency to attach one to. Create a price list in Sales → Price Lists, then re-run.",
+          );
+        }
+        const newId = await dv.create("pricelevels", {
+          name: tag("FSDL Demo Price List"),
+          "transactioncurrencyid@odata.bind":
+            `/transactioncurrencies(${currencyId})`,
+        });
+        defaultPriceListId = newId;
+        // Track so per-run delete can clean it up.
+        trackCreated(result, "priceLists", newId);
+      }
+    } catch (err) {
+      // Surface the failure now — agreement create would fail anyway with a
+      // less actionable "The price list must be set." error.
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Could not resolve or create a price list (required for msdyn_agreement). ${msg}`,
+      );
+    }
+  }
   await runEntityStep(
     dv,
     {
@@ -729,6 +798,12 @@ export async function seedFromPreset(
           // lowercase in this org — verified via $metadata.
           payload["msdyn_serviceaccount@odata.bind"] = `/accounts(${accountId})`;
           payload["msdyn_billingaccount@odata.bind"] = `/accounts(${accountId})`;
+        }
+        if (defaultPriceListId) {
+          // Required by msdyn_agreement validation — uses the org's first
+          // active price list.
+          payload["msdyn_pricelist@odata.bind"] =
+            `/pricelevels(${defaultPriceListId})`;
         }
         return payload;
       },

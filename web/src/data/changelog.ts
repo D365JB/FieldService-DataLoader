@@ -7,9 +7,19 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.19.0";
+export const APP_VERSION = "v1.19.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.19.1",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Agreements now bind a price list.** `msdyn_agreement` requires `msdyn_pricelist`. The loader resolves the first active `pricelevel` in your org, and if none exists it auto-creates a demo price list (\"FSDL Demo Price List\") tied to the org's base currency. Resolves *“The price list must be set.”*",
+      "**Auto-created price lists are tracked** so per-run delete removes them after the agreements that referenced them.",
+      "**Clearer failure path:** if no currency exists either, generation stops up-front with a precise message instead of a generic 400.",
+    ],
+  },
   {
     version: "v1.19.0",
     date: "April 30, 2026",

@@ -27,6 +27,7 @@ type Mode = "idle" | "running" | "done" | "error";
 function summarizeRun(run: RunRecord): Array<{ label: string; count: number }> {
   const r = run.result;
   const idMaps = r.idMaps ?? {};
+  const createdIds = r.createdIds ?? {};
   const out: Array<{ label: string; count: number }> = [
     { label: "Territories", count: Object.keys(r.territoryIds).length },
     { label: "Work Order Types", count: Object.keys(r.workOrderTypeIds).length },
@@ -38,6 +39,7 @@ function summarizeRun(run: RunRecord): Array<{ label: string; count: number }> {
     { label: "Functional Locations", count: Object.keys(idMaps.functionalLocations ?? {}).length },
     { label: "Customer Assets", count: Object.keys(idMaps.customerAssets ?? {}).length },
     { label: "Service Task Types", count: Object.keys(idMaps.serviceTaskTypes ?? {}).length },
+    { label: "Price Lists (auto-created)", count: (createdIds.priceLists ?? []).length },
     { label: "Agreements", count: Object.keys(idMaps.agreements ?? {}).length },
     { label: "Agreement Booking Setups", count: Object.keys(idMaps.agreementBookingSetups ?? {}).length },
     { label: "Agreement Booking Incidents", count: Object.keys(idMaps.agreementBookingIncidents ?? {}).length },
