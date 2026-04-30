@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.18.3";
+export const APP_VERSION = "v1.18.4";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.18.4",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Products no longer fail with “unit schedule id is missing.”** Now resolves the org's first `uomschedule` + a unit under it and binds them as `DefaultUoMSchedule` + `DefaultUoM` on every product create.",
+    ],
+  },
   {
     version: "v1.18.3",
     date: "April 30, 2026",

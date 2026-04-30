@@ -407,6 +407,27 @@ export async function seedFromPreset(
   );
 
   // ── Products ─────────────────────────────────────────────────────────────
+  // Products require a unit + unit-schedule. Resolve org defaults once.
+  let defaultUomId: string | null = null;
+  let defaultUomScheduleId: string | null = null;
+  try {
+    const schedules = await dv.query<{ uomscheduleid: string }>(
+      "uomschedules",
+      { select: ["uomscheduleid", "name"], top: 1 },
+    );
+    if (schedules[0]) {
+      defaultUomScheduleId = schedules[0].uomscheduleid;
+      const units = await dv.query<{ uomid: string }>("uoms", {
+        select: ["uomid", "name"],
+        filter: `_uomscheduleid_value eq ${defaultUomScheduleId}`,
+        top: 1,
+      });
+      if (units[0]) defaultUomId = units[0].uomid;
+    }
+  } catch {
+    /* fall through — product create will surface a clearer error */
+  }
+
   await runEntityStep(
     dv,
     {
@@ -420,15 +441,24 @@ export async function seedFromPreset(
       findField: "productnumber",
       findValue: (p) => p.productNumber,
       mapKey: (p) => p.productNumber,
-      build: (p) => ({
-        name: p.name,
-        productnumber: p.productNumber,
-        description: tag(p.description),
-        price: p.listPrice ?? 0,
-        // Sensible defaults to avoid required-field rejections:
-        productstructure: 1, // Product
-        statecode: 0, // Draft (cannot create as Active without a price list).
-      }),
+      build: (p) => {
+        const payload: Record<string, unknown> = {
+          name: p.name,
+          productnumber: p.productNumber,
+          description: tag(p.description),
+          price: p.listPrice ?? 0,
+          // Sensible defaults to avoid required-field rejections:
+          productstructure: 1, // Product
+          statecode: 0, // Draft (cannot create as Active without a price list).
+        };
+        if (defaultUomScheduleId) {
+          payload["DefaultUoMSchedule@odata.bind"] = `/uomschedules(${defaultUomScheduleId})`;
+        }
+        if (defaultUomId) {
+          payload["DefaultUoM@odata.bind"] = `/uoms(${defaultUomId})`;
+        }
+        return payload;
+      },
     },
     onProgress,
   );
