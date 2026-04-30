@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.18.12";
+export const APP_VERSION = "v1.18.13";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.18.13",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Customer Asset create no longer sends `msdyn_description` or `msdyn_serialnumber`** — neither column exists on `msdyn_customerasset` in this org. Serial numbers now go into `msdyn_assettag` (the standard FS asset identifier).",
+    ],
+  },
   {
     version: "v1.18.12",
     date: "April 30, 2026",

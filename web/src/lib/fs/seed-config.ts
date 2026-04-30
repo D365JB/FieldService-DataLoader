@@ -618,10 +618,11 @@ export async function seedFromPreset(
           : undefined;
         const payload: Record<string, unknown> = {
           msdyn_name: a.name,
-          msdyn_description: tag(a.description),
         };
         if (a.serialNumber) {
-          payload["msdyn_serialnumber"] = a.serialNumber;
+          // msdyn_customerasset has no `msdyn_serialnumber` column in this org;
+          // fall back to msdyn_assettag which is the standard FS asset identifier.
+          payload["msdyn_assettag"] = a.serialNumber;
         }
         // Verified via $metadata: lowercase msdyn_account / msdyn_product,
         // PascalCase msdyn_FunctionalLocation, and parent-asset uses the
