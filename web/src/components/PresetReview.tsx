@@ -1,0 +1,423 @@
+import { useState } from "react";
+import {
+  MapPin,
+  Wrench,
+  Warning,
+  Toolbox,
+  Package,
+  Buildings,
+  Users,
+  Sparkle,
+  ArrowCounterClockwise,
+  PencilSimple,
+  CaretDown,
+  CaretUp,
+  Clock,
+  ListBullets,
+} from "@phosphor-icons/react";
+import type { FsPreset } from "@/lib/preset";
+import { editPreset } from "@/lib/presetEditor";
+
+interface Props {
+  preset: FsPreset;
+  onChange: (next: FsPreset) => void;
+}
+
+export function PresetReview({ preset, onChange }: Props) {
+  const [history, setHistory] = useState<FsPreset[]>([]);
+  const [instruction, setInstruction] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showJson, setShowJson] = useState(false);
+
+  async function handleEdit() {
+    if (!instruction.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await editPreset(preset, instruction);
+      setHistory((h) => [preset, ...h].slice(0, 10));
+      onChange(next);
+      setInstruction("");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleUndo() {
+    if (history.length === 0) return;
+    const [prev, ...rest] = history;
+    onChange(prev);
+    setHistory(rest);
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header card */}
+      <div className="card p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-xs uppercase tracking-wider text-accent mb-1">
+              {preset.vertical.replace(/_/g, " ")}
+            </div>
+            <h2 className="text-2xl font-bold text-white">
+              {preset.companyName}
+            </h2>
+            <p className="text-slate-400 text-sm mt-1">
+              {preset.companyDescription}
+            </p>
+          </div>
+        </div>
+        {preset.rationale && (
+          <div className="text-sm text-slate-300 italic border-l-2 border-accent pl-3 mt-4">
+            {preset.rationale}
+          </div>
+        )}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-6">
+          <Stat label="Territories" value={preset.territories.length} />
+          <Stat label="WO Types" value={preset.workOrderTypes.length} />
+          <Stat label="Incidents" value={preset.incidentTypes.length} />
+          <Stat label="Products" value={preset.products.length} />
+          <Stat label="Skills" value={preset.characteristics.length} />
+          <Stat label="Accounts" value={preset.sampleAccounts.length} />
+          <Stat label="Technicians" value={preset.sampleTechnicians.length} />
+        </div>
+      </div>
+
+      {/* AI editor */}
+      <div className="card p-6 border border-accent/30 bg-accent/5">
+        <div className="flex items-center gap-2 mb-3">
+          <Sparkle size={20} weight="duotone" className="text-accent" />
+          <h3 className="font-semibold text-white">Edit with AI</h3>
+        </div>
+        <p className="text-xs text-muted mb-3">
+          Tell GPT what to change — entire preset is returned. Try things like
+          “Add 3 territories in Texas”, “Rename the company to Northwind HVAC”,
+          “Make all incidents 30 minutes longer”, or “Remove products under
+          $100 and add a high-end emergency kit”.
+        </p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !busy) handleEdit();
+            }}
+            disabled={busy}
+            placeholder="Describe the change…"
+            className="flex-1 px-3 py-2 rounded-lg bg-bg-base border border-border text-white placeholder-muted focus:outline-none focus:border-accent disabled:opacity-60"
+          />
+          <button
+            onClick={handleEdit}
+            disabled={busy || !instruction.trim()}
+            className="btn-primary flex items-center gap-2 disabled:opacity-50"
+          >
+            <PencilSimple size={16} weight="bold" />
+            {busy ? "Editing…" : "Apply edit"}
+          </button>
+          <button
+            onClick={handleUndo}
+            disabled={history.length === 0 || busy}
+            title="Undo last edit"
+            className="btn-ghost flex items-center gap-2 disabled:opacity-30"
+          >
+            <ArrowCounterClockwise size={16} />
+            Undo
+          </button>
+        </div>
+        {error && (
+          <div className="mt-3 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-sm flex items-start gap-2">
+            <Warning size={16} className="mt-0.5 shrink-0" />
+            <div>
+              <div className="font-semibold">Edit failed.</div>
+              <code className="text-xs">{error}</code>
+            </div>
+          </div>
+        )}
+        <SuggestionChips
+          disabled={busy}
+          onPick={(s) => setInstruction(s)}
+        />
+      </div>
+
+      {/* Sections */}
+      <Section
+        icon={<MapPin size={18} weight="duotone" className="text-accent" />}
+        title="Territories"
+        count={preset.territories.length}
+      >
+        <Table
+          headers={["Name", "Code", "Description"]}
+          rows={preset.territories.map((t) => [
+            <span className="font-semibold text-white">{t.name}</span>,
+            <code className="text-accent text-xs">{t.code}</code>,
+            <span className="text-slate-300 text-sm">
+              {t.description ?? "—"}
+            </span>,
+          ])}
+        />
+      </Section>
+
+      <Section
+        icon={<Toolbox size={18} weight="duotone" className="text-accent" />}
+        title="Work order types"
+        count={preset.workOrderTypes.length}
+      >
+        <Table
+          headers={["Name", "Code", "Description"]}
+          rows={preset.workOrderTypes.map((t) => [
+            <span className="font-semibold text-white">{t.name}</span>,
+            <code className="text-accent text-xs">{t.code}</code>,
+            <span className="text-slate-300 text-sm">
+              {t.description ?? "—"}
+            </span>,
+          ])}
+        />
+      </Section>
+
+      <Section
+        icon={<Warning size={18} weight="duotone" className="text-accent" />}
+        title="Incident types"
+        count={preset.incidentTypes.length}
+      >
+        <div className="divide-y divide-border">
+          {preset.incidentTypes.map((it, i) => (
+            <div key={i} className="py-3">
+              <div className="flex items-baseline justify-between gap-3">
+                <div className="font-semibold text-white">{it.name}</div>
+                <span className="inline-flex items-center gap-1 text-xs text-muted whitespace-nowrap">
+                  <Clock size={12} />
+                  {it.estimatedDurationMinutes} min
+                </span>
+              </div>
+              <div className="text-sm text-slate-400 mt-1">
+                {it.description}
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1">
+                {it.serviceTasks.map((task, j) => (
+                  <span
+                    key={j}
+                    className="inline-flex items-center gap-1 text-[11px] text-slate-300 bg-bg-base border border-border rounded-full px-2 py-0.5"
+                  >
+                    <ListBullets size={10} />
+                    {task}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      <Section
+        icon={<Wrench size={18} weight="duotone" className="text-accent" />}
+        title="Skills & characteristics"
+        count={preset.characteristics.length}
+      >
+        <div className="flex flex-wrap gap-2">
+          {preset.characteristics.map((c, i) => (
+            <div
+              key={i}
+              className="bg-bg-base border border-border rounded-lg px-3 py-2"
+            >
+              <div className="text-sm font-semibold text-white">{c.name}</div>
+              {c.description && (
+                <div className="text-xs text-muted">{c.description}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      <Section
+        icon={<Package size={18} weight="duotone" className="text-accent" />}
+        title="Products & parts"
+        count={preset.products.length}
+      >
+        <Table
+          headers={["Name", "SKU", "Description", "List price"]}
+          rows={preset.products.map((p) => [
+            <span className="font-semibold text-white">{p.name}</span>,
+            <code className="text-accent text-xs">{p.productNumber}</code>,
+            <span className="text-slate-300 text-sm">
+              {p.description ?? "—"}
+            </span>,
+            <span className="text-emerald-300 text-sm font-mono">
+              {p.listPrice != null
+                ? `$${p.listPrice.toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                  })}`
+                : "—"}
+            </span>,
+          ])}
+        />
+      </Section>
+
+      <Section
+        icon={<Buildings size={18} weight="duotone" className="text-accent" />}
+        title="Sample accounts"
+        count={preset.sampleAccounts.length}
+      >
+        <Table
+          headers={["Name", "Location", "Site description"]}
+          rows={preset.sampleAccounts.map((a) => [
+            <span className="font-semibold text-white">{a.name}</span>,
+            <span className="text-slate-300 text-sm">
+              {[a.city, a.state].filter(Boolean).join(", ") || "—"}
+            </span>,
+            <span className="text-slate-400 text-sm">
+              {a.siteDescription ?? "—"}
+            </span>,
+          ])}
+        />
+      </Section>
+
+      <Section
+        icon={<Users size={18} weight="duotone" className="text-accent" />}
+        title="Sample technicians"
+        count={preset.sampleTechnicians.length}
+      >
+        <Table
+          headers={["Name", "Primary skill", "Territory"]}
+          rows={preset.sampleTechnicians.map((t) => [
+            <span className="font-semibold text-white">{t.name}</span>,
+            <span className="text-slate-300 text-sm">{t.primarySkill}</span>,
+            <code className="text-accent text-xs">
+              {t.primaryTerritoryCode}
+            </code>,
+          ])}
+        />
+      </Section>
+
+      {/* Raw JSON (collapsed) */}
+      <div className="card p-4">
+        <button
+          onClick={() => setShowJson((v) => !v)}
+          className="flex items-center gap-2 text-sm text-slate-300 hover:text-white"
+        >
+          {showJson ? <CaretUp size={14} /> : <CaretDown size={14} />}
+          {showJson ? "Hide raw JSON" : "View raw preset JSON"}
+        </button>
+        {showJson && (
+          <pre className="mt-3 p-3 bg-bg-base rounded-lg overflow-auto max-h-96 text-xs text-slate-300">
+            {JSON.stringify(preset, null, 2)}
+          </pre>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SuggestionChips({
+  disabled,
+  onPick,
+}: {
+  disabled: boolean;
+  onPick: (s: string) => void;
+}) {
+  const samples = [
+    "Add 3 territories covering Texas",
+    "Rename the company to Northwind HVAC",
+    "Make every incident 30 minutes longer",
+    "Add 2 emergency-response work order types",
+    "Remove products under $100 and add a high-end diagnostic kit",
+    "Give every technician a more diverse first name",
+  ];
+  return (
+    <div className="mt-3 flex flex-wrap gap-1.5">
+      {samples.map((s) => (
+        <button
+          key={s}
+          type="button"
+          onClick={() => onPick(s)}
+          disabled={disabled}
+          className="text-[11px] px-2 py-1 rounded-full bg-bg-base border border-border text-slate-300 hover:border-accent hover:text-white transition-colors disabled:opacity-50"
+        >
+          {s}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Section({
+  icon,
+  title,
+  count,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  count: number;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="card overflow-hidden">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-5 py-3 hover:bg-bg-base/40 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          {icon}
+          <h3 className="font-semibold text-white">{title}</h3>
+          <span className="text-xs text-muted">({count})</span>
+        </div>
+        {open ? <CaretUp size={14} /> : <CaretDown size={14} />}
+      </button>
+      {open && <div className="px-5 pb-5">{children}</div>}
+    </div>
+  );
+}
+
+function Table({
+  headers,
+  rows,
+}: {
+  headers: string[];
+  rows: React.ReactNode[][];
+}) {
+  return (
+    <div className="overflow-x-auto -mx-1">
+      <table className="w-full text-left">
+        <thead>
+          <tr className="border-b border-border">
+            {headers.map((h) => (
+              <th
+                key={h}
+                className="text-[11px] uppercase tracking-wider text-muted font-medium pb-2 px-2"
+              >
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr key={i} className="border-b border-border/40 last:border-0">
+              {row.map((cell, j) => (
+                <td key={j} className="py-2 px-2 align-top">
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="bg-bg-elevated border border-border rounded-lg p-3">
+      <div className="text-2xl font-bold text-white">{value}</div>
+      <div className="text-xs text-muted uppercase tracking-wider mt-1">
+        {label}
+      </div>
+    </div>
+  );
+}

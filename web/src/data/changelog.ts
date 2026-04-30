@@ -7,9 +7,23 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.2.1";
+export const APP_VERSION = "v1.3.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.3.0",
+    date: "April 30, 2026",
+    tag: "REVIEW",
+    features: [
+      "Generated presets are now displayed in friendly section cards \u2014 Territories, Work order types, Incident types (with durations + service-task chips), Skills, Products with prices, Accounts, Technicians \u2014 instead of a wall of JSON.",
+      "New \u201cEdit with AI\u201d input on the Analyze screen: type natural-language instructions like \u201cAdd 3 territories in Texas\u201d or \u201cMake every incident 30 minutes longer\u201d and GPT rewrites the preset.",
+      "Suggestion chips with example edits, plus an Undo button that restores the last 10 versions.",
+      "Raw JSON is still available behind a collapsible toggle for power users.",
+    ],
+    improvements: [
+      "Analyze screen restores the last generated preset when you navigate back, so you don't lose tweaks.",
+    ],
+  },
   {
     version: "v1.2.1",
     date: "April 30, 2026",

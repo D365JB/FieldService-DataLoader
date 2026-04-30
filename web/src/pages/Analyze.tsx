@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useMsal } from "@azure/msal-react";
 import { Sparkle, Globe, Warning, ArrowRight, FastForward } from "@phosphor-icons/react";
 import { AppHeader } from "@/components/AppHeader";
+import { PresetReview } from "@/components/PresetReview";
 import { analyzeCompany } from "@/lib/preset";
 import type { FsPreset } from "@/lib/preset";
 import { GENERIC_PRESET } from "@/lib/genericPreset";
@@ -16,7 +17,11 @@ export function Analyze() {
   const [companyUrl, setCompanyUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [preset, setPreset] = useState<FsPreset | null>(null);
+  const [preset, setPreset] = useState<FsPreset | null>(() => {
+    // Restore the previously generated preset so navigating back shows it.
+    const raw = orgStore.getPreset();
+    return raw ? (JSON.parse(raw) as FsPreset) : null;
+  });
 
   if (!accounts[0]) {
     navigate("/");
@@ -38,15 +43,21 @@ export function Analyze() {
     }
   }
 
+  function handlePresetChange(next: FsPreset) {
+    setPreset(next);
+    orgStore.setPreset(JSON.stringify(next));
+  }
+
   function handleSkip() {
-    orgStore.setPreset(JSON.stringify(GENERIC_PRESET));
+    const next = preset ?? GENERIC_PRESET;
+    orgStore.setPreset(JSON.stringify(next));
     navigate("/generate");
   }
 
   return (
     <div className="min-h-screen flex flex-col">
       <AppHeader orgUrl={orgUrl} />
-      <main className="flex-1 max-w-3xl mx-auto px-6 py-12 w-full">
+      <main className="flex-1 max-w-5xl mx-auto px-6 py-12 w-full">
         <div className="flex items-center gap-3 mb-2">
           <Sparkle size={28} className="text-accent" weight="duotone" />
           <h1 className="text-3xl font-bold text-white">Analyze a customer</h1>
@@ -117,68 +128,33 @@ export function Analyze() {
           </div>
         </div>
 
-        {preset && <PresetSummary preset={preset} />}
+        {preset && (
+          <>
+            <div className="mt-8 mb-4 flex items-center justify-between">
+              <div className="text-xs uppercase tracking-wider text-muted">
+                Review &amp; tweak — then continue to generate
+              </div>
+              <button
+                onClick={() => navigate("/generate")}
+                className="btn-primary flex items-center gap-2"
+              >
+                Continue to generate
+                <ArrowRight size={18} weight="bold" />
+              </button>
+            </div>
+            <PresetReview preset={preset} onChange={handlePresetChange} />
+            <div className="mt-8 flex justify-end">
+              <button
+                onClick={() => navigate("/generate")}
+                className="btn-primary flex items-center gap-2"
+              >
+                Continue to generate
+                <ArrowRight size={18} weight="bold" />
+              </button>
+            </div>
+          </>
+        )}
       </main>
-    </div>
-  );
-}
-
-function PresetSummary({ preset }: { preset: FsPreset }) {
-  const navigate = useNavigate();
-  return (
-    <div className="card p-6 mt-6">
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <div className="text-xs uppercase tracking-wider text-accent mb-1">
-            {preset.vertical.replace(/_/g, " ")}
-          </div>
-          <h2 className="text-xl font-bold text-white">{preset.companyName}</h2>
-          <p className="text-slate-400 text-sm mt-1">
-            {preset.companyDescription}
-          </p>
-        </div>
-      </div>
-
-      <div className="text-sm text-slate-300 italic border-l-2 border-accent pl-3 mb-6">
-        {preset.rationale}
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <Stat label="Territories" value={preset.territories.length} />
-        <Stat label="WO Types" value={preset.workOrderTypes.length} />
-        <Stat label="Incidents" value={preset.incidentTypes.length} />
-        <Stat label="Products" value={preset.products.length} />
-      </div>
-
-      <details className="text-sm text-slate-400 mb-6">
-        <summary className="cursor-pointer text-slate-300 hover:text-white">
-          View raw preset JSON
-        </summary>
-        <pre className="mt-3 p-3 bg-bg-elevated rounded-lg overflow-auto max-h-96 text-xs">
-          {JSON.stringify(preset, null, 2)}
-        </pre>
-      </details>
-
-      <div className="flex justify-end">
-        <button
-          onClick={() => navigate("/generate")}
-          className="btn-primary flex items-center gap-2"
-        >
-          Continue to generate
-          <ArrowRight size={18} weight="bold" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="bg-bg-elevated border border-border rounded-lg p-3">
-      <div className="text-2xl font-bold text-white">{value}</div>
-      <div className="text-xs text-muted uppercase tracking-wider mt-1">
-        {label}
-      </div>
     </div>
   );
 }
