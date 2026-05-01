@@ -1495,6 +1495,35 @@ export async function seedFromPreset(
       }
       const startTime = `${anchor}T${pad2(startH)}:00:00.000Z`;
       const endTime = `${anchor}T${pad2(endH)}:00:00.000Z`;
+      // v1.42.1 — Build extra `WorkHourType:3` (TimeOff) rules for any PTO
+      // ranges on the preset row. Each range becomes one daily-recurring
+      // rule pinned to the range's start date, with `UNTIL` set to the end
+      // date at 23:59Z. Bad/empty ranges are filtered defensively so a
+      // single typo doesn't kill the whole calendar save.
+      const timeOffRules: Array<{
+        Rules: Array<Record<string, unknown>>;
+        RecurrencePattern?: string;
+      }> = [];
+      for (const off of tech?.timeOff ?? []) {
+        if (!off?.start || !off?.end) continue;
+        const start = String(off.start).slice(0, 10);
+        const end = String(off.end).slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) continue;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(end)) continue;
+        if (end < start) continue;
+        const untilCompact = `${end.replace(/-/g, "")}T235959Z`;
+        timeOffRules.push({
+          Rules: [
+            {
+              StartTime: `${start}T00:00:00.000Z`,
+              EndTime: `${start}T23:59:00.000Z`,
+              Effort: 1,
+              WorkHourType: 3,
+            },
+          ],
+          RecurrencePattern: `FREQ=DAILY;INTERVAL=1;UNTIL=${untilCompact}`,
+        });
+      }
       try {
         // Fetch the auto-created CalendarId.
         const rows = await dv.query<{ _calendarid_value: string | null }>(
@@ -1525,6 +1554,7 @@ export async function seedFromPreset(
                 ],
                 RecurrencePattern: `FREQ=WEEKLY;INTERVAL=1;BYDAY=${days.join(",")}`,
               },
+              ...timeOffRules,
             ],
           });
           const res = await dv.request("/msdyn_SaveCalendar", {
@@ -1544,7 +1574,11 @@ export async function seedFromPreset(
             });
             detail = `skipped (${res.status})`;
           } else {
-            detail = `${days.join(",")} ${pad2(startH)}:00–${pad2(endH)}:00`;
+            const ptoSuffix =
+              timeOffRules.length > 0
+                ? ` + ${timeOffRules.length} PTO`
+                : "";
+            detail = `${days.join(",")} ${pad2(startH)}:00–${pad2(endH)}:00${ptoSuffix}`;
           }
         }
       } catch (err) {

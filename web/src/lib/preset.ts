@@ -100,6 +100,18 @@ export interface FsPreset {
        */
       rating?: number;
     }>;
+    /**
+     * v1.42.1 — Per-resource time off (PTO / vacation). Each entry adds
+     * one `WorkHourType:3` rule to the resource's calendar via the same
+     * `msdyn_SaveCalendar` action that emits working hours, so the
+     * Schedule Assistant honors the absence. Optional — older presets
+     * keep their full work-week schedule.
+     *
+     * `start` and `end` are ISO date strings (YYYY-MM-DD), inclusive.
+     * `reason` is metadata for the UI only — FS doesn't have a
+     * structured field for it.
+     */
+    timeOff?: Array<{ start: string; end: string; reason?: string }>;
   }>;
   /**
    * Phase 2 — Functional location tree per account. Optional; older presets

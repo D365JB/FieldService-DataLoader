@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.42.0";
+export const APP_VERSION = "v1.42.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.42.1",
+    date: "May 1, 2026",
+    tag: "FEAT",
+    features: [
+      "**Per-resource time off — schedule a tech as PTO/vacation right from Preset Review and the Schedule Assistant honors it.** New optional `timeOff?: Array<{start, end, reason?}>` field on `FsTechnician` lets you mark date ranges as unavailable; each range is appended to the resource's calendar by the same `msdyn_SaveCalendar` action that emits the weekly working-hours rule, but with `WorkHourType: 3` (TimeOff) and a `FREQ=DAILY;INTERVAL=1;UNTIL=YYYYMMDDT235959Z` recurrence pattern that covers the full range inclusively. Multiple ranges per resource are supported — they're emitted as additional `RulesAndRecurrences` entries inside the same SaveCalendar payload, so it's still a single round-trip per resource regardless of how many absences are scheduled. Bad/empty rows are filtered defensively (start/end must both be `YYYY-MM-DD`, end ≥ start) so a single typo never poisons the calendar save. The Preset Review page renders a third sub-row under each technician with date pickers for start/end, an optional `reason` text field (UI metadata only — FS has no structured reason column), `+ time off` to append, and `×` to remove. The Work Hours phase progress detail now shows e.g. `Mon–Fri 8:00–17:00 + 2 PTO` so it's obvious in the run UI when absences are being seeded. Combine with v1.42.0 multi-skill ratings to demo Schedule Assistant filtering across both proficiency and availability in a single tour.",
+    ],
+  },
   {
     version: "v1.42.0",
     date: "May 1, 2026",

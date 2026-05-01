@@ -715,6 +715,33 @@ function TechnicianEditor({
     patch(index, { skills: cur.filter((s) => s.name !== name) });
   }
 
+  // v1.42.1 — Time-off helpers. Each entry becomes one WorkHourType:3 rule
+  // on the resource's calendar via msdyn_SaveCalendar. Date strings are
+  // stored as plain YYYY-MM-DD; the seeder validates and skips bad rows.
+  function addTimeOff(index: number) {
+    const cur = techs[index].timeOff ?? [];
+    // Default new entry: today + 7 days, one-day off.
+    const today = new Date();
+    const start = today.toISOString().slice(0, 10);
+    const endDate = new Date(today.getTime() + 86400_000);
+    const end = endDate.toISOString().slice(0, 10);
+    patch(index, { timeOff: [...cur, { start, end, reason: "" }] });
+  }
+  function updateTimeOff(
+    index: number,
+    offIndex: number,
+    p: Partial<{ start: string; end: string; reason: string }>,
+  ) {
+    const cur = techs[index].timeOff ?? [];
+    patch(index, {
+      timeOff: cur.map((o, j) => (j === offIndex ? { ...o, ...p } : o)),
+    });
+  }
+  function removeTimeOff(index: number, offIndex: number) {
+    const cur = techs[index].timeOff ?? [];
+    patch(index, { timeOff: cur.filter((_, j) => j !== offIndex) });
+  }
+
   return (
     <div className="space-y-4">
       <ApplyToAllPanel onApply={applyToAll} />
@@ -937,6 +964,82 @@ function TechnicianEditor({
                           }
                         />
                       )}
+                    </div>
+                  </td>
+                </tr>
+                <tr className="border-b border-border/40 last:border-0">
+                  <td className="py-1 px-2" />
+                  <td colSpan={6} className="py-1 px-2 pb-3">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] uppercase tracking-wider text-muted mr-1">
+                        Time off
+                      </span>
+                      {(t.timeOff ?? []).length === 0 && (
+                        <span className="text-[11px] text-muted/70 italic">
+                          (none)
+                        </span>
+                      )}
+                      {(t.timeOff ?? []).map((off, j) => (
+                        <span
+                          key={j}
+                          className="inline-flex items-center gap-1 rounded-md bg-bg-base border border-border px-1.5 py-0.5 text-[11px] text-slate-200"
+                          title={
+                            off.reason
+                              ? `${off.start} → ${off.end} (${off.reason})`
+                              : `${off.start} → ${off.end}`
+                          }
+                        >
+                          <input
+                            type="date"
+                            value={off.start}
+                            onChange={(e) =>
+                              updateTimeOff(i, j, { start: e.target.value })
+                            }
+                            title="Start date"
+                            aria-label={`Time off start ${j}`}
+                            className="bg-bg-elevated border border-border rounded px-1 py-0.5 text-slate-200 text-[11px]"
+                          />
+                          <span className="text-muted">→</span>
+                          <input
+                            type="date"
+                            value={off.end}
+                            onChange={(e) =>
+                              updateTimeOff(i, j, { end: e.target.value })
+                            }
+                            title="End date"
+                            aria-label={`Time off end ${j}`}
+                            className="bg-bg-elevated border border-border rounded px-1 py-0.5 text-slate-200 text-[11px]"
+                          />
+                          <input
+                            type="text"
+                            placeholder="reason"
+                            value={off.reason ?? ""}
+                            onChange={(e) =>
+                              updateTimeOff(i, j, { reason: e.target.value })
+                            }
+                            title="Reason (UI only — not persisted to FS)"
+                            aria-label={`Time off reason ${j}`}
+                            className="bg-bg-elevated border border-border rounded px-1 py-0.5 text-slate-300 text-[11px] w-24"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeTimeOff(i, j)}
+                            title="Remove this time-off entry"
+                            aria-label={`Remove time off ${j}`}
+                            className="text-muted hover:text-red-300 leading-none"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => addTimeOff(i)}
+                        title="Add a time-off range"
+                        className="text-[11px] text-accent hover:text-white border border-dashed border-border hover:border-accent rounded-md px-1.5 py-0.5"
+                      >
+                        + time off
+                      </button>
                     </div>
                   </td>
                 </tr>
