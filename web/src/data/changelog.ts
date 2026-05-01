@@ -7,9 +7,18 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.26.0";
+export const APP_VERSION = "v1.27.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.27.0",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Reset audit:** the unknown-entity warning during a Reset no longer fires for `technicianContacts`. Those rows are tracked by the seeder and cleaned up via a dedicated sweep after Bookable Resources, but the audit pass didn't know that and surfaced a misleading *Skipped unknown entity* line. A new `KEYS_HANDLED_BY_DEDICATED_SWEEP` allowlist documents this contract so future entities don't have to choose between *register-in-phase2EntityOrder* and *trigger-spurious-warnings*.",
+      "Audit confirmed coverage for v1.21–v1.26 entities: WO Service Tasks, WO Products (incl. new pricing fields), Time Entries, Incident Type Products, IoT Alerts, Customer Assets, Functional Locations, Service Task Types, Agreement booking subtree, Price Lists, Warehouses, Product Inventory, Technician Contacts. No new entity types were introduced by v1.24/v1.25/v1.26 (those features added fields/behavior to existing entities only).",
+    ],
+  },
   {
     version: "v1.26.0",
     date: "April 30, 2026",

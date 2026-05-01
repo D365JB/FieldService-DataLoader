@@ -72,6 +72,19 @@ const phase2EntityOrder: Array<{
   { key: "warehouses", label: "Warehouses", entitySet: "msdyn_warehouses", phase: "afterWo" },
 ];
 
+/**
+ * Reset audit allowlist. Keys that DO appear in `result.createdIds` (because
+ * they go through `trackCreated`) but are NOT registered in
+ * `phase2EntityOrder` because they're swept later by a dedicated
+ * `sweepIds(..., resultKey)` call (e.g. Technician Contacts, after Bookable
+ * Resources are gone). Listing them here suppresses the misleading "Skipped
+ * unknown entity" warning the audit pass would otherwise emit even though
+ * those rows actually do get cleaned up.
+ */
+const KEYS_HANDLED_BY_DEDICATED_SWEEP = new Set<string>([
+  "technicianContacts",
+]);
+
 export interface SeedProgress {
   step: string;
   done: number;
@@ -2419,6 +2432,10 @@ export async function deleteRun(
     for (const [key, ids] of Object.entries(result.createdIds)) {
       if (handled.has(key)) continue;
       if (!ids?.length) continue;
+      // Some keys (e.g. technicianContacts) are swept later via dedicated
+      // sweepIds calls below (with their own resultKey). Skip warning for
+      // those.
+      if (KEYS_HANDLED_BY_DEDICATED_SWEEP.has(key)) continue;
       // Unknown key — caller forgot to register it; we don't know the
       // entitySet so skip rather than guess. Logged via progress for
       // visibility.
