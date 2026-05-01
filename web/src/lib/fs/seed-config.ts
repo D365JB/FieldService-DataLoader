@@ -1172,13 +1172,29 @@ export async function seedFromPreset(
   // msdyn_systemstatus values: 690970000=Open-Unscheduled, 690970001=Scheduled,
   // 690970004=Closed-Posted (we skip In Progress / Completed since they require
   // booking flow we haven't built yet).
+  //
+  // IMPORTANT: target-Closed-Posted WOs are CREATED as Open-Unscheduled and
+  // transitioned to Closed-Posted in the final "Close Work Orders" phase.
+  // The FS plugin rejects child rows (tasks, products, bookings, time
+  // entries) on Posted WOs, so we attach all children while the WO is
+  // still Open and flip the status last.
   const woStatusMix = [
     690970000, // Open-Unscheduled (weighted heavier — most common on a fresh demo)
     690970000,
     690970000,
     690970001, // Scheduled
     690970001,
-    690970004, // Closed-Posted (historical)
+    690970004, // Closed-Posted (historical) — created as Open, posted at end
+  ];
+  // Friendly account-instruction snippets so the WO form has a non-empty
+  // "Account instructions" field (rotates per WO for variety).
+  const accountInstructionTemplates = [
+    "Notify site contact 30 minutes before arrival. Use the loading dock entrance after 5pm.",
+    "Badge required at front desk. Escort needed for server room access.",
+    "Park in visitor lot only. Bring lift gate for unit replacement.",
+    "Schedule with facilities manager 24h ahead. PPE required on roof.",
+    "Tenant access only Mon–Fri 8a–4p. Confirm appointment day-of with site contact.",
+    "Lockout/tagout procedure required before service. Sign in at security desk.",
   ];
   const accountIdList = Object.values(result.accountIds);
   const incidentIdList = Object.values(result.incidentTypeIds);
@@ -1198,30 +1214,77 @@ export async function seedFromPreset(
     targetWoCount > 0 ? await ensurePriceList() : null;
   onProgress({ step: "Work Orders", done: 0, total: targetWoCount });
   const scheduledWoIds: string[] = [];
-  // Per-WO metadata used by Phase 4 (WO Products + Time Entries) so we don't
-  // need a second query pass.
-  const woMeta: Array<{ woId: string; status: number; accountId: string }> = [];
+  // Per-WO metadata used by Phase 4 (WO Products + Time Entries) and the
+  // final Close Work Orders phase. `status` is the *effective* status the
+  // WO is currently in (used for child-row creation logic). `targetStatus`
+  // is the demo's intended end state — for target=Closed-Posted, the WO
+  // is created as Open and only transitioned to Posted at the very end.
+  const woMeta: Array<{
+    woId: string;
+    status: number;
+    targetStatus: number;
+    accountId: string;
+  }> = [];
   for (let i = 0; i < targetWoCount; i++) {
     const accountId = accountIdList[i % accountIdList.length];
     const incidentId = incidentIdList[i % incidentIdList.length];
     const woTypeId = woTypeIdList[i % woTypeIdList.length];
-    const status = woStatusMix[i % woStatusMix.length];
+    const targetStatus = woStatusMix[i % woStatusMix.length];
+    // Closed-Posted target → start as Open-Unscheduled so the FS plugin
+    // lets us attach tasks/products/bookings/time entries. The final
+    // "Close Work Orders" phase flips status back to Posted.
+    const effectiveStatus = targetStatus === 690970004 ? 690970000 : targetStatus;
     const summary = tag(`Auto-generated WO #${i + 1}`);
+    const accountInstructions = tag(
+      accountInstructionTemplates[i % accountInstructionTemplates.length],
+    );
+    // Service window: 1.5–3 hours depending on incident.
+    const estimatedDurationMin = 90 + (i % 4) * 30; // 90, 120, 150, 180
 
     // Idempotency: search by tagged summary so re-runs don't duplicate.
-    const existing = await dv.query<{ msdyn_workorderid: string }>(
-      "msdyn_workorders",
-      {
-        filter: `msdyn_workordersummary eq '${oencode(summary)}'`,
-        select: ["msdyn_workorderid"],
-        top: 1,
-      },
-    );
+    // We also pull the current systemstatus so we can heal WOs that prior
+    // versions of this seeder had Posted directly (those WOs have no
+    // children — we re-Open them so the heal can attach the missing rows).
+    const existing = await dv.query<{
+      msdyn_workorderid: string;
+      statuscode?: number;
+      msdyn_systemstatus?: number;
+    }>("msdyn_workorders", {
+      filter: `msdyn_workordersummary eq '${oencode(summary)}'`,
+      select: ["msdyn_workorderid", "msdyn_systemstatus"],
+      top: 1,
+    });
     let woId = existing[0]?.msdyn_workorderid;
+    // If the existing WO is already Posted but our target IS Posted, we
+    // need to re-Open it temporarily so child rows can be attached. The
+    // close phase at the end will Post it back.
+    if (
+      woId &&
+      existing[0]?.msdyn_systemstatus === 690970004 &&
+      targetStatus === 690970004
+    ) {
+      try {
+        await dv.update("msdyn_workorders", woId, {
+          msdyn_systemstatus: 690970000,
+        });
+      } catch (e) {
+        // FS may block reopening a Posted WO. Surface a warning in the
+        // progress detail but keep going — the WO stays Posted and
+        // child-row creation will skip it.
+        onProgress({
+          step: "Work Orders",
+          done: i + 1,
+          total: targetWoCount,
+          detail: `Reopen failed: ${(e as Error).message?.slice(0, 60) ?? "error"}`,
+        });
+      }
+    }
     if (!woId) {
       const woPayload: Record<string, unknown> = {
         msdyn_workordersummary: summary,
-        msdyn_systemstatus: status,
+        msdyn_systemstatus: effectiveStatus,
+        msdyn_accountinstructions: accountInstructions,
+        msdyn_estimatedserviceduration: estimatedDurationMin,
         "msdyn_serviceaccount@odata.bind": `/accounts(${accountId})`,
         "msdyn_billingaccount@odata.bind": `/accounts(${accountId})`,
         "msdyn_workordertype@odata.bind": `/msdyn_workordertypes(${woTypeId})`,
@@ -1245,8 +1308,10 @@ export async function seedFromPreset(
     }
     result.workOrderIds.push(woId);
     trackCreated(result, "workOrders", woId);
-    woMeta.push({ woId, status, accountId });
-    if (status === 690970001) {
+    woMeta.push({ woId, status: effectiveStatus, targetStatus, accountId });
+    // Both Scheduled and target-Closed WOs need a booking + time entry.
+    // (Closed ones get backdated bookings in the Bookings phase.)
+    if (targetStatus === 690970001 || targetStatus === 690970004) {
       scheduledWoIds.push(woId);
     }
     onProgress({
@@ -1254,7 +1319,11 @@ export async function seedFromPreset(
       done: i + 1,
       total: targetWoCount,
       detail: `${summary} (${
-        status === 690970004 ? "Closed" : status === 690970001 ? "Scheduled" : "Open"
+        targetStatus === 690970004
+          ? "Closed (pending post)"
+          : targetStatus === 690970001
+            ? "Scheduled"
+            : "Open"
       })`,
     });
   }
@@ -1275,10 +1344,9 @@ export async function seedFromPreset(
     for (const [name, id] of Object.entries(taskTypeMap)) {
       taskTypeNameById[id] = name;
     }
-    // Closed-Posted WOs (690970004) reject child rows with the FS plugin
-    // error "A record can't be added to a work order that's been posted.".
-    // Skip them here — Phase E of the roadmap will add lines BEFORE posting.
-    const tasksWoMeta = woMeta.filter((m) => m.status !== 690970004);
+    // Target-Closed WOs are currently in effective status Open while we
+    // attach children, so no filter is needed — every WO accepts tasks.
+    const tasksWoMeta = woMeta;
     onProgress({
       step: "WO Service Tasks",
       done: 0,
@@ -1316,9 +1384,11 @@ export async function seedFromPreset(
     }
   }
 
-  // ── Bookings (one per Scheduled WO) ──────────────────────────────────────
-  // Bookings populate the schedule board. We only book WOs that we set to
-  // Scheduled status above, and we spread them across the next 5 business days.
+  // ── Bookings (one per Scheduled or target-Closed WO) ────────────────────
+  // Bookings populate the schedule board. Scheduled WOs get future
+  // bookings; target-Closed WOs get backdated bookings (so the demo
+  // shows historical service activity) marked with the "Completed"
+  // booking status when available.
   const resourceIdList = Object.values(result.resourceIds);
   const skipBookings = (options.bookings?.mode ?? "create") !== "create";
   let bookingTarget = 0;
@@ -1336,19 +1406,28 @@ export async function seedFromPreset(
     end: Date;
   }> = [];
 
-  // Resolve "Scheduled" booking status once. Statecode=0 (Active) filters out
-  // any inactive/customised duplicates.
+  // Resolve "Scheduled" + "Completed" booking statuses once. Statecode=0
+  // (Active) filters out any inactive/customised duplicates.
   let scheduledStatusId: string | null = null;
+  let completedStatusId: string | null = null;
   if (bookingTarget > 0) {
     try {
-      const rows = await dv.query<{ bookingstatusid: string }>("bookingstatuses", {
-        filter: "name eq 'Scheduled' and statecode eq 0",
-        select: ["bookingstatusid"],
-        top: 1,
-      });
-      scheduledStatusId = rows[0]?.bookingstatusid ?? null;
+      const rows = await dv.query<{ bookingstatusid: string; name: string }>(
+        "bookingstatuses",
+        {
+          filter:
+            "(name eq 'Scheduled' or name eq 'Completed') and statecode eq 0",
+          select: ["bookingstatusid", "name"],
+          top: 5,
+        },
+      );
+      for (const r of rows) {
+        if (r.name === "Scheduled") scheduledStatusId = r.bookingstatusid;
+        if (r.name === "Completed") completedStatusId = r.bookingstatusid;
+      }
     } catch {
       scheduledStatusId = null;
+      completedStatusId = null;
     }
   }
 
@@ -1395,12 +1474,22 @@ export async function seedFromPreset(
     for (let i = 0; i < scheduledWoIds.length; i++) {
       const woId = scheduledWoIds[i];
       const resourceId = resourceIdList[i % resourceIdList.length];
+      // Look up whether this WO is target-Closed so we know to backdate.
+      const targetIsClosed =
+        woMeta.find((m) => m.woId === woId)?.targetStatus === 690970004;
       const dayOffset = Math.floor(i / slotsPerDay);
       const slotInDay = i % slotsPerDay;
       const start = new Date(baseStart);
-      start.setDate(start.getDate() + dayOffset);
+      if (targetIsClosed) {
+        // Closed/historical: 7–28 days in the past.
+        start.setDate(start.getDate() - 7 - dayOffset * 3);
+      } else {
+        start.setDate(start.getDate() + dayOffset);
+      }
       start.setHours(9 + slotInDay * slotHours);
       const end = new Date(start.getTime() + slotHours * 60 * 60 * 1000);
+      const bookingStatusId =
+        targetIsClosed && completedStatusId ? completedStatusId : scheduledStatusId;
       const woNumber = woNumberById[woId] ?? null;
       const bookingName =
         woNumber ?? tag(`Booking for WO #${result.workOrderIds.indexOf(woId) + 1}`);
@@ -1433,7 +1522,7 @@ export async function seedFromPreset(
             starttime: start.toISOString(),
             endtime: end.toISOString(),
             "Resource@odata.bind": `/bookableresources(${resourceId})`,
-            "BookingStatus@odata.bind": `/bookingstatuses(${scheduledStatusId})`,
+            "BookingStatus@odata.bind": `/bookingstatuses(${bookingStatusId})`,
             "msdyn_workorder@odata.bind": `/msdyn_workorders(${woId})`,
           });
         } catch (e) {
@@ -1474,20 +1563,20 @@ export async function seedFromPreset(
       const id = result.productIds[p.productNumber];
       if (id) productNameById[id] = p.name;
     }
-    // Closed-Posted WOs (690970004) reject child rows with the FS plugin
-    // error "A record can't be added to a work order that's been posted.".
-    // Skip them here — Phase E of the roadmap will add lines BEFORE posting.
-    const productsWoMeta = woMeta.filter((m) => m.status !== 690970004);
+    // Target-Closed WOs are currently Open while we attach children, so
+    // every WO accepts product lines. The line status (Estimated vs Used)
+    // is keyed off targetStatus so closed WOs end up with "Used" lines.
+    const productsWoMeta = woMeta;
     onProgress({
       step: "WO Products",
       done: 0,
       total: productsWoMeta.length,
     });
     for (let i = 0; i < productsWoMeta.length; i++) {
-      const { woId, status } = productsWoMeta[i];
+      const { woId, targetStatus } = productsWoMeta[i];
       const linesForThisWo = 1 + (i % 3); // 1, 2, or 3
-      // Closed (690970004) → Used (690970001). Anything else → Estimated.
-      const lineStatus = status === 690970004 ? 690970001 : 690970000;
+      // Closed (target=690970004) → Used (690970001). Anything else → Estimated.
+      const lineStatus = targetStatus === 690970004 ? 690970001 : 690970000;
       for (let j = 0; j < linesForThisWo; j++) {
         const productId = productIdList[(i + j) % productIdList.length];
         const lineName = productNameById[productId] ?? `WO part ${j + 1}`;
@@ -1636,6 +1725,66 @@ export async function seedFromPreset(
         done: i + 1,
         total: bookingMeta.length,
       });
+    }
+  }
+
+  // ── Close Work Orders (Phase 5) ─────────────────────────────────────────
+  // Transition target-Closed WOs from Open-Unscheduled → Closed-Posted now
+  // that all child rows (tasks, products, booking, time entry) are
+  // attached. Also fill in resolution + actual service duration so the
+  // WO form has populated content (Summary card, Resolution, totals).
+  const closeTargets = woMeta.filter((m) => m.targetStatus === 690970004);
+  if (closeTargets.length > 0) {
+    onProgress({
+      step: "Close Work Orders",
+      done: 0,
+      total: closeTargets.length,
+    });
+    // Build {woId → booking duration in minutes} so each closed WO can
+    // record an actual service duration that matches its booking.
+    const bookingDurationByWo: Record<string, number> = {};
+    for (const b of bookingMeta) {
+      bookingDurationByWo[b.woId] = Math.max(
+        1,
+        Math.round((b.end.getTime() - b.start.getTime()) / 60000),
+      );
+    }
+    // Resolution snippets that vary with the closed WO so they don't all
+    // read identically in the demo.
+    const resolutionTemplates = [
+      "Service completed. Equipment back in spec; verified readings within tolerance.",
+      "Replaced faulty component; system tested under load and returned to service.",
+      "Cleaned, calibrated, and signed-off with site contact. No follow-up required.",
+      "Root cause identified and corrected. Customer notified; PM scheduled at next interval.",
+      "Repaired on-site; spare parts left in customer stock for next cycle.",
+      "Performed lockout/tagout, replaced module, and restored service. Site contact acknowledged.",
+    ];
+    for (let i = 0; i < closeTargets.length; i++) {
+      const { woId } = closeTargets[i];
+      const durationMin = bookingDurationByWo[woId] ?? 120;
+      const resolution = tag(
+        resolutionTemplates[i % resolutionTemplates.length],
+      );
+      try {
+        await dv.update("msdyn_workorders", woId, {
+          msdyn_followupresolution: resolution,
+          msdyn_actualserviceduration: durationMin,
+          msdyn_systemstatus: 690970004,
+        });
+        const woNumber = result.labels?.workOrders?.[woId];
+        onProgress({
+          step: "Close Work Orders",
+          done: i + 1,
+          total: closeTargets.length,
+          detail: woNumber ? `${woNumber} → Posted` : "Posted",
+        });
+      } catch (e) {
+        // Surface so we know if msdyn_followupresolution or
+        // msdyn_actualserviceduration aren't on this org's schema.
+        throw new Error(
+          `Close WO failed (${woId.slice(0, 8)}…): ${(e as Error).message ?? e}`,
+        );
+      }
     }
   }
 

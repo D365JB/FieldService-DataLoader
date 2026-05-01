@@ -46,6 +46,7 @@ const STEP_ORDER = [
   "Bookings",
   "WO Products",
   "Time Entries",
+  "Close Work Orders",
   "IoT Alerts",
 ];
 

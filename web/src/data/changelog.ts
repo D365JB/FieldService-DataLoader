@@ -7,9 +7,22 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.20.18";
+export const APP_VERSION = "v1.21.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.21.0",
+    date: "April 30, 2026",
+    tag: "FEATURE",
+    features: [
+      "**Posted Work Orders are no longer barren.** Closed-Posted WOs now ship with the full child-row set: service tasks, product lines (status = *Used*), a backdated booking, and a time entry. They are created as Open-Unscheduled, populated, and *then* transitioned to Closed-Posted in a new final phase so the FS \"can't add records to a posted WO\" plugin doesn't block child creation.",
+      "**WO form fields populated**: every WO now writes `msdyn_accountinstructions` (rotating per WO) and `msdyn_estimatedserviceduration` (90–180 min based on slot) so the form is no longer mostly blank.",
+      "**Resolution + actuals on closed WOs**: the new *Close Work Orders* phase patches `msdyn_followupresolution` and `msdyn_actualserviceduration` (matched to booking duration) before flipping the status to Posted, giving the Copilot summary card and totals real content.",
+      "**Backdated bookings for closed WOs**: closed bookings land 7–28 days in the past and use the *Completed* booking status when available, so the schedule board shows historical activity in addition to upcoming work.",
+      "**Heal pre-existing posted WOs**: WOs that earlier seeder versions created directly as Posted (with no children) are re-Opened on idempotent match so this run can attach the missing rows and re-Post them.",
+      "**New step in the run dashboard**: *Close Work Orders* appears between Time Entries and IoT Alerts.",
+    ],
+  },
   {
     version: "v1.20.18",
     date: "April 30, 2026",
