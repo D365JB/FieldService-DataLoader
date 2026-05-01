@@ -17,6 +17,8 @@ import { buildResultSections } from "@/lib/fs/resultSections";
 import type { FsPreset } from "@/lib/preset";
 import { orgStore } from "@/lib/orgStore";
 import { runHistory } from "@/lib/runHistory";
+import { activeRunStore } from "@/lib/activeRunStore";
+import { useActiveRun } from "@/lib/useActiveRun";
 import { EntityPicker, type PickedEntity } from "@/components/EntityPicker";
 import { GenerationKnobsPanel } from "@/components/GenerationKnobsPanel";
 import { generationKnobs, type GenerationKnobs } from "@/lib/generationKnobs";
@@ -113,6 +115,43 @@ export function Generate() {
   const [error, setError] = useState<string | null>(null);
   const [retryNotice, setRetryNotice] = useState<string | null>(null);
   const [result, setResult] = useState<SeedResult | null>(null);
+
+  // Mirror the global store so an in-flight run survives navigation away
+  // from this page. When the user comes back, we hydrate from the store.
+  const activeRun = useActiveRun();
+  useEffect(() => {
+    // Only adopt store state if it matches THIS preset/org. Otherwise the
+    // user is starting a fresh page after a previous run completed.
+    if (
+      activeRun.startedAt &&
+      preset &&
+      activeRun.companyName === preset.companyName &&
+      activeRun.orgUrl === orgUrl
+    ) {
+      // Map the store's ActiveStep[] back into local StepState shape — they
+      // share the same fields, so this is essentially identity.
+      setSteps(
+        activeRun.steps.length > 0
+          ? activeRun.steps.map((s) => ({
+              name: s.name,
+              done: s.done,
+              total: s.total,
+              detail: s.detail,
+              status: s.status,
+            }))
+          : STEP_ORDER.map((name) => ({
+              name,
+              done: 0,
+              total: 0,
+              status: "pending",
+            })),
+      );
+      setRunning(activeRun.running);
+      setError(activeRun.error);
+      setRetryNotice(activeRun.retryNotice);
+      setResult(activeRun.result);
+    }
+  }, [activeRun, preset, orgUrl]);
 
   // Per-entity sourcing. Same three-mode choice for every step:
   // "create" (default) / "existing" / "skip".
@@ -211,6 +250,7 @@ export function Generate() {
   if (!preset || !orgUrl) return null;
 
   function applyProgress(p: SeedProgress) {
+    activeRunStore.applyProgress(p);
     setSteps((prev) =>
       prev.map((s) => {
         if (s.name !== p.step) {
@@ -236,13 +276,18 @@ export function Generate() {
     setResult(null);
     setRunning(true);
     setSteps(STEP_ORDER.map((name) => ({ name, done: 0, total: 0, status: "pending" })));
+    activeRunStore.start({
+      companyName: preset.companyName,
+      orgUrl,
+      stepOrder: STEP_ORDER,
+    });
     try {
       const dv = new DataverseClient({
         orgUrl,
         onRetry: (attempt, status, waitMs) => {
-          setRetryNotice(
-            `Dataverse ${status || "network error"} — retry ${attempt} in ${Math.round(waitMs / 1000)}s`,
-          );
+          const notice = `Dataverse ${status || "network error"} — retry ${attempt} in ${Math.round(waitMs / 1000)}s`;
+          activeRunStore.setRetryNotice(notice);
+          setRetryNotice(notice);
         },
       });
       const seedOptions: SeedOptions = {};
@@ -282,6 +327,7 @@ export function Generate() {
       );
       setResult(seedResult);
       runHistory.add(orgUrl, preset.companyName, seedResult);
+      activeRunStore.complete(seedResult);
       // Mark all steps complete (in case last step had total 0).
       setSteps((prev) => prev.map((s) => ({ ...s, status: "complete" })));
       setRetryNotice(null);
@@ -297,7 +343,9 @@ export function Generate() {
           /* localStorage write failures shouldn't mask the original error */
         }
       }
-      setError((err as Error).message);
+      const message = (err as Error).message;
+      setError(message);
+      activeRunStore.fail(message, partial ?? null);
     } finally {
       setRunning(false);
     }

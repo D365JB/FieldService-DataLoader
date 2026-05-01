@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.35.1";
+export const APP_VERSION = "v1.36.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.36.0",
+    date: "May 1, 2026",
+    tag: "FEATURE",
+    features: [
+      "**See your data load from anywhere.** A live status pill now appears in the header whenever a load is running, showing the company, current step, completed-step count, and elapsed time. Navigate to Analyze, Reset, or the Dashboard without losing visibility — click the pill to jump straight back to the Generate page and the live progress view rehydrates exactly where it left off.",
+    ],
+  },
   {
     version: "v1.35.1",
     date: "May 1, 2026",
