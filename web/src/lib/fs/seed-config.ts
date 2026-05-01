@@ -1180,13 +1180,17 @@ export async function seedFromPreset(
     for (const [name, id] of Object.entries(taskTypeMap)) {
       taskTypeNameById[id] = name;
     }
+    // Closed-Posted WOs (690970004) reject child rows with the FS plugin
+    // error "A record can't be added to a work order that's been posted.".
+    // Skip them here — Phase E of the roadmap will add lines BEFORE posting.
+    const tasksWoMeta = woMeta.filter((m) => m.status !== 690970004);
     onProgress({
       step: "WO Service Tasks",
       done: 0,
-      total: result.workOrderIds.length,
+      total: tasksWoMeta.length,
     });
-    for (let i = 0; i < result.workOrderIds.length; i++) {
-      const woId = result.workOrderIds[i];
+    for (let i = 0; i < tasksWoMeta.length; i++) {
+      const woId = tasksWoMeta[i].woId;
       for (let j = 0; j < tasksPerWo; j++) {
         const taskTypeId = taskTypeIds[(i + j) % taskTypeIds.length];
         const taskName = taskTypeNameById[taskTypeId] ?? `WO task ${j + 1}`;
@@ -1211,7 +1215,7 @@ export async function seedFromPreset(
       onProgress({
         step: "WO Service Tasks",
         done: i + 1,
-        total: result.workOrderIds.length,
+        total: tasksWoMeta.length,
       });
     }
   }
@@ -1260,6 +1264,32 @@ export async function seedFromPreset(
     const slotHours = 2;
     const slotsPerDay = 4; // 9am, 11am, 1pm, 3pm
 
+    // Batch-fetch every scheduled WO's auto-numbered name (e.g. "WO-01016") in
+    // a single query. Per-WO lookups inside the loop sometimes returned empty
+    // because the FS auto-number plugin can lag right after create — batching
+    // after all WOs are committed gives the plugin time and only costs 1 call.
+    const woNumberById: Record<string, string> = {};
+    if (scheduledWoIds.length > 0) {
+      try {
+        const idFilter = scheduledWoIds
+          .map((id) => `msdyn_workorderid eq ${id}`)
+          .join(" or ");
+        const rows = await dv.query<{
+          msdyn_workorderid: string;
+          msdyn_name: string;
+        }>("msdyn_workorders", {
+          filter: idFilter,
+          select: ["msdyn_workorderid", "msdyn_name"],
+          top: scheduledWoIds.length,
+        });
+        for (const r of rows) {
+          if (r.msdyn_name) woNumberById[r.msdyn_workorderid] = r.msdyn_name;
+        }
+      } catch {
+        /* fall back to synthetic name */
+      }
+    }
+
     for (let i = 0; i < scheduledWoIds.length; i++) {
       const woId = scheduledWoIds[i];
       const resourceId = resourceIdList[i % resourceIdList.length];
@@ -1269,37 +1299,31 @@ export async function seedFromPreset(
       start.setDate(start.getDate() + dayOffset);
       start.setHours(9 + slotInDay * slotHours);
       const end = new Date(start.getTime() + slotHours * 60 * 60 * 1000);
-      // Use the WO's auto-numbered name (e.g. "WO-01016") as the booking title
-      // so the schedule board shows a meaningful identifier instead of
-      // "Booking for WO #1". msdyn_name is generated server-side, so retrieve
-      // it after the WO has been created.
-      let woNumber: string | null = null;
-      try {
-        const woRow = await dv.query<{ msdyn_name: string }>(
-          "msdyn_workorders",
-          {
-            filter: `msdyn_workorderid eq ${woId}`,
-            select: ["msdyn_name"],
-            top: 1,
-          },
-        );
-        woNumber = woRow[0]?.msdyn_name ?? null;
-      } catch {
-        woNumber = null;
-      }
+      const woNumber = woNumberById[woId] ?? null;
       const bookingName =
         woNumber ?? tag(`Booking for WO #${result.workOrderIds.indexOf(woId) + 1}`);
 
-      // Idempotency by tagged name.
-      const existing = await dv.query<{ bookableresourcebookingid: string }>(
-        "bookableresourcebookings",
-        {
-          filter: `name eq '${oencode(bookingName)}'`,
-          select: ["bookableresourcebookingid"],
-          top: 1,
-        },
-      );
+      // Idempotency: prefer matching on the linked WO (handles the case where
+      // an older run created the booking under a synthetic name like "Booking
+      // for WO #4"). Heal that name to the WO number while we're here.
+      const existing = await dv.query<{
+        bookableresourcebookingid: string;
+        name: string;
+      }>("bookableresourcebookings", {
+        filter: `_msdyn_workorder_value eq ${woId}`,
+        select: ["bookableresourcebookingid", "name"],
+        top: 1,
+      });
       let bookingId = existing[0]?.bookableresourcebookingid;
+      if (bookingId && woNumber && existing[0]?.name !== woNumber) {
+        try {
+          await dv.update("bookableresourcebookings", bookingId, {
+            name: woNumber,
+          });
+        } catch {
+          /* heal best-effort */
+        }
+      }
       if (!bookingId) {
         try {
           bookingId = await dv.create("bookableresourcebookings", {
@@ -1347,13 +1371,17 @@ export async function seedFromPreset(
       const id = result.productIds[p.productNumber];
       if (id) productNameById[id] = p.name;
     }
+    // Closed-Posted WOs (690970004) reject child rows with the FS plugin
+    // error "A record can't be added to a work order that's been posted.".
+    // Skip them here — Phase E of the roadmap will add lines BEFORE posting.
+    const productsWoMeta = woMeta.filter((m) => m.status !== 690970004);
     onProgress({
       step: "WO Products",
       done: 0,
-      total: woMeta.length,
+      total: productsWoMeta.length,
     });
-    for (let i = 0; i < woMeta.length; i++) {
-      const { woId, status } = woMeta[i];
+    for (let i = 0; i < productsWoMeta.length; i++) {
+      const { woId, status } = productsWoMeta[i];
       const linesForThisWo = 1 + (i % 3); // 1, 2, or 3
       // Closed (690970004) → Used (690970001). Anything else → Estimated.
       const lineStatus = status === 690970004 ? 690970001 : 690970000;
@@ -1386,7 +1414,7 @@ export async function seedFromPreset(
       onProgress({
         step: "WO Products",
         done: i + 1,
-        total: woMeta.length,
+        total: productsWoMeta.length,
       });
     }
   }

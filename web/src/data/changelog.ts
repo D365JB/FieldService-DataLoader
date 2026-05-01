@@ -7,9 +7,18 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.20.6";
+export const APP_VERSION = "v1.20.7";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.20.7",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Closed-Posted work orders** no longer break generation. The FS plugin rejects child rows on posted WOs (`A record can't be added to a work order that's been posted.`); WO Service Tasks and WO Products now skip those WOs. Phase E of the roadmap will add lines BEFORE posting to fully populate Closed-Posted financials.",
+      "**Booking titles** now reliably show the WO number (e.g. *WO-01016*). All WO numbers are batch-fetched in a single query after the WO loop so the FS auto-number plugin has time to populate. Existing bookings from prior runs are renamed in place.",
+    ],
+  },
   {
     version: "v1.20.6",
     date: "April 30, 2026",
