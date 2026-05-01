@@ -1542,15 +1542,44 @@ export async function seedFromPreset(
       );
       const entryName = tag(`Time entry for booking ${i + 1}`);
 
-      const existing = await dv.query<{ msdyn_timeentryid: string }>(
-        "msdyn_timeentries",
-        {
-          filter: `msdyn_description eq '${oencode(entryName)}'`,
-          select: ["msdyn_timeentryid"],
-          top: 1,
-        },
-      );
+      const existing = await dv.query<{
+        msdyn_timeentryid: string;
+        _msdyn_bookableresourcebooking_value?: string | null;
+      }>("msdyn_timeentries", {
+        filter: `msdyn_description eq '${oencode(entryName)}'`,
+        select: [
+          "msdyn_timeentryid",
+          "_msdyn_bookableresourcebooking_value",
+        ],
+        top: 1,
+      });
       if (existing[0]) {
+        // Heal orphan time entries created by earlier versions
+        // (v1.20.12–14) which had no booking link due to a casing
+        // bug. If the existing row already binds the right booking,
+        // skip; otherwise PATCH the booking link onto it.
+        const existingBookingId = existing[0]._msdyn_bookableresourcebooking_value;
+        if (existingBookingId !== bookingId) {
+          try {
+            await dv.update(
+              "msdyn_timeentries",
+              existing[0].msdyn_timeentryid,
+              {
+                "msdyn_BookableResourceBooking@odata.bind": `/bookableresourcebookings(${bookingId})`,
+              },
+            );
+          } catch (e) {
+            throw new Error(
+              `Time Entry heal failed for booking ${i + 1}: ${(e as Error).message ?? e}`,
+            );
+          }
+        }
+        trackCreated(result, "timeEntries", existing[0].msdyn_timeentryid);
+        const woNumber = result.labels?.workOrders?.[woId];
+        const label = woNumber
+          ? `${woNumber} — ${start.toLocaleDateString()}`
+          : `Time entry ${i + 1}`;
+        setLabel(result, "timeEntries", existing[0].msdyn_timeentryid, label);
         onProgress({
           step: "Time Entries",
           done: i + 1,

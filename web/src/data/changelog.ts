@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.20.15";
+export const APP_VERSION = "v1.20.16";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.20.16",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Time Entries** now heal pre-existing orphan rows. Time entries created by v1.20.12–14 had no booking link (the casing bug). The idempotency check matched those orphans and silently skipped them, leaving Time Entries absent from the run summary. The seeder now PATCHes the booking link onto any existing row that's missing it, and tracks both newly-created and healed rows so they appear in the summary.",
+    ],
+  },
   {
     version: "v1.20.15",
     date: "April 30, 2026",
