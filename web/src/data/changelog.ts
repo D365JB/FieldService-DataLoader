@@ -7,9 +7,18 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.33.2";
+export const APP_VERSION = "v1.34.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.34.0",
+    date: "May 1, 2026",
+    tag: "FEATURE",
+    features: [
+      "**Switched the analyzer model to `gpt-4o-mini`.** Smoke test through the proxy now returns in ~2.5 seconds (was 30–60s on gpt-5-mini), and the per-call AOAI cost drops ~3×. Quality trade-off is small for this workload — extracting a vertical from web text and emitting JSON doesn't benefit from reasoning tokens, and the seeder's `safeWrite` wrapper already absorbs any occasional cross-reference miss in the generated preset.",
+      "**Both models stay deployed.** Bicep now provisions `gpt-4o-mini` (active) and `gpt-5-mini` (fallback, capacity 100) on the same AOAI account. To roll back at any time: `az functionapp config appsettings set -g rg-fsdemo -n func-fsdemo-vnoq6fosbmk2i --settings AOAI_DEPLOYMENT=gpt-5-mini` — flip is ~30s, no redeploy.",
+    ],
+  },
   {
     version: "v1.33.2",
     date: "May 1, 2026",

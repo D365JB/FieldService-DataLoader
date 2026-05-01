@@ -25,7 +25,7 @@ interface GenerateResponse {
 }
 
 const AOAI_ENDPOINT = process.env.AOAI_ENDPOINT ?? "";
-const AOAI_DEPLOYMENT = process.env.AOAI_DEPLOYMENT ?? "gpt-5-mini";
+const AOAI_DEPLOYMENT = process.env.AOAI_DEPLOYMENT ?? "gpt-4o-mini";
 const AOAI_API_KEY = process.env.AOAI_API_KEY;
 const AOAI_API_VERSION = process.env.AOAI_API_VERSION ?? "2024-10-21";
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? "")

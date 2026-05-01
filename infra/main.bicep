@@ -42,17 +42,25 @@ param openAiLocation string = 'eastus2'
 @description('Origin(s) allowed to call the API. Comma-separated. The deployed SWA URL is appended automatically.')
 param extraAllowedOrigins string = 'http://localhost:5173'
 
-@description('AOAI deployment name.')
-param openAiDeploymentName string = 'gpt-5-mini'
+@description('AOAI deployment name (active model the API talks to).')
+param openAiDeploymentName string = 'gpt-4o-mini'
 
-@description('AOAI model name.')
-param openAiModelName string = 'gpt-5-mini'
+@description('AOAI model name (must match openAiDeploymentName for clarity).')
+param openAiModelName string = 'gpt-4o-mini'
 
 @description('AOAI model version.')
-param openAiModelVersion string = '2025-08-07'
+param openAiModelVersion string = '2024-07-18'
+
+@description('Optional fallback deployment (e.g. gpt-5-mini). Provisioned alongside the primary so we can flip AOAI_DEPLOYMENT via app setting without redeploying. Leave model name blank to skip.')
+param openAiFallbackDeploymentName string = 'gpt-5-mini'
+param openAiFallbackModelName string = 'gpt-5-mini'
+param openAiFallbackModelVersion string = '2025-08-07'
 
 @description('AOAI deployment SKU capacity (TPM in thousands).')
 param openAiCapacity int = 100
+
+@description('Fallback deployment capacity. Matches primary so a flip via app setting has full headroom.')
+param openAiFallbackCapacity int = 100
 
 var tags = {
   'azd-env-name': environmentName
@@ -111,6 +119,32 @@ resource openAiDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024
     }
     versionUpgradeOption: 'OnceCurrentVersionExpired'
   }
+}
+
+// Fallback deployment kept on standby. Flip the function app's
+// AOAI_DEPLOYMENT setting to this name to swap models in ~30s with no
+// redeploy. Smaller capacity since it shouldn't be carrying production
+// traffic. `dependsOn` serializes the two deployments — AOAI returns 409
+// "already in progress" if both creates run in parallel against the same
+// account.
+resource openAiFallbackDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
+  parent: openAi
+  name: openAiFallbackDeploymentName
+  sku: {
+    name: 'GlobalStandard'
+    capacity: openAiFallbackCapacity
+  }
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: openAiFallbackModelName
+      version: openAiFallbackModelVersion
+    }
+    versionUpgradeOption: 'OnceCurrentVersionExpired'
+  }
+  dependsOn: [
+    openAiDeployment
+  ]
 }
 
 // ── Storage account (required by Functions runtime + deployment package) ──
@@ -314,4 +348,5 @@ output API_NAME string = functionApp.name
 output API_URL string = 'https://${functionApp.properties.defaultHostName}'
 output AOAI_ENDPOINT string = openAi.properties.endpoint
 output AOAI_DEPLOYMENT string = openAiDeploymentName
+output AOAI_DEPLOYMENT_FALLBACK string = openAiFallbackDeploymentName
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = appInsights.properties.ConnectionString
