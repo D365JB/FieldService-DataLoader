@@ -11,6 +11,8 @@ import {
   CaretRight,
   DownloadSimple,
   UploadSimple,
+  MagnifyingGlass,
+  Broom,
 } from "@phosphor-icons/react";
 import { AppHeader } from "@/components/AppHeader";
 import { DataverseClient, deepLink } from "@/lib/dataverse";
@@ -22,6 +24,12 @@ import {
   type SeedProgress,
 } from "@/lib/fs/seed-config";
 import { buildResultSections } from "@/lib/fs/resultSections";
+import {
+  verifyRun,
+  prunePresentResult,
+  type VerifyRunResult,
+  type VerifyProgress,
+} from "@/lib/fs/verifyRun";
 import { orgStore } from "@/lib/orgStore";
 import { runHistory, type RunRecord } from "@/lib/runHistory";
 
@@ -77,6 +85,9 @@ export function Reset() {
   const [customRunId, setCustomRunId] = useState<string | null>(null);
   const [customPicks, setCustomPicks] = useState<Set<string>>(new Set());
   const importInputRef = useRef<HTMLInputElement>(null);
+  const [verifyingRunId, setVerifyingRunId] = useState<string | null>(null);
+  const [verifyByRun, setVerifyByRun] = useState<Record<string, VerifyRunResult>>({});
+  const [verifyProgress, setVerifyProgress] = useState<VerifyProgress | null>(null);
 
   useEffect(() => {
     if (!accounts[0]) navigate("/");
@@ -230,6 +241,51 @@ export function Reset() {
     }
   }
 
+  /**
+   * Verify every tracked id in a run against the live environment. v1.41.6.
+   * Stores the breakdown keyed by run id so the panel persists when a row
+   * is collapsed/expanded.
+   */
+  async function handleVerify(run: RunRecord) {
+    setError(null);
+    setVerifyingRunId(run.id);
+    setVerifyProgress({ completed: 0, total: 0 });
+    setExpandedRunId(run.id);
+    try {
+      const dv = new DataverseClient({ orgUrl });
+      const result = await verifyRun(dv, run.result, (p) => setVerifyProgress(p));
+      setVerifyByRun((prev) => ({ ...prev, [run.id]: result }));
+    } catch (err) {
+      setError(`Verify failed: ${(err as Error).message}`);
+    } finally {
+      setVerifyingRunId(null);
+      setVerifyProgress(null);
+    }
+  }
+
+  /**
+   * Drop ids whose verify result is `missing` from the on-device run record,
+   * so its count badges and Custom-delete pickers reflect reality after
+   * out-of-band deletions. Errors are kept (we can't be sure they're gone).
+   */
+  function handlePruneMissing(run: RunRecord) {
+    const v = verifyByRun[run.id];
+    if (!v || v.totals.missing === 0) return;
+    const pruned = prunePresentResult(run.result, v);
+    const remaining = buildResultSections(pruned);
+    if (remaining.length === 0) {
+      runHistory.remove(orgUrl, run.id);
+    } else {
+      runHistory.update(orgUrl, run.id, pruned);
+    }
+    setRuns(runHistory.list(orgUrl));
+    setVerifyByRun((prev) => {
+      const next = { ...prev };
+      delete next[run.id];
+      return next;
+    });
+  }
+
   return (
     <div className="min-h-screen flex flex-col">
       <AppHeader orgUrl={orgUrl} />
@@ -351,6 +407,19 @@ export function Reset() {
                       </button>
                       <div className="flex items-center gap-1.5">
                         <button
+                          onClick={() => handleVerify(r)}
+                          disabled={running || verifyingRunId !== null}
+                          title="Check whether every record this run created still exists in Dynamics"
+                          className="text-xs px-3 py-1.5 rounded-md bg-bg-elevated hover:bg-bg-base border border-border hover:border-accent text-slate-300 hover:text-white flex items-center gap-1.5 disabled:opacity-40"
+                        >
+                          {verifyingRunId === r.id ? (
+                            <CircleNotch size={12} className="animate-spin" />
+                          ) : (
+                            <MagnifyingGlass size={12} weight="bold" />
+                          )}
+                          {verifyingRunId === r.id ? "Verifying…" : "Verify"}
+                        </button>
+                        <button
                           onClick={() => {
                             const next = customRunId === r.id ? null : r.id;
                             setCustomRunId(next);
@@ -379,6 +448,25 @@ export function Reset() {
                     </div>
                     {isExpanded && (
                       <div className="border-t border-border px-3 py-3 bg-bg-base/60 space-y-3">
+                        {verifyByRun[r.id] && (
+                          <VerifyPanel
+                            verify={verifyByRun[r.id]}
+                            onPrune={() => handlePruneMissing(r)}
+                            onDismiss={() =>
+                              setVerifyByRun((prev) => {
+                                const next = { ...prev };
+                                delete next[r.id];
+                                return next;
+                              })
+                            }
+                          />
+                        )}
+                        {verifyingRunId === r.id && verifyProgress && (
+                          <div className="text-xs text-muted">
+                            Verifying {verifyProgress.currentSection ?? ""}…{" "}
+                            {verifyProgress.completed}/{verifyProgress.total}
+                          </div>
+                        )}
                         {breakdown.length === 0 ? (
                           <p className="text-xs text-muted">
                             This run created no records.
@@ -594,6 +682,93 @@ export function Reset() {
           </div>
         )}
       </main>
+    </div>
+  );
+}
+
+// ── VerifyPanel ────────────────────────────────────────────────────────────
+// Renders the result of a `verifyRun` against the live environment: per-
+// section present / missing / error counts, plus a "Prune missing" button
+// that drops dead ids from the on-device run history. v1.41.6.
+
+function VerifyPanel({
+  verify,
+  onPrune,
+  onDismiss,
+}: {
+  verify: VerifyRunResult;
+  onPrune: () => void;
+  onDismiss: () => void;
+}) {
+  const { totals } = verify;
+  const allClean = totals.missing === 0 && totals.error === 0;
+  const tone = allClean
+    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+    : totals.error > 0
+      ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
+      : "border-sky-500/30 bg-sky-500/10 text-sky-200";
+
+  return (
+    <div className={`rounded-md border p-3 space-y-2 ${tone}`}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-xs">
+          <MagnifyingGlass size={14} weight="bold" />
+          <span className="font-semibold">Verification</span>
+          <span className="text-slate-300">
+            {totals.present}/{totals.total} present · {totals.missing} missing
+            {totals.error > 0 ? ` · ${totals.error} error` : ""}
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {totals.missing > 0 && (
+            <button
+              type="button"
+              onClick={onPrune}
+              title="Drop the missing ids from this run's local history. Records flagged 'error' are kept (we couldn't verify them)."
+              className="text-[11px] px-2 py-1 rounded bg-bg-elevated border border-border hover:border-accent text-slate-200 hover:text-white flex items-center gap-1"
+            >
+              <Broom size={12} weight="bold" />
+              Prune {totals.missing} missing
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onDismiss}
+            title="Dismiss this verification result"
+            className="text-[11px] px-2 py-1 rounded bg-bg-elevated border border-border hover:border-accent text-slate-300 hover:text-white"
+          >
+            Dismiss
+          </button>
+        </div>
+      </div>
+      {(totals.missing > 0 || totals.error > 0) && (
+        <ul className="text-[11px] grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 font-mono">
+          {verify.sections
+            .filter((s) => s.missingCount > 0 || s.errorCount > 0)
+            .map((s) => (
+              <li key={s.title} className="flex justify-between gap-2 text-slate-300">
+                <span className="text-slate-400">{s.title}</span>
+                <span>
+                  <span className="text-emerald-300">{s.presentCount}</span>
+                  {" / "}
+                  <span className="text-rose-300">{s.missingCount}</span>
+                  {s.errorCount > 0 && (
+                    <>
+                      {" / "}
+                      <span className="text-amber-300">{s.errorCount}</span>
+                    </>
+                  )}
+                </span>
+              </li>
+            ))}
+        </ul>
+      )}
+      {allClean && (
+        <p className="text-[11px] text-emerald-200/80">
+          Every tracked record is still present in Dynamics. Delete this run
+          to wipe them all.
+        </p>
+      )}
     </div>
   );
 }

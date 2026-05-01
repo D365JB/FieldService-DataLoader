@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.41.5";
+export const APP_VERSION = "v1.41.6";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.41.6",
+    date: "May 1, 2026",
+    tag: "FEAT",
+    features: [
+      "**Reset page can now verify a run against the live environment before you delete anything.** Each row on the Reset page has a new **Verify** button that takes the ids the run created (territories, accounts, resources, work orders, bookings, agreements, etc.) and issues a parallel batch of `GET /{entitySet}({id})?$select={primaryKey}` calls to the org you're connected to, classifying each id as **present** (green), **missing** (rose — already deleted out-of-band), or **error** (amber — connectivity / 4xx the verifier can't interpret). Results are shown in a per-row panel: a one-line summary (`87/92 present · 5 missing`) on top of a per-section breakdown for any section that isn't 100% clean. Verification runs at concurrency 8 with a live progress counter (`Verifying Work Orders… 47/120`), so a multi-hundred-record run finishes in seconds. When at least one id comes back missing, a **Prune {N} missing** button appears that drops only those dead ids from the on-device run history (records flagged *error* are kept — we can't be sure they're really gone), updating count badges and the Custom-delete picker so they reflect reality. The verification result is keyed by run id and survives collapsing/expanding the row, but is *not* persisted: refreshing the page clears it. Behind the scenes the new module `web/src/lib/fs/verifyRun.ts` reuses the existing `buildResultSections` so it always covers exactly what the rest of the Reset page knows about — no separate id list to keep in sync.",
+    ],
+  },
   {
     version: "v1.41.5",
     date: "May 1, 2026",
