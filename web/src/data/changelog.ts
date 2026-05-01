@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.20.14";
+export const APP_VERSION = "v1.20.15";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.20.15",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Time Entries** are now linked back to their booking using the correct **PascalCase** OData navigation property: `msdyn_BookableResourceBooking@odata.bind`. The earlier *undeclared property* 400 was a casing bug — Dataverse nav property names are case-sensitive (the lookup column is lowercase `msdyn_bookableresourcebooking`, but the nav property is PascalCase). Without the booking link, time entries were created but invisible in any FS view filtered by booking/WO.",
+    ],
+  },
   {
     version: "v1.20.14",
     date: "April 30, 2026",

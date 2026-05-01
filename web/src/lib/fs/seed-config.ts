@@ -1535,7 +1535,7 @@ export async function seedFromPreset(
       total: bookingMeta.length,
     });
     for (let i = 0; i < bookingMeta.length; i++) {
-      const { woId, resourceId, start, end } = bookingMeta[i];
+      const { bookingId, woId, resourceId, start, end } = bookingMeta[i];
       const durationMinutes = Math.max(
         1,
         Math.round((end.getTime() - start.getTime()) / 60000),
@@ -1570,14 +1570,14 @@ export async function seedFromPreset(
           // 192350000 = Submitted
           msdyn_entrystatus: 192350000,
           "msdyn_bookableresource@odata.bind": `/bookableresources(${resourceId})`,
-          // We deliberately do NOT bind msdyn_workorder or
-          // msdyn_bookableresourcebooking here. Both lookup *fields*
-          // exist on msdyn_timeentry, but the *navigation property*
-          // names vary by org/version (some orgs report OData
-          // "undeclared property" 400 for either name). The minimum
-          // viable Time Entry only needs the resource + time window;
-          // booking/WO context is recoverable via the resource and
-          // overlapping time range.
+          // Dataverse OData navigation property names are case
+          // sensitive. The *lookup column* is msdyn_bookableresourcebooking
+          // (lowercase), but the *navigation property* used in
+          // @odata.bind is PascalCase: msdyn_BookableResourceBooking.
+          // Earlier lowercase attempts produced "undeclared property"
+          // 400s. We bind the booking (canonical FS link); the work
+          // order is reached transitively through the booking.
+          "msdyn_BookableResourceBooking@odata.bind": `/bookableresourcebookings(${bookingId})`,
         });
         trackCreated(result, "timeEntries", teId);
         const woNumber = result.labels?.workOrders?.[woId];
