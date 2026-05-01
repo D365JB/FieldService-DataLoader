@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.20.17";
+export const APP_VERSION = "v1.20.18";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.20.18",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**IoT Alerts** that already exist from prior runs are now tracked and labeled in the run summary. The idempotency skip path was leaving the alerts off the dashboard even though the rows existed in Dataverse.",
+    ],
+  },
   {
     version: "v1.20.17",
     date: "April 30, 2026",

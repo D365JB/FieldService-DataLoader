@@ -1681,7 +1681,17 @@ export async function seedFromPreset(
             top: 1,
           },
         );
-        if (!existing[0]) {
+        const labelText =
+          template.message.length > 60
+            ? template.message.slice(0, 57) + "…"
+            : template.message;
+        if (existing[0]) {
+          // Already created by an earlier run — still track it so it
+          // appears in the run summary instead of silently dropping
+          // off the dashboard.
+          trackCreated(result, "iotAlerts", existing[0].msdyn_iotalertid);
+          setLabel(result, "iotAlerts", existing[0].msdyn_iotalertid, labelText);
+        } else {
           try {
             const alertId = await dv.create("msdyn_iotalerts", {
               msdyn_description: description,
@@ -1701,14 +1711,7 @@ export async function seedFromPreset(
               "msdyn_CustomerAsset@odata.bind": `/msdyn_customerassets(${assetId})`,
             });
             trackCreated(result, "iotAlerts", alertId);
-            setLabel(
-              result,
-              "iotAlerts",
-              alertId,
-              template.message.length > 60
-                ? template.message.slice(0, 57) + "…"
-                : template.message,
-            );
+            setLabel(result, "iotAlerts", alertId, labelText);
           } catch (e) {
             // Surface the real error so we can fix schema/permission
             // problems instead of silently failing every alert.
