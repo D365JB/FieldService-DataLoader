@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.20.11";
+export const APP_VERSION = "v1.20.12";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.20.12",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Time Entries** no longer attempt to bind to a work order *or* a booking. Both `msdyn_workorder` and `msdyn_bookableresourcebooking` are reported as undeclared navigation properties on `msdyn_timeentry` in some orgs. The minimum viable Time Entry only needs the bookable resource + time window; booking/WO context is recoverable via the resource and overlapping time range.",
+    ],
+  },
   {
     version: "v1.20.11",
     date: "April 30, 2026",
