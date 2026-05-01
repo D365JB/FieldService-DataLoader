@@ -16,6 +16,7 @@ import { SKIP_REASON_LABEL, type SkipReason } from "@/lib/fs/safeWrite";
 import { buildResultSections } from "@/lib/fs/resultSections";
 import type { FsPreset } from "@/lib/preset";
 import { orgStore } from "@/lib/orgStore";
+import { track } from "@/lib/telemetry";
 import { runHistory } from "@/lib/runHistory";
 import { activeRunStore } from "@/lib/activeRunStore";
 import { useActiveRun } from "@/lib/useActiveRun";
@@ -281,6 +282,10 @@ export function Generate() {
       orgUrl,
       stepOrder: STEP_ORDER,
     });
+    const startedAt = Date.now();
+    track("action", {
+      detail: { name: "generate.start", companyName: preset.companyName, orgUrl },
+    });
     try {
       const dv = new DataverseClient({
         orgUrl,
@@ -331,6 +336,13 @@ export function Generate() {
       // Mark all steps complete (in case last step had total 0).
       setSteps((prev) => prev.map((s) => ({ ...s, status: "complete" })));
       setRetryNotice(null);
+      track("action", {
+        detail: {
+          name: "generate.success",
+          companyName: preset.companyName,
+          durationMs: Date.now() - startedAt,
+        },
+      });
     } catch (err) {
       // If seedFromPreset failed mid-run, it attaches whatever was
       // created up to that point so we can still record it for cleanup.
@@ -346,6 +358,14 @@ export function Generate() {
       const message = (err as Error).message;
       setError(message);
       activeRunStore.fail(message, partial ?? null);
+      track("error", {
+        detail: {
+          name: "generate.fail",
+          companyName: preset.companyName,
+          message,
+          durationMs: Date.now() - startedAt,
+        },
+      });
     } finally {
       setRunning(false);
     }

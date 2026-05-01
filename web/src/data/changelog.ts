@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.37.0";
+export const APP_VERSION = "v1.38.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.38.0",
+    date: "May 1, 2026",
+    tag: "FEATURE",
+    features: [
+      "**Telemetry + admin page.** Reverted the global lock from v1.37.0 — the studio is open to demo users again. Every visit now emits lightweight events (session start, page views, sign-in, analyze, generate, errors) to an Azure Storage Table behind the Function App. A new `/admin` route, gated by the shared `APP_ACCESS_KEY`, surfaces recent events plus aggregates (distinct users, sessions, top routes, average session length) so you can see who's using the app and what they're doing without locking anyone out.",
+    ],
+  },
   {
     version: "v1.37.0",
     date: "May 1, 2026",

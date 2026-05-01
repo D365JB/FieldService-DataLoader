@@ -10,6 +10,7 @@ import {
 } from "@phosphor-icons/react";
 import { APP_VERSION } from "@/data/changelog";
 import { ChangelogModal } from "@/components/ChangelogModal";
+import { track } from "@/lib/telemetry";
 
 const FEATURES = [
   {
@@ -43,6 +44,12 @@ export function Landing() {
         prompt: "select_account",
       });
       instance.setActiveAccount(result.account);
+      track("login", {
+        detail: {
+          tenantId: result.account?.tenantId,
+          username: result.account?.username,
+        },
+      });
       navigate("/connect");
     } catch (err) {
       console.error(err);

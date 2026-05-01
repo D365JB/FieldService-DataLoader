@@ -11,6 +11,7 @@ import { GENERIC_PRESET } from "@/lib/genericPreset";
 import { DEMO_PACKS } from "@/lib/demoPacks";
 import { modelStore } from "@/lib/modelStore";
 import { orgStore } from "@/lib/orgStore";
+import { track } from "@/lib/telemetry";
 
 export function Analyze() {
   const { accounts } = useMsal();
@@ -61,13 +62,30 @@ export function Analyze() {
     setPreset(null);
     setStatus("Starting…");
     setBusy(true);
+    const startedAt = Date.now();
+    track("action", { detail: { name: "analyze.start", url: companyUrl, model: selectedModel } });
     try {
       const result = await analyzeCompany(companyUrl, (msg) => setStatus(msg), selectedModel);
       setStatus("Done.");
       setPreset(result);
       orgStore.setPreset(JSON.stringify(result));
+      track("action", {
+        detail: {
+          name: "analyze.success",
+          url: companyUrl,
+          durationMs: Date.now() - startedAt,
+        },
+      });
     } catch (err) {
       setError((err as Error).message);
+      track("error", {
+        detail: {
+          name: "analyze.fail",
+          url: companyUrl,
+          message: (err as Error).message,
+          durationMs: Date.now() - startedAt,
+        },
+      });
     } finally {
       setBusy(false);
     }

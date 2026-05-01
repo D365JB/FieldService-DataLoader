@@ -34,7 +34,7 @@ function KeyPrompt() {
     }
     setVerifying(true);
     try {
-      const res = await fetch("/api/models", {
+      const res = await fetch("/api/telemetry?limit=1&days=1", {
         headers: { "x-app-key": trimmed },
       });
       if (res.status === 401) {
@@ -67,7 +67,7 @@ function KeyPrompt() {
           <div>
             <h1 className="text-lg font-semibold text-white">Restricted access</h1>
             <p className="text-xs text-muted">
-              This deployment is not open to demo users. Enter the access key to continue.
+              This page (telemetry &amp; admin) is locked. Enter the access key to continue.
             </p>
           </div>
         </div>
