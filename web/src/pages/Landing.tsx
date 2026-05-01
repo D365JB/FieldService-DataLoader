@@ -61,19 +61,7 @@ export function Landing() {
             <Wrench size={16} weight="bold" />
             Built for Dynamics 365 Field Service
           </div>
-          <div className="text-xs text-slate-400 mb-3 flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
-            <span>Built by James Bowen</span>
-            <span aria-hidden="true">•</span>
-            <a
-              href="mailto:jamesbowen@microsoft.com"
-              className="hover:text-accent transition-colors"
-            >
-              jamesbowen@microsoft.com
-            </a>
-            <span aria-hidden="true">•</span>
-            <span>Principal Solution Specialist | Manufacturing &amp; Mobility</span>
-          </div>
-          <div className="mb-6">
+          <div className="mb-3">
             <button
               onClick={() => setChangelogOpen(true)}
               className="px-2.5 py-0.5 rounded-md bg-accent/15 border border-accent/30 text-accent text-xs font-bold tracking-wider hover:bg-accent/25 transition-colors"
@@ -81,6 +69,20 @@ export function Landing() {
             >
               {APP_VERSION}
             </button>
+          </div>
+          <div className="text-xs text-slate-400 mb-6 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+            <span>
+              Built by <strong className="font-semibold text-slate-200">James Bowen</strong>
+            </span>
+            <span aria-hidden="true" className="text-slate-600">•</span>
+            <a
+              href="mailto:jamesbowen@microsoft.com"
+              className="text-accent hover:underline"
+            >
+              jamesbowen@microsoft.com
+            </a>
+            <span aria-hidden="true" className="text-slate-600">•</span>
+            <span>Principal Solution Specialist | Manufacturing &amp; Mobility</span>
           </div>
           <h1 className="text-5xl md:text-6xl font-bold text-white mb-6 tracking-tight">
             Realistic FS demo data
