@@ -2050,6 +2050,21 @@ export async function seedFromPreset(
     const id = result.incidentTypeIds[inc.name];
     if (id) incidentNameById[id] = inc.name;
   }
+  // Promised window for Open + Scheduled WOs. Setting these on the WO at
+  // create time causes the FS plugin that auto-creates the requirement to
+  // cascade them onto the requirement record (msdyn_TimeFromPromised /
+  // msdyn_TimeToPromised, and in many configs msdyn_fromdate /
+  // msdyn_todate too) — sidestepping the async lookup race we hit in
+  // v1.41.1's post-create patch path. These are DateAndTime UserLocal
+  // fields per the msdyn_workorder reference, so a full ISO string is
+  // the correct format.
+  const promisedFrom = new Date();
+  promisedFrom.setHours(knobs.workdayStartHour, 0, 0, 0);
+  const promisedTo = new Date(promisedFrom);
+  promisedTo.setDate(promisedTo.getDate() + Math.max(1, knobs.daysForward));
+  promisedTo.setHours(knobs.workdayStartHour + 8, 0, 0, 0);
+  const promisedFromIso = promisedFrom.toISOString();
+  const promisedToIso = promisedTo.toISOString();
   for (let i = 0; i < targetWoCount; i++) {
     const accountId = accountIdList[i % accountIdList.length];
     const incidentId = incidentIdList[i % incidentIdList.length];
@@ -2128,6 +2143,18 @@ export async function seedFromPreset(
       };
       if (woPriceListId) {
         woPayload["msdyn_pricelist@odata.bind"] = `/pricelevels(${woPriceListId})`;
+      }
+      // Time From / To Promised: the SLA window the customer was promised.
+      // Only set on Open and Scheduled WOs (forward-window). Closed WOs
+      // get a separate backdated journey via the Bookings phase, so we
+      // leave these blank to avoid a future "promised by" date on a
+      // historical record. The FS plugin cascades these onto the
+      // auto-created msdyn_resourcerequirement, which gives the schedule
+      // board's Open Requirements tab the dates it needs without our
+      // post-create lookup having to win a race against the plugin.
+      if (targetStatus === 690970000 || targetStatus === 690970001) {
+        woPayload["msdyn_timefrompromised"] = promisedFromIso;
+        woPayload["msdyn_timetopromised"] = promisedToIso;
       }
       // Priority: bag is shuffled per-run so the WOs land with a realistic
       // mix. Skip when the org's priority record for that name is missing.

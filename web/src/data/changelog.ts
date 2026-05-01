@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.41.1";
+export const APP_VERSION = "v1.41.2";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.41.2",
+    date: "May 1, 2026",
+    tag: "FIX",
+    fixes: [
+      "**Set Time From / To Promised on the Work Order itself so dates cascade to the requirement automatically.** Researched the official Field Service `msdyn_resourcerequirement` reference: there are four date pairs (`msdyn_fromdate` / `msdyn_todate`, `msdyn_TzaFromDate` / `msdyn_TzaToDate`, `msdyn_TimeFromPromised` / `msdyn_TimeToPromised`, `msdyn_TimeWindowStart` / `msdyn_TimeWindowEnd`) and they're not interchangeable — the schedule board's Open Requirements panel filters on `msdyn_fromdate` / `msdyn_todate` (DateOnly) for inclusion, while `msdyn_TimeFromPromised` / `msdyn_TimeToPromised` (DateAndTime) are the SLA-style \"promised by\" columns that show on the requirement form. The freshly-created WOs in the previous run had neither populated because the FS plugin that copies them from the WO had no source values. Now we set `msdyn_timefrompromised` / `msdyn_timetopromised` directly on the **Work Order** create payload (today @ workdayStartHour → today + daysForward @ workdayStartHour+8, full ISO DateAndTime) for Open and Scheduled WOs, which causes the FS plugin to cascade those values onto the auto-created `msdyn_resourcerequirement` at the same time it materializes the row. This sidesteps the async lookup race entirely — there's no post-create query to lose, the dates land on the requirement as a side-effect of the WO commit. v1.41.1's retry + create-fallback for `msdyn_fromdate` / `msdyn_todate` is kept as a safety net for orgs where the cascade is disabled.",
+    ],
+  },
   {
     version: "v1.41.1",
     date: "May 1, 2026",
