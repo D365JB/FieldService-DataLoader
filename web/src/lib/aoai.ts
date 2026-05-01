@@ -41,18 +41,10 @@ export async function generateContent(
   for (let attempt = 0; attempt < 2; attempt++) {
     let res: Response;
     try {
-      // credentials: "omit" prevents the browser from sending any
-      // SWA / Entra cookies along with the request. Our backend uses the
-      // function app's managed identity to talk to AOAI — it doesn't need
-      // the user's cookies for anything. Sending them just gives SWA's
-      // auth middleware a chance to misinterpret a stale cookie and reply
-      // with "Login not supported for provider azureStaticWebApps" before
-      // the request ever reaches our function.
       res = await fetch(PROXY_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body,
-        credentials: "omit",
       });
     } catch (err) {
       // Network failure (offline, DNS, etc.). Wait a moment, then try once.
@@ -141,9 +133,7 @@ export async function fetchWebsite(url: string): Promise<{
   const transient = new Set([502, 503, 504]);
   let lastDetail = "";
   for (let attempt = 0; attempt < 2; attempt++) {
-    // See note in generateContent — credentials: omit avoids SWA auth
-    // middleware tripping over a stale cookie.
-    const res = await fetch(target, { credentials: "omit" });
+    const res = await fetch(target);
     if (res.ok) return res.json();
     lastDetail = await res.text().catch(() => "");
     if (transient.has(res.status) && attempt === 0) {
