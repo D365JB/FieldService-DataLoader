@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.20.3";
+export const APP_VERSION = "v1.20.4";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.20.4",
+    date: "April 30, 2026",
+    tag: "POLISH",
+    features: [
+      "**Incident Type Product rows now have a Name** matching the product (e.g. *RTU-45T Rooftop Unit*) instead of an empty `---`. Previously the field was left blank, making the list view less readable.",
+    ],
+  },
   {
     version: "v1.20.3",
     date: "April 30, 2026",

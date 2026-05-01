@@ -525,9 +525,11 @@ export async function seedFromPreset(
           // failures (we wasted a few iterations on that).
           let uomId: string | null = null;
           const prod = await dv.retrieve<{
+            name: string;
             _defaultuomid_value: string;
             msdyn_fieldserviceproducttype: number | null;
           }>("products", productId, [
+            "name",
             "_defaultuomid_value",
             "msdyn_fieldserviceproducttype",
           ]);
@@ -545,6 +547,7 @@ export async function seedFromPreset(
             });
           }
           const payload: Record<string, unknown> = {
+            msdyn_name: prod.name,
             "msdyn_incidenttype@odata.bind": `/msdyn_incidenttypes(${incidentId})`,
             "msdyn_product@odata.bind": `/products(${productId})`,
             msdyn_quantity: 1,
