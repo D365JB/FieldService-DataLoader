@@ -8,7 +8,6 @@ import {
   Database,
   ShieldCheck,
 } from "@phosphor-icons/react";
-import { Attribution } from "@/components/Attribution";
 import { APP_VERSION } from "@/data/changelog";
 import { ChangelogModal } from "@/components/ChangelogModal";
 
@@ -89,7 +88,6 @@ export function Landing() {
             <br />
             <span className="text-accent">in minutes, not days.</span>
           </h1>
-          <Attribution className="mb-6" />
           <p className="text-xl text-slate-300 max-w-2xl mx-auto mb-10">
             Generate work orders, agreements, assets, and the full dispatch
             graph for a believable customer-flavored Field Service demo —
