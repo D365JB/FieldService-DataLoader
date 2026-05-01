@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.35.0";
+export const APP_VERSION = "v1.35.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.35.1",
+    date: "May 1, 2026",
+    tag: "POLISH",
+    features: [
+      "**Model picker now explains itself.** Added an inline tagline (`Fast & cheap` vs `Deeper reasoning`) next to the dropdown plus an info popover that breaks down what each model is best for and its tradeoffs — so you know when to reach for `gpt-4o-mini` (speed, demos, bulk edits) versus `gpt-5-mini` (richer detail, ambiguous sites, deeper analysis).",
+    ],
+  },
   {
     version: "v1.35.0",
     date: "May 1, 2026",
