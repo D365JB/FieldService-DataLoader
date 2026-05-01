@@ -16,6 +16,9 @@
     },
     "extraAllowedOrigins": {
       "value": "${EXTRA_ALLOWED_ORIGINS=http://localhost:5173}"
+    },
+    "appAccessKey": {
+      "value": "${APP_ACCESS_KEY}"
     }
   }
 }

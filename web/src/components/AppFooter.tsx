@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { APP_VERSION } from "@/data/changelog";
 import { ChangelogModal } from "@/components/ChangelogModal";
+import { appKeyStore } from "@/lib/appKey";
 
 export function AppFooter() {
   const [open, setOpen] = useState(false);
@@ -15,6 +16,22 @@ export function AppFooter() {
           title="View changelog"
         >
           {APP_VERSION}
+        </button>
+        <span className="text-border">•</span>
+        <button
+          onClick={() => {
+            if (
+              window.confirm(
+                "Clear the saved access key? You'll need to re-enter it to use the app.",
+              )
+            ) {
+              appKeyStore.clear();
+            }
+          }}
+          className="text-[10px] text-muted hover:text-white transition-colors"
+          title="Clear the saved app access key"
+        >
+          Lock
         </button>
       </div>
       <ChangelogModal open={open} onClose={() => setOpen(false)} />

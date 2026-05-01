@@ -1,4 +1,5 @@
 import { DataverseClient } from "@/lib/dataverse";
+import { apiFetch } from "@/lib/appKey";
 
 export interface BrandingResult {
   url: string;
@@ -32,7 +33,7 @@ export async function extractBranding(url: string): Promise<BrandingResult> {
   const normalized = /^https?:\/\//i.test(url.trim())
     ? url.trim()
     : `https://${url.trim()}`;
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/extractBranding?url=${encodeURIComponent(normalized)}`,
   );
   if (!res.ok) {
@@ -48,7 +49,7 @@ export async function fetchImageBytes(url: string): Promise<{
   bytes: number;
   base64: string;
 }> {
-  const res = await fetch(`/api/fetchImage?url=${encodeURIComponent(url)}`);
+  const res = await apiFetch(`/api/fetchImage?url=${encodeURIComponent(url)}`);
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
     throw new Error(`fetchImage ${res.status}: ${detail || res.statusText}`);

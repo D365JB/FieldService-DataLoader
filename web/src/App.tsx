@@ -9,10 +9,12 @@ import { Generate } from "@/pages/Generate";
 import { Reset } from "@/pages/Reset";
 import { Brand } from "@/pages/Brand";
 import { AppFooter } from "@/components/AppFooter";
+import { AppKeyGate } from "@/components/AppKeyGate";
 
 export default function App() {
   return (
-    <MsalProvider instance={msalInstance}>
+    <AppKeyGate>
+      <MsalProvider instance={msalInstance}>
       <BrowserRouter>
         <div className="flex flex-col min-h-screen">
           <div className="flex-1">
@@ -31,5 +33,6 @@ export default function App() {
         </div>
       </BrowserRouter>
     </MsalProvider>
+    </AppKeyGate>
   );
 }

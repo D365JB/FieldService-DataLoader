@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.36.1";
+export const APP_VERSION = "v1.37.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.37.0",
+    date: "May 1, 2026",
+    tag: "FEATURE",
+    features: [
+      "**Tenant-free access lock.** The proxy is now gated by a shared `APP_ACCESS_KEY` secret stored on the Function App. The SPA prompts for it once on first launch, stashes it in `localStorage`, and sends it as `x-app-key` on every `/api/*` call (analyzer, branding, image proxy, model list, generate). Server-side every function does a constant-time compare and rejects with 401 if the key is missing or wrong — and fails closed (500) if the secret isn't configured at all, so a deploy with no key is locked by default. Use the new **Lock** link in the footer to clear the saved key. MSAL/Dataverse sign-in is unchanged: demo tenants still authenticate normally for Dataverse, the gate just decides who can use *this* deployment of the studio.",
+    ],
+  },
   {
     version: "v1.36.1",
     date: "May 1, 2026",

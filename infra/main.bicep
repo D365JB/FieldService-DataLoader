@@ -62,6 +62,10 @@ param openAiCapacity int = 100
 @description('Fallback deployment capacity. Matches primary so a flip via app setting has full headroom.')
 param openAiFallbackCapacity int = 100
 
+@description('Shared access key the SPA must send as `x-app-key` on every /api/* call. The whole proxy is locked behind this — leave at default to keep the function failing closed until you set it explicitly via `az functionapp config appsettings set`. Marked secure so it never leaks into ARM history.')
+@secure()
+param appAccessKey string = ''
+
 var tags = {
   'azd-env-name': environmentName
 }
@@ -262,6 +266,17 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         {
           name: 'ALLOWED_ORIGINS'
           value: 'https://${staticWebApp.properties.defaultHostname},${extraAllowedOrigins}'
+        }
+        {
+          // Tenant-free shared-secret gate. The SPA prompts the user once
+          // and includes this on every /api/* request as `x-app-key`. The
+          // function fails closed when this is empty, so the very first
+          // deploy is locked until you set it via:
+          //   az functionapp config appsettings set -n <func> -g <rg> --settings APP_ACCESS_KEY=<value>
+          // (Setting it as a Bicep param is supported but optional — most
+          // operators just rotate it directly on the Function App.)
+          name: 'APP_ACCESS_KEY'
+          value: appAccessKey
         }
       ]
     }

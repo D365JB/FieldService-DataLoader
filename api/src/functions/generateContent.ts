@@ -5,6 +5,7 @@ import {
   type InvocationContext,
 } from "@azure/functions";
 import { DefaultAzureCredential } from "@azure/identity";
+import { requireAppKey } from "../lib/requireAppKey";
 
 interface GenerateRequest {
   prompt: string;
@@ -57,7 +58,7 @@ function corsHeaders(origin: string | null): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": allowed,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, x-app-key",
     Vary: "Origin",
   };
 }
@@ -83,6 +84,9 @@ export async function generateContent(
   if (req.method === "OPTIONS") {
     return { status: 204, headers: cors };
   }
+
+  const gate = requireAppKey(req, cors);
+  if (gate) return gate;
 
   if (!AOAI_ENDPOINT) {
     return {

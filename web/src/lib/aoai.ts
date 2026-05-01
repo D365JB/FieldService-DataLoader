@@ -1,4 +1,5 @@
 const PROXY_URL = import.meta.env.VITE_AOAI_PROXY_URL ?? "/api/generateContent";
+import { apiFetch } from "@/lib/appKey";
 
 export interface GenerateOptions {
   prompt: string;
@@ -44,7 +45,7 @@ export async function generateContent(
   for (let attempt = 0; attempt < 2; attempt++) {
     let res: Response;
     try {
-      res = await fetch(PROXY_URL, {
+      res = await apiFetch(PROXY_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body,
@@ -136,7 +137,7 @@ export async function fetchWebsite(url: string): Promise<{
   const transient = new Set([502, 503, 504]);
   let lastDetail = "";
   for (let attempt = 0; attempt < 2; attempt++) {
-    const res = await fetch(target);
+    const res = await apiFetch(target);
     if (res.ok) return res.json();
     lastDetail = await res.text().catch(() => "");
     if (transient.has(res.status) && attempt === 0) {
@@ -155,7 +156,7 @@ export async function listModels(): Promise<{
   models: string[];
   default: string;
 }> {
-  const res = await fetch("/api/models");
+  const res = await apiFetch("/api/models");
   if (!res.ok) {
     throw new Error(`listModels ${res.status}: ${await res.text().catch(() => "")}`);
   }

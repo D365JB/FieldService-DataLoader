@@ -3,6 +3,7 @@ import {
   type HttpRequest,
   type HttpResponseInit,
 } from "@azure/functions";
+import { requireAppKey } from "../lib/requireAppKey";
 
 const AOAI_DEPLOYMENT = process.env.AOAI_DEPLOYMENT ?? "gpt-4o-mini";
 const AOAI_ALLOWED_DEPLOYMENTS = (process.env.AOAI_ALLOWED_DEPLOYMENTS ?? AOAI_DEPLOYMENT)
@@ -22,7 +23,7 @@ function corsHeaders(origin: string | null): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": allowed,
     "Access-Control-Allow-Methods": "GET, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, x-app-key",
     Vary: "Origin",
   };
 }
@@ -35,6 +36,8 @@ export async function listModels(
   if (req.method === "OPTIONS") {
     return { status: 204, headers: cors };
   }
+  const gate = requireAppKey(req, cors);
+  if (gate) return gate;
   return {
     status: 200,
     headers: cors,
