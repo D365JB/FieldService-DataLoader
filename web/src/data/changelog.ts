@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.22.1";
+export const APP_VERSION = "v1.22.2";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.22.2",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Work Orders** create now uses a schema-aware fallback: if Dataverse rejects the payload with *\"Invalid property 'X'\"* or *\"undeclared property 'X'\"*, that single column is stripped and the create is retried. This org doesn't ship `msdyn_accountinstructions` on `msdyn_workorder`, so the field gets dropped automatically and the WO still lands with the rest of the demo content. Nav properties (`@odata.bind`) are never stripped — only structural columns.",
+    ],
+  },
   {
     version: "v1.22.1",
     date: "April 30, 2026",

@@ -179,6 +179,44 @@ async function findByField(
 }
 
 /**
+ * Create a record, retrying with offending properties stripped out if the
+ * server rejects the payload with an "Invalid property 'X'" or "undeclared
+ * property 'X'" error. FS schemas vary between orgs (some columns ship with
+ * the FS solution, others don't) so this lets us include richer demo data
+ * without hard-failing when a column is missing on a specific tenant. Only
+ * structural columns are stripped — `@odata.bind` nav props are required and
+ * must succeed on the first try.
+ */
+async function createWithSchemaFallback(
+  dv: DataverseClient,
+  entitySet: string,
+  payload: Record<string, unknown>,
+  maxRetries = 5,
+): Promise<string> {
+  const working = { ...payload };
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await dv.create(entitySet, working);
+    } catch (e) {
+      const msg = (e as Error).message ?? "";
+      // Match either ` 'fieldname' was found in entity ` (Invalid property)
+      // or `undeclared property 'fieldname'` (no metadata).
+      const m =
+        msg.match(/Invalid property '([^']+)'/i) ??
+        msg.match(/undeclared property '([^']+)'/i) ??
+        msg.match(/property '([^']+)' .* does not exist on type/i);
+      if (!m) throw e;
+      const bad = m[1];
+      // Never strip nav properties — those are required relationships.
+      if (bad.includes("@odata.bind") || !(bad in working)) throw e;
+      delete working[bad];
+    }
+  }
+  // Last attempt with whatever is left.
+  return dv.create(entitySet, working);
+}
+
+/**
  * If the caller provided existing records for a catalog entity, register them
  * up-front in the result map keyed by name. This way Object.values(...) on the
  * map (used by work-order/booking generation) will pick them up regardless of
@@ -1334,7 +1372,7 @@ export async function seedFromPreset(
       }
       // Surface real failures instead of silently swallowing them — historically
       // the catch here marked all 16 WOs "complete" while none actually landed.
-      woId = await dv.create("msdyn_workorders", woPayload);
+      woId = await createWithSchemaFallback(dv, "msdyn_workorders", woPayload);
     }
     result.workOrderIds.push(woId);
     trackCreated(result, "workOrders", woId);
