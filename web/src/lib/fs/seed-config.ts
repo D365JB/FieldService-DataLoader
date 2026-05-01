@@ -764,6 +764,13 @@ export async function seedFromPreset(
   // contacts here (idempotent by fullname) so existing contacts are reused.
   const techList = preset.sampleTechnicians ?? [];
   const techContactIdByName: Record<string, string> = {};
+  // Build territory code → name lookup early so both the technician-contact
+  // geocode (below) and the bookable-resource geocode (further down) share
+  // the same metro-centre fallback.
+  const territoryNameByCode: Record<string, string> = {};
+  for (const tt of preset.territories ?? []) {
+    territoryNameByCode[tt.code] = tt.name;
+  }
   if (techList.length > 0) {
     const contactsMap = getIdMap(result, "technicianContacts");
     onProgress({
@@ -776,10 +783,31 @@ export async function seedFromPreset(
       const parts = t.name.trim().split(/\s+/);
       const firstname = parts.shift() ?? t.name;
       const lastname = parts.join(" ") || firstname;
+      // When the geocode toggle is on, the FS plugin enforces that the
+      // *Contact* behind a Contact-type bookable resource has valid
+      // address1_latitude/longitude before the resource may set
+      // msdyn_startlocation = Resource Address. Compute coords here so we
+      // can stamp them on create and heal them on existing contacts.
+      let contactCoord: { lat: number; lng: number } | null = null;
+      if (knobs.geocodeResources) {
+        try {
+          contactCoord = geocodeTech(
+            t.name,
+            t.primaryTerritoryCode,
+            territoryNameByCode[t.primaryTerritoryCode],
+          );
+        } catch {
+          contactCoord = null;
+        }
+      }
       // Idempotency: match by fullname (case-sensitive Dataverse default).
-      const existing = await dv.query<{ contactid: string }>("contacts", {
+      const existing = await dv.query<{
+        contactid: string;
+        address1_latitude: number | null;
+        address1_longitude: number | null;
+      }>("contacts", {
         filter: `fullname eq '${oencode(t.name)}'`,
-        select: ["contactid"],
+        select: ["contactid", "address1_latitude", "address1_longitude"],
         top: 1,
       });
       let contactId: string | undefined = existing[0]?.contactid;
@@ -795,12 +823,36 @@ export async function seedFromPreset(
         }
       }
       if (!contactId) {
-        contactId = await dv.create("contacts", {
+        const newContact: Record<string, unknown> = {
           firstname,
           lastname,
           description: tag(`Field technician`),
-        });
+        };
+        if (contactCoord) {
+          newContact.address1_latitude = contactCoord.lat;
+          newContact.address1_longitude = contactCoord.lng;
+        }
+        contactId = await dv.create("contacts", newContact);
         trackCreated(result, "technicianContacts", contactId);
+      } else if (contactCoord) {
+        // Existing contact — heal lat/long if missing or zero so the FS
+        // plugin's "valid latitude and longitude" check passes when we set
+        // msdyn_startlocation = Resource Address on the resource below.
+        const cur = existing[0];
+        const lat = cur?.address1_latitude;
+        const lng = cur?.address1_longitude;
+        const needsCoords =
+          lat == null || lng == null || (lat === 0 && lng === 0);
+        if (needsCoords) {
+          try {
+            await dv.update("contacts", contactId, {
+              address1_latitude: contactCoord.lat,
+              address1_longitude: contactCoord.lng,
+            });
+          } catch {
+            /* non-fatal — resource create may still succeed without contact heal */
+          }
+        }
       }
       contactsMap[t.name] = contactId;
       techContactIdByName[t.name] = contactId;
@@ -817,12 +869,8 @@ export async function seedFromPreset(
   // We need post-create side-effects (track createdResourceIds, link primary
   // skill + territory) that only fire when we actually inserted the row, so we
   // use onCreated rather than onResolved.
-  // Build a code → name lookup so geocoding can fall back from code to name
-  // when the territory code isn't in our built-in metro table.
-  const territoryNameByCode: Record<string, string> = {};
-  for (const t of preset.territories ?? []) {
-    territoryNameByCode[t.code] = t.name;
-  }
+  // (territoryNameByCode was built above so the contact geocode step can
+  // share the same lookup table.)
   await runEntityStep(
     dv,
     {

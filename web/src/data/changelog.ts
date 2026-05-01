@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.31.2";
+export const APP_VERSION = "v1.31.3";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.31.3",
+    date: "May 1, 2026",
+    tag: "FIX",
+    fixes: [
+      "**Bookable Resource create no longer 400s with *\"latitude or longitude for the Contact record … is invalid\"* when the geocode toggle is on.** For Contact-type resources, the FS plugin reads lat/long from the **Contact** (not the bookable resource) when `msdyn_startlocation = Resource Address`. Now `address1_latitude` / `address1_longitude` are stamped on the technician Contact at create, and existing contacts missing coords are healed before the resource is created.",
+    ],
+  },
   {
     version: "v1.31.2",
     date: "May 1, 2026",
