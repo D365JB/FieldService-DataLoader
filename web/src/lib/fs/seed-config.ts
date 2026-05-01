@@ -316,6 +316,22 @@ function tag(description?: string): string {
   return (description ?? "").trim();
 }
 
+/** Two-digit zero-pad for hour values used in ISO timestamps. */
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+/**
+ * Clamp a possibly-undefined hour value into [0, 24]. Used by the Work
+ * Hours phase so a malformed preset can't produce an invalid ISO time.
+ */
+function clampHour(h: number | undefined, fallback: number): number {
+  if (typeof h !== "number" || !Number.isFinite(h)) return fallback;
+  if (h < 0) return 0;
+  if (h > 24) return 24;
+  return Math.floor(h);
+}
+
 /** Find a record by exact name match; return its id or null. */
 async function findByField(
   dv: DataverseClient,
@@ -1344,7 +1360,7 @@ export async function seedFromPreset(
   }
 
   // ── Work Hours ───────────────────────────────────────────────────────────
-  // Apply a Mon–Fri 8 AM–5 PM Pacific weekly recurrence to every bookable
+  // Apply each technician's working-hour schedule to their bookable
   // resource's auto-created calendar via the FS unbound action
   // `msdyn_SaveCalendar`. Without working hours rules, the Schedule
   // Assistant treats a resource as never-available and returns "No
@@ -1352,25 +1368,53 @@ export async function seedFromPreset(
   // matches the requirement's territory + characteristics. Reference:
   // https://learn.microsoft.com/en-us/dynamics365/field-service/field-service-work-hours-calendar-api
   //
+  // Per-resource configuration (since v1.41.4): each technician in the
+  // preset can carry `workDays` (RFC-5545 BYDAY tokens), `workStartHour`,
+  // `workEndHour`, and `timeZoneCode`. Defaults: Mon–Fri 8a–5p Pacific.
+  // An empty `workDays` array means "no working hours" — we skip the
+  // SaveCalendar call entirely so the resource stays unavailable.
+  //
   // For each resource we:
   //   1. Fetch its `_calendarid_value` (auto-created on insert).
-  //   2. POST `/msdyn_SaveCalendar` with a single weekly recurrence rule.
+  //   2. POST `/msdyn_SaveCalendar` with one weekly recurrence rule.
   // Idempotency: re-running creates a parallel rule which Save Calendar V1
   // dedupes by replacing the most-recent overlap (per "What happens if
   // there are overlapping rules?" doc). For demo data this is fine — the
-  // calendar ends with exactly one Mon–Fri 8a–5p rule.
+  // calendar ends with exactly one rule per resource.
   if (Object.keys(result.resourceIds).length > 0) {
     const whEntries = Object.entries(result.resourceIds);
+    const whTechByName = new Map(
+      (preset.sampleTechnicians ?? []).map((t) => [t.name, t]),
+    );
     onProgress({ step: "Work Hours", done: 0, total: whEntries.length });
     // Anchor on a known Monday so the BYDAY clause makes sense without
     // any date-juggling. 2024-01-01 was a Monday.
     const anchor = "2024-01-01";
-    const startTime = `${anchor}T08:00:00.000Z`;
-    const endTime = `${anchor}T17:00:00.000Z`;
-    const tzCode = 4; // Pacific Time (US & Canada) — matches resource.timezone
+    const VALID_DAYS = new Set(["MO", "TU", "WE", "TH", "FR", "SA", "SU"]);
     for (let i = 0; i < whEntries.length; i++) {
       const [resourceName, resourceId] = whEntries[i];
+      const tech = whTechByName.get(resourceName);
+      const rawDays = tech?.workDays;
+      const days =
+        rawDays === undefined
+          ? ["MO", "TU", "WE", "TH", "FR"]
+          : rawDays.filter((d) => VALID_DAYS.has(d));
+      const startH = clampHour(tech?.workStartHour, 8);
+      const endH = clampHour(tech?.workEndHour, 17);
+      const tzCode = tech?.timeZoneCode ?? 4;
       let detail = "applied";
+      // Empty workDays = explicit "no schedule"; skip the save call.
+      if (days.length === 0 || endH <= startH) {
+        onProgress({
+          step: "Work Hours",
+          done: i + 1,
+          total: whEntries.length,
+          detail: `${resourceName} — skipped (no schedule)`,
+        });
+        continue;
+      }
+      const startTime = `${anchor}T${pad2(startH)}:00:00.000Z`;
+      const endTime = `${anchor}T${pad2(endH)}:00:00.000Z`;
       try {
         // Fetch the auto-created CalendarId.
         const rows = await dv.query<{ _calendarid_value: string | null }>(
@@ -1399,8 +1443,7 @@ export async function seedFromPreset(
                     WorkHourType: 0,
                   },
                 ],
-                RecurrencePattern:
-                  "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TU,WE,TH,FR",
+                RecurrencePattern: `FREQ=WEEKLY;INTERVAL=1;BYDAY=${days.join(",")}`,
               },
             ],
           });
@@ -1420,6 +1463,8 @@ export async function seedFromPreset(
               step: "Work Hours",
             });
             detail = `skipped (${res.status})`;
+          } else {
+            detail = `${days.join(",")} ${pad2(startH)}:00–${pad2(endH)}:00`;
           }
         }
       } catch (err) {

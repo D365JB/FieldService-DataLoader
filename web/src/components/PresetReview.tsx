@@ -317,16 +317,13 @@ export function PresetReview({ preset, onChange }: Props) {
         title="Sample technicians"
         count={preset.sampleTechnicians.length}
       >
-        <Table
-          headers={["Name", "Primary skill", "Territory"]}
+        <TechnicianEditor
+          preset={preset}
+          onChange={(next) => {
+            setHistory((h) => [preset, ...h].slice(0, 10));
+            onChange(next);
+          }}
           onRemove={(i) => handleRemove("sampleTechnician", i)}
-          rows={preset.sampleTechnicians.map((t) => [
-            <span className="font-semibold text-white">{t.name}</span>,
-            <span className="text-slate-300 text-sm">{t.primarySkill}</span>,
-            <code className="text-accent text-xs">
-              {t.primaryTerritoryCode}
-            </code>,
-          ])}
         />
       </Section>
 
@@ -620,4 +617,379 @@ function Stat({ label, value }: { label: string; value: number }) {
       </div>
     </div>
   );
+}
+
+// ── Technician editor ───────────────────────────────────────────────────────
+// Editable, per-row UI for the Sample technicians section. Lets the user
+// pick territory + skill from dropdowns and configure work hours per
+// resource (days, start/end hour, time-zone). The seeder Work Hours phase
+// reads these fields back at run time and emits one `msdyn_SaveCalendar`
+// call per resource. v1.41.4.
+
+const WEEKDAYS: ReadonlyArray<{ token: string; label: string; full: string }> =
+  [
+    { token: "MO", label: "M", full: "Monday" },
+    { token: "TU", label: "T", full: "Tuesday" },
+    { token: "WE", label: "W", full: "Wednesday" },
+    { token: "TH", label: "T", full: "Thursday" },
+    { token: "FR", label: "F", full: "Friday" },
+    { token: "SA", label: "S", full: "Saturday" },
+    { token: "SU", label: "S", full: "Sunday" },
+  ];
+
+const TIME_ZONES: ReadonlyArray<{ code: number; label: string }> = [
+  { code: 4, label: "(GMT-08:00) Pacific Time" },
+  { code: 10, label: "(GMT-07:00) Mountain Time" },
+  { code: 15, label: "(GMT-07:00) Arizona" },
+  { code: 20, label: "(GMT-06:00) Central Time" },
+  { code: 35, label: "(GMT-05:00) Eastern Time" },
+  { code: 50, label: "(GMT-04:00) Atlantic (Canada)" },
+  { code: 92, label: "(GMT) UTC" },
+  { code: 85, label: "(GMT) London" },
+  { code: 110, label: "(GMT+01:00) Berlin / Rome" },
+  { code: 145, label: "(GMT+03:00) Moscow" },
+  { code: 190, label: "(GMT+05:30) India" },
+  { code: 235, label: "(GMT+09:00) Tokyo" },
+  { code: 255, label: "(GMT+10:00) Sydney" },
+];
+
+function TechnicianEditor({
+  preset,
+  onChange,
+  onRemove,
+}: {
+  preset: FsPreset;
+  onChange: (next: FsPreset) => void;
+  onRemove: (rowIndex: number) => void;
+}) {
+  const techs = preset.sampleTechnicians;
+  const skills = preset.characteristics.map((c) => c.name);
+  const territories = preset.territories.map((t) => t.code);
+
+  function patch(
+    index: number,
+    p: Partial<FsPreset["sampleTechnicians"][number]>,
+  ) {
+    const next: FsPreset = {
+      ...preset,
+      sampleTechnicians: techs.map((t, i) => (i === index ? { ...t, ...p } : t)),
+    };
+    onChange(next);
+  }
+
+  function applyToAll(p: Partial<FsPreset["sampleTechnicians"][number]>) {
+    onChange({
+      ...preset,
+      sampleTechnicians: techs.map((t) => ({ ...t, ...p })),
+    });
+  }
+
+  function toggleDay(index: number, token: string) {
+    const cur =
+      techs[index].workDays ?? ["MO", "TU", "WE", "TH", "FR"];
+    const has = cur.includes(token);
+    // Preserve canonical Mon→Sun order.
+    const order = WEEKDAYS.map((w) => w.token);
+    const next = order.filter((t) =>
+      t === token ? !has : cur.includes(t),
+    );
+    patch(index, { workDays: next });
+  }
+
+  return (
+    <div className="space-y-4">
+      <ApplyToAllPanel onApply={applyToAll} />
+      <div className="overflow-x-auto -mx-1">
+        <table className="w-full text-left text-sm">
+          <thead>
+            <tr className="border-b border-border">
+              <Th>Name</Th>
+              <Th>Primary skill</Th>
+              <Th>Territory</Th>
+              <Th className="w-[170px]">Work days</Th>
+              <Th className="w-[140px]">Hours (24h)</Th>
+              <Th className="w-[210px]">Time zone</Th>
+              <th className="w-8" aria-label="Remove" />
+            </tr>
+          </thead>
+          <tbody>
+            {techs.map((t, i) => {
+              const days = t.workDays ?? ["MO", "TU", "WE", "TH", "FR"];
+              const startH = t.workStartHour ?? 8;
+              const endH = t.workEndHour ?? 17;
+              const tz = t.timeZoneCode ?? 4;
+              return (
+                <tr
+                  key={i}
+                  className="border-b border-border/40 last:border-0 group align-top"
+                >
+                  <td className="py-2 px-2">
+                    <input
+                      title="Technician name"
+                      placeholder="Technician name"
+                      value={t.name}
+                      onChange={(e) => patch(i, { name: e.target.value })}
+                      className="bg-bg-base border border-border rounded px-2 py-1 text-white text-sm w-full font-semibold"
+                    />
+                  </td>
+                  <td className="py-2 px-2">
+                    <select
+                      title="Primary skill"
+                      value={t.primarySkill}
+                      onChange={(e) =>
+                        patch(i, { primarySkill: e.target.value })
+                      }
+                      className="bg-bg-base border border-border rounded px-2 py-1 text-slate-200 text-sm w-full"
+                    >
+                      {!skills.includes(t.primarySkill) && (
+                        <option value={t.primarySkill}>
+                          {t.primarySkill} (missing)
+                        </option>
+                      )}
+                      {skills.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="py-2 px-2">
+                    <select
+                      title="Primary territory"
+                      value={t.primaryTerritoryCode}
+                      onChange={(e) =>
+                        patch(i, {
+                          primaryTerritoryCode: e.target.value,
+                        })
+                      }
+                      className="bg-bg-base border border-border rounded px-2 py-1 text-accent text-sm w-full font-mono"
+                    >
+                      {!territories.includes(t.primaryTerritoryCode) && (
+                        <option value={t.primaryTerritoryCode}>
+                          {t.primaryTerritoryCode} (missing)
+                        </option>
+                      )}
+                      {territories.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="py-2 px-2">
+                    <div className="flex flex-wrap gap-1">
+                      {WEEKDAYS.map((d) => {
+                        const on = days.includes(d.token);
+                        return (
+                          <button
+                            key={d.token}
+                            type="button"
+                            onClick={() => toggleDay(i, d.token)}
+                            title={d.full}
+                            className={
+                              "w-6 h-6 rounded text-[11px] font-semibold border transition-colors " +
+                              (on
+                                ? "bg-accent text-bg-base border-accent"
+                                : "bg-bg-base text-muted border-border hover:text-white")
+                            }
+                          >
+                            {d.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </td>
+                  <td className="py-2 px-2">
+                    <div className="flex items-center gap-1">
+                      <input
+                        title="Work start hour (0–24)"
+                        aria-label="Work start hour"
+                        type="number"
+                        min={0}
+                        max={24}
+                        value={startH}
+                        onChange={(e) =>
+                          patch(i, {
+                            workStartHour: clamp24(Number(e.target.value)),
+                          })
+                        }
+                        className="bg-bg-base border border-border rounded px-2 py-1 text-white text-sm w-14"
+                      />
+                      <span className="text-muted">–</span>
+                      <input
+                        title="Work end hour (0–24)"
+                        aria-label="Work end hour"
+                        type="number"
+                        min={0}
+                        max={24}
+                        value={endH}
+                        onChange={(e) =>
+                          patch(i, {
+                            workEndHour: clamp24(Number(e.target.value)),
+                          })
+                        }
+                        className="bg-bg-base border border-border rounded px-2 py-1 text-white text-sm w-14"
+                      />
+                    </div>
+                  </td>
+                  <td className="py-2 px-2">
+                    <select
+                      title="Time zone"
+                      value={tz}
+                      onChange={(e) =>
+                        patch(i, { timeZoneCode: Number(e.target.value) })
+                      }
+                      className="bg-bg-base border border-border rounded px-2 py-1 text-slate-200 text-xs w-full"
+                    >
+                      {!TIME_ZONES.find((z) => z.code === tz) && (
+                        <option value={tz}>Code {tz}</option>
+                      )}
+                      {TIME_ZONES.map((z) => (
+                        <option key={z.code} value={z.code}>
+                          {z.label}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="py-2 px-1 w-8">
+                    <RemoveBtn onClick={() => onRemove(i)} />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[11px] text-muted">
+        Each row's working-hour schedule is applied to its bookable resource via
+        the FS <code className="text-accent">msdyn_SaveCalendar</code> action so
+        the Schedule Assistant can match the resource. Empty work-day selection
+        leaves the resource unscheduled.
+      </p>
+    </div>
+  );
+}
+
+function ApplyToAllPanel({
+  onApply,
+}: {
+  onApply: (
+    p: Partial<FsPreset["sampleTechnicians"][number]>,
+  ) => void;
+}) {
+  const [days, setDays] = useState<string[]>(["MO", "TU", "WE", "TH", "FR"]);
+  const [startH, setStartH] = useState(8);
+  const [endH, setEndH] = useState(17);
+  const [tz, setTz] = useState(4);
+
+  function toggle(token: string) {
+    const order = WEEKDAYS.map((w) => w.token);
+    setDays((cur) =>
+      order.filter((t) => (t === token ? !cur.includes(t) : cur.includes(t))),
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-border/60 bg-bg-base/60 p-3 flex flex-wrap items-center gap-3 text-xs">
+      <span className="text-muted uppercase tracking-wider font-medium">
+        Apply to all
+      </span>
+      <div className="flex flex-wrap gap-1">
+        {WEEKDAYS.map((d) => {
+          const on = days.includes(d.token);
+          return (
+            <button
+              key={d.token}
+              type="button"
+              onClick={() => toggle(d.token)}
+              title={d.full}
+              className={
+                "w-6 h-6 rounded text-[11px] font-semibold border transition-colors " +
+                (on
+                  ? "bg-accent text-bg-base border-accent"
+                  : "bg-bg-base text-muted border-border hover:text-white")
+              }
+            >
+              {d.label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex items-center gap-1">
+        <input
+          title="Apply-to-all start hour"
+          aria-label="Apply-to-all start hour"
+          type="number"
+          min={0}
+          max={24}
+          value={startH}
+          onChange={(e) => setStartH(clamp24(Number(e.target.value)))}
+          className="bg-bg-base border border-border rounded px-2 py-1 text-white text-sm w-14"
+        />
+        <span className="text-muted">–</span>
+        <input
+          title="Apply-to-all end hour"
+          aria-label="Apply-to-all end hour"
+          type="number"
+          min={0}
+          max={24}
+          value={endH}
+          onChange={(e) => setEndH(clamp24(Number(e.target.value)))}
+          className="bg-bg-base border border-border rounded px-2 py-1 text-white text-sm w-14"
+        />
+      </div>
+      <select
+        title="Apply-to-all time zone"
+        value={tz}
+        onChange={(e) => setTz(Number(e.target.value))}
+        className="bg-bg-base border border-border rounded px-2 py-1 text-slate-200 text-xs"
+      >
+        {TIME_ZONES.map((z) => (
+          <option key={z.code} value={z.code}>
+            {z.label}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={() =>
+          onApply({
+            workDays: days,
+            workStartHour: startH,
+            workEndHour: endH,
+            timeZoneCode: tz,
+          })
+        }
+        className="ml-auto bg-accent text-bg-base text-xs font-semibold rounded px-3 py-1 hover:opacity-90 transition-opacity"
+      >
+        Apply
+      </button>
+    </div>
+  );
+}
+
+function Th({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <th
+      className={
+        "text-[11px] uppercase tracking-wider text-muted font-medium pb-2 px-2 " +
+        className
+      }
+    >
+      {children}
+    </th>
+  );
+}
+
+function clamp24(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  if (n < 0) return 0;
+  if (n > 24) return 24;
+  return Math.floor(n);
 }

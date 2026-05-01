@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.41.3";
+export const APP_VERSION = "v1.41.4";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.41.4",
+    date: "May 1, 2026",
+    tag: "FEAT",
+    features: [
+      "**Per-technician work hours, territory, and skill — fully editable on the Preset Review page.** v1.41.3 wired Mon–Fri 8a–5p Pacific into every bookable resource as a single hardcoded recurrence; this release makes that schedule a per-resource configuration owned by the user. The Sample technicians section now renders an editable row per tech with: (1) name (text), (2) Primary skill dropdown sourced from `preset.characteristics[]`, (3) Territory dropdown sourced from `preset.territories[]`, (4) work-day toggle pills (M/T/W/T/F/S/S — RFC-5545 BYDAY tokens), (5) numeric start/end hour inputs (0–24, 24-hour clock), and (6) a Time-zone dropdown of the 13 most common Windows TZ codes (Pacific, Mountain, Arizona, Central, Eastern, Atlantic, UTC, London, Berlin, Moscow, India, Tokyo, Sydney). An **Apply to all** panel above the table lets a dispatcher stamp one schedule across the whole crew with a single click — pick days/hours/TZ once, hit Apply, and every row updates in place. The seeder Work Hours phase reads each tech's `workDays` / `workStartHour` / `workEndHour` / `timeZoneCode` and emits one `msdyn_SaveCalendar` POST per resource with that resource's exact `RecurrencePattern` (`FREQ=WEEKLY;INTERVAL=1;BYDAY=...`), `StartTime`, `EndTime`, and `TimeZoneCode`. Empty work-day selection is honored as \"resource has no schedule\" and the seeder skips the SaveCalendar call rather than applying a default. Skill / Territory dropdowns surface as the source-of-truth: changes here automatically flow into the Bookable Resource → Characteristic / → Territory link rows the seeder already creates from `primarySkill` / `primaryTerritoryCode`. New fields are optional on the `FsTechnician` type, so older preset history and AI-generated presets that don't carry them keep working — the seeder falls back to the v1.41.3 defaults when fields are absent. Edits push onto the same Undo stack as the AI editor so a misclick reverts in one click.",
+    ],
+  },
   {
     version: "v1.41.3",
     date: "May 1, 2026",

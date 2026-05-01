@@ -61,6 +61,25 @@ export interface FsPreset {
     primarySkill: string;
     /** Must match one of the territories[].code above. */
     primaryTerritoryCode: string;
+    /**
+     * Working days of the week as RFC-5545 BYDAY tokens
+     * (MO/TU/WE/TH/FR/SA/SU). Defaults to Mon–Fri when absent.
+     * Empty array = resource has no working hours (will be skipped by
+     * the Work Hours phase). Used by the seeder to build the
+     * `RecurrencePattern` passed to the FS `msdyn_SaveCalendar` action.
+     */
+    workDays?: string[];
+    /** Hour of day (0–23) the working window starts. Defaults to 8. */
+    workStartHour?: number;
+    /** Hour of day (0–24) the working window ends. Defaults to 17. */
+    workEndHour?: number;
+    /**
+     * Windows time-zone code used by `msdyn_SaveCalendar`. Defaults to 4
+     * (Pacific Time, US & Canada). Common codes:
+     *   4=Pacific, 10=Mountain, 15=Arizona, 20=Central, 35=Eastern,
+     *   85=London, 110=Berlin, 145=Moscow, 92=UTC.
+     */
+    timeZoneCode?: number;
   }>;
   /**
    * Phase 2 — Functional location tree per account. Optional; older presets
