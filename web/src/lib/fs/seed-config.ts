@@ -1128,10 +1128,33 @@ export async function seedFromPreset(
         }
         return payload;
       },
-      onResolved: (id, a) => {
-        const accountId = result.accountIds[a.accountName];
-        if (accountId) {
-          (assetsByAccount[accountId] ??= []).push(id);
+      onResolved: async (id, a, isNew) => {
+        // For new assets we just set msdyn_account, so trust the preset's
+        // account mapping. For reused assets the existing row's
+        // msdyn_account may NOT match the preset (different demo run, manual
+        // edit, etc.). Querying the real account avoids the FS plugin's
+        // "customer asset must be related to the service account of the
+        // current work order" 400 when this asset gets paired with a WO.
+        let realAccountId: string | undefined;
+        if (isNew) {
+          realAccountId = result.accountIds[a.accountName];
+        } else {
+          try {
+            const rows = await dv.query<{ _msdyn_account_value: string | null }>(
+              "msdyn_customerassets",
+              {
+                filter: `msdyn_customerassetid eq ${id}`,
+                select: ["_msdyn_account_value"],
+                top: 1,
+              },
+            );
+            realAccountId = rows[0]?._msdyn_account_value ?? undefined;
+          } catch {
+            realAccountId = undefined;
+          }
+        }
+        if (realAccountId) {
+          (assetsByAccount[realAccountId] ??= []).push(id);
         }
       },
       onCreated: (id) => {
@@ -1623,11 +1646,33 @@ export async function seedFromPreset(
       // Phase 2: attach a customer asset for this account if we have one.
       // Round-robin through the account's assets so multiple WOs against
       // the same account spread across different equipment.
+      // Final defensive check: re-verify the asset's msdyn_account still
+      // matches this WO's service account. The FS plugin enforces this
+      // and 400s with "customer asset must be related to the service
+      // account of the current work order" otherwise — covers any drift
+      // between assetsByAccount and the live record.
       const accountAssets = assetsByAccount[accountId] ?? [];
       if (accountAssets.length > 0) {
-        const assetId = accountAssets[i % accountAssets.length];
-        woPayload["msdyn_customerasset@odata.bind"] =
-          `/msdyn_customerassets(${assetId})`;
+        const candidateAssetId = accountAssets[i % accountAssets.length];
+        let assetMatchesAccount = true;
+        try {
+          const rows = await dv.query<{ _msdyn_account_value: string | null }>(
+            "msdyn_customerassets",
+            {
+              filter: `msdyn_customerassetid eq ${candidateAssetId}`,
+              select: ["_msdyn_account_value"],
+              top: 1,
+            },
+          );
+          assetMatchesAccount = rows[0]?._msdyn_account_value === accountId;
+        } catch {
+          // If the verify query fails, skip the asset rather than risk a 400.
+          assetMatchesAccount = false;
+        }
+        if (assetMatchesAccount) {
+          woPayload["msdyn_customerasset@odata.bind"] =
+            `/msdyn_customerassets(${candidateAssetId})`;
+        }
       }
       // Surface real failures instead of silently swallowing them — historically
       // the catch here marked all 16 WOs "complete" while none actually landed.

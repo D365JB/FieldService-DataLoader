@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.31.4";
+export const APP_VERSION = "v1.31.5";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.31.5",
+    date: "May 1, 2026",
+    tag: "FIX",
+    fixes: [
+      "**Work Order create no longer 400s mid-run with *\"The customer asset must be related to the service account of the current work order.\"*** When a Customer Asset already existed in Dataverse and got reused, we were indexing it under the *preset's* expected account, but the live record's `msdyn_account` could point somewhere else (different demo run, manual edit, prior preset). Now: (1) on reuse, the asset's real `_msdyn_account_value` is queried and it's indexed under that account; (2) right before each WO is created, we re-verify the candidate asset still matches the service account and skip the binding if it doesn't, so the run continues with no asset rather than failing.",
+    ],
+  },
   {
     version: "v1.31.4",
     date: "May 1, 2026",
