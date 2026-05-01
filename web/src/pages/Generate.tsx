@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMsal } from "@azure/msal-react";
 import {
@@ -12,7 +12,7 @@ import {
 } from "@phosphor-icons/react";
 import { AppHeader } from "@/components/AppHeader";
 import { DataverseClient, deepLink } from "@/lib/dataverse";
-import { seedFromPreset, type SeedProgress, type SeedResult, type SeedOptions, type EntityChoice } from "@/lib/fs/seed-config";
+import { seedFromPreset, CancelledError, type SeedProgress, type SeedResult, type SeedOptions, type EntityChoice } from "@/lib/fs/seed-config";
 import { SKIP_REASON_LABEL, type SkipReason } from "@/lib/fs/safeWrite";
 import { buildResultSections } from "@/lib/fs/resultSections";
 import type { FsPreset } from "@/lib/preset";
@@ -117,6 +117,10 @@ export function Generate() {
   const [error, setError] = useState<string | null>(null);
   const [retryNotice, setRetryNotice] = useState<string | null>(null);
   const [result, setResult] = useState<SeedResult | null>(null);
+  // Lives across renders so the Cancel button (and an unmount-cleanup
+  // effect) can abort the in-flight run. Set on Start, cleared in finally.
+  const abortRef = useRef<AbortController | null>(null);
+  const [cancelling, setCancelling] = useState(false);
 
   // Mirror the global store so an in-flight run survives navigation away
   // from this page. When the user comes back, we hydrate from the store.
@@ -277,6 +281,7 @@ export function Generate() {
     setRetryNotice(null);
     setResult(null);
     setRunning(true);
+    setCancelling(false);
     setSteps(STEP_ORDER.map((name) => ({ name, done: 0, total: 0, status: "pending" })));
     const runId = activeRunStore.start({
       companyName: preset.companyName,
@@ -284,6 +289,10 @@ export function Generate() {
       stepOrder: STEP_ORDER,
     });
     const startedAt = Date.now();
+    // New AbortController per run so cancel state is never sticky across
+    // back-to-back generations.
+    const controller = new AbortController();
+    abortRef.current = controller;
     track("action", {
       detail: { name: "generate.start", companyName: preset.companyName, orgUrl },
     });
@@ -299,6 +308,7 @@ export function Generate() {
       const seedOptions: SeedOptions = {};
       seedOptions.knobs = knobs;
       seedOptions.runId = runId;
+      seedOptions.signal = controller.signal;
       const keys: EntityKey[] = [
         "territories",
         "workOrderTypes",
@@ -349,6 +359,36 @@ export function Generate() {
       // If seedFromPreset failed mid-run, it attaches whatever was
       // created up to that point so we can still record it for cleanup.
       const partial = (err as { partialResult?: typeof result }).partialResult;
+      // User-cancel branch: render the partial summary as a normal
+      // (non-error) result so they can still navigate to the dashboard
+      // or hit Reset to clean it up. Keeps run history honest by tagging
+      // the entry "(cancelled)".
+      if (err instanceof CancelledError) {
+        if (partial) {
+          setResult(partial);
+          try {
+            runHistory.add(orgUrl, `${preset.companyName} (cancelled)`, partial);
+          } catch {
+            /* localStorage write failures shouldn't mask cancel state */
+          }
+          activeRunStore.cancel(partial);
+        } else {
+          activeRunStore.cancel({} as SeedResult);
+        }
+        setSteps((prev) =>
+          prev.map((s) =>
+            s.status === "running" ? { ...s, status: "failed" } : s,
+          ),
+        );
+        track("action", {
+          detail: {
+            name: "generate.cancelled",
+            companyName: preset.companyName,
+            durationMs: Date.now() - startedAt,
+          },
+        });
+        return;
+      }
       if (partial) {
         setResult(partial);
         try {
@@ -377,7 +417,22 @@ export function Generate() {
       });
     } finally {
       setRunning(false);
+      setCancelling(false);
+      abortRef.current = null;
     }
+  }
+
+  /**
+   * Abort the in-flight run. The seeder polls `signal.aborted` at every
+   * progress checkpoint and throws `CancelledError` at the next one — so
+   * cancellation is observable within ~1 record of work. Already-committed
+   * Dataverse rows stay; the partial result is recorded under run history
+   * with a `(cancelled)` label so the Reset page can clean them up.
+   */
+  function handleCancel() {
+    if (!abortRef.current || cancelling) return;
+    setCancelling(true);
+    abortRef.current.abort();
   }
 
   return (
@@ -738,23 +793,35 @@ export function Generate() {
 
           <div className="flex gap-3 mt-6">
             {!result ? (
-              <button
-                onClick={handleStart}
-                disabled={
-                  running ||
-                  (
-                    Object.keys(entityModes) as Array<keyof typeof entityModes>
-                  ).some(
-                    (k) =>
-                      entityModes[k] === "existing" &&
-                      entityPicks[k].length === 0,
-                  )
-                }
-                className="btn-primary flex items-center gap-2 disabled:opacity-50"
-              >
-                <Sparkle size={18} weight="bold" />
-                {running ? "Generating…" : "Start generation"}
-              </button>
+              <>
+                <button
+                  onClick={handleStart}
+                  disabled={
+                    running ||
+                    (
+                      Object.keys(entityModes) as Array<keyof typeof entityModes>
+                    ).some(
+                      (k) =>
+                        entityModes[k] === "existing" &&
+                        entityPicks[k].length === 0,
+                    )
+                  }
+                  className="btn-primary flex items-center gap-2 disabled:opacity-50"
+                >
+                  <Sparkle size={18} weight="bold" />
+                  {running ? "Generating…" : "Start generation"}
+                </button>
+                {running && (
+                  <button
+                    onClick={handleCancel}
+                    disabled={cancelling}
+                    className="px-4 py-2 rounded border border-red-500/50 text-red-300 hover:bg-red-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Stop the run at the next checkpoint. Records already written to Dataverse stay (use Reset to clean them up)."
+                  >
+                    {cancelling ? "Cancelling…" : "Cancel"}
+                  </button>
+                )}
+              </>
             ) : (
               <button
                 onClick={() => navigate("/dashboard")}
@@ -767,6 +834,13 @@ export function Generate() {
           </div>
         </div>
 
+        {result?.cancelled && (
+          <div className="mt-4 mb-2 p-4 rounded border border-amber-500/40 bg-amber-500/10 text-amber-200">
+            <strong>Run cancelled.</strong> Anything written to Dataverse before
+            you clicked Cancel is still there — open the Reset page to clean it
+            up by run id, or just leave it for the demo.
+          </div>
+        )}
         {result && <ResultSummary result={result} preset={preset} orgUrl={orgUrl} />}
       </main>
     </div>

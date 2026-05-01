@@ -204,6 +204,13 @@ export interface SeedResult {
    * compat with pre-v1.32 history records.
    */
   skipped?: Record<string, SkippedRecord[]>;
+  /**
+   * True when the run was cancelled by the user via `options.signal`.
+   * Set on the partial result before the outer catch re-throws. The
+   * Generate page reads this to render a "Run cancelled" banner instead
+   * of a red error banner.
+   */
+  cancelled?: boolean;
 }
 
 /** A single skipped write captured by `safeCreate` / `safeUpdate`. */
@@ -268,6 +275,31 @@ export interface SeedOptions {
    * own WOs and continues.
    */
   runId?: string;
+  /**
+   * Optional cancellation signal. When aborted (typically by the user
+   * clicking Cancel on the Generate page), the seeder throws a
+   * `CancelledError` at the next progress checkpoint — which fires at
+   * least once per phase and once per record in every long loop. The
+   * outer try/catch attaches the partial result and sets
+   * `partialResult.cancelled = true` so the UI can render a cancelled
+   * banner instead of an error banner. Any rows already committed to
+   * Dataverse stay (run history records them so the Reset page can
+   * clean them up by runId).
+   */
+  signal?: AbortSignal;
+}
+
+/**
+ * Thrown by `seedFromPreset` when `options.signal` is aborted. Caught by
+ * the outer try/catch, which attaches the partial result with
+ * `cancelled = true` before re-throwing, so the Generate page can
+ * distinguish user cancellation from a real failure.
+ */
+export class CancelledError extends Error {
+  constructor(message = "Run cancelled by user") {
+    super(message);
+    this.name = "CancelledError";
+  }
 }
 
 export interface EntityChoice {
@@ -494,6 +526,20 @@ export async function seedFromPreset(
   // Must be initialized before any step callbacks read `knobs` (e.g.
   // Bookable Resources geocoding), otherwise runtime TDZ can occur.
   const knobs: GenerationKnobs = options.knobs ?? DEFAULT_KNOBS;
+
+  // Cancellation: the Generate page passes an AbortSignal so the user can
+  // click Cancel mid-run. We convert this into a synchronous throw at the
+  // next progress checkpoint by wrapping the original onProgress callback.
+  // Every phase emits at least one progress event (and most loops emit one
+  // per record), so the run halts within a single record's worth of work
+  // after the user clicks Cancel. The outer try/catch attaches the partial
+  // result with `cancelled: true` so the UI can render a cancelled banner.
+  const signal = options.signal;
+  const _origOnProgress = onProgress;
+  onProgress = (p) => {
+    if (signal?.aborted) throw new CancelledError();
+    _origOnProgress(p);
+  };
 
   const result: SeedResult = {
     territoryIds: {},
@@ -3024,6 +3070,9 @@ export async function seedFromPreset(
   } catch (err) {
     // Attach the partial result so the UI can record what was created
     // before the failure (so users can clean it up from the Reset page).
+    if (err instanceof CancelledError) {
+      result.cancelled = true;
+    }
     (err as { partialResult?: SeedResult }).partialResult = result;
     throw err;
   }

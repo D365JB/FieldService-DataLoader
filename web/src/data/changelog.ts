@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.40.2";
+export const APP_VERSION = "v1.41.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.41.0",
+    date: "May 1, 2026",
+    tag: "FEAT",
+    features: [
+      "**Cancel button on Generate.** A new red Cancel button appears next to the Generating… button while a run is in flight. Clicking it aborts the seeder at the next progress checkpoint (typically within ~1 record of work — every phase emits at least one progress event, and most loops emit one per record). Records already committed to Dataverse stay where they are; the partial result is recorded in run history with a `(cancelled)` label so the Reset page can clean them up by runId. The Generate page renders an amber \"Run cancelled\" banner above the partial summary so it's clear the run was stopped on purpose, not failed. Implementation: `seedFromPreset` now accepts an optional `signal: AbortSignal` in `SeedOptions`; the seeder wraps `onProgress` to throw a new `CancelledError` whenever `signal.aborted` is true, the outer try/catch tags the partial result with `cancelled: true`, and the Generate page owns an `AbortController` per run.",
+    ],
+  },
   {
     version: "v1.40.2",
     date: "May 1, 2026",

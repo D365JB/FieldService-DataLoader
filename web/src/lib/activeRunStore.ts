@@ -172,6 +172,24 @@ export const activeRunStore = {
     });
   },
 
+  /**
+   * Mark the run as cancelled by the user. Same shape as `complete` —
+   * `partial` is whatever was created up to the cancel point. The result
+   * is recorded under run history so the user can clean it up from the
+   * Reset page (per-runId).
+   */
+  cancel(partial: SeedResult): void {
+    update({
+      running: false,
+      result: partial,
+      retryNotice: null,
+      error: null,
+      steps: state.steps.map((s) =>
+        s.status === "running" ? { ...s, status: "failed" as const } : s,
+      ),
+    });
+  },
+
   /** User has acknowledged the result/error and starts a new flow. */
   reset(): void {
     state = EMPTY;
