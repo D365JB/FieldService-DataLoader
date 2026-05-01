@@ -1173,6 +1173,13 @@ export async function seedFromPreset(
     (options.workOrderServiceTasks?.mode ?? "create") !== "create";
   if (!skipWoServiceTasks && taskTypeIds.length > 0 && result.workOrderIds.length > 0) {
     const tasksPerWo = Math.min(4, Math.max(2, Math.floor(taskTypeIds.length / 2)));
+    // Invert the {name → id} map so we can label each WO service-task with
+    // its task type name (e.g. "Safety Lockout/Tagout") instead of a synthetic
+    // "WO #1 task 1" string.
+    const taskTypeNameById: Record<string, string> = {};
+    for (const [name, id] of Object.entries(taskTypeMap)) {
+      taskTypeNameById[id] = name;
+    }
     onProgress({
       step: "WO Service Tasks",
       done: 0,
@@ -1182,9 +1189,8 @@ export async function seedFromPreset(
       const woId = result.workOrderIds[i];
       for (let j = 0; j < tasksPerWo; j++) {
         const taskTypeId = taskTypeIds[(i + j) % taskTypeIds.length];
-        const taskName = tag(`WO #${i + 1} task ${j + 1}`);
-        // Idempotency: skip if a task with this synthetic name already exists
-        // on this WO.
+        const taskName = taskTypeNameById[taskTypeId] ?? `WO task ${j + 1}`;
+        // Idempotency: skip if a task with this name already exists on this WO.
         const existing = await dv.query<{ msdyn_workorderservicetaskid: string }>(
           "msdyn_workorderservicetasks",
           {
@@ -1194,17 +1200,13 @@ export async function seedFromPreset(
           },
         );
         if (existing[0]) continue;
-        try {
-          const id = await dv.create("msdyn_workorderservicetasks", {
-            msdyn_name: taskName,
-            msdyn_description: tag(),
-            "msdyn_workorder@odata.bind": `/msdyn_workorders(${woId})`,
-            "msdyn_tasktype@odata.bind": `/msdyn_servicetasktypes(${taskTypeId})`,
-          });
-          trackCreated(result, "workOrderServiceTasks", id);
-        } catch {
-          /* per-WO best effort — keep going */
-        }
+        const id = await dv.create("msdyn_workorderservicetasks", {
+          msdyn_name: taskName,
+          msdyn_description: tag(),
+          "msdyn_workorder@odata.bind": `/msdyn_workorders(${woId})`,
+          "msdyn_tasktype@odata.bind": `/msdyn_servicetasktypes(${taskTypeId})`,
+        });
+        trackCreated(result, "workOrderServiceTasks", id);
       }
       onProgress({
         step: "WO Service Tasks",
@@ -1319,6 +1321,13 @@ export async function seedFromPreset(
   const skipWoProducts =
     (options.workOrderProducts?.mode ?? "create") !== "create";
   if (!skipWoProducts && productIdList.length > 0 && woMeta.length > 0) {
+    // {productId → productName} so each WO product line can be labelled with
+    // the product's name instead of "WO #1 part 1".
+    const productNameById: Record<string, string> = {};
+    for (const p of preset.products ?? []) {
+      const id = result.productIds[p.productNumber];
+      if (id) productNameById[id] = p.name;
+    }
     onProgress({
       step: "WO Products",
       done: 0,
@@ -1331,7 +1340,7 @@ export async function seedFromPreset(
       const lineStatus = status === 690970004 ? 690970001 : 690970000;
       for (let j = 0; j < linesForThisWo; j++) {
         const productId = productIdList[(i + j) % productIdList.length];
-        const lineName = tag(`WO #${i + 1} part ${j + 1}`);
+        const lineName = productNameById[productId] ?? `WO part ${j + 1}`;
 
         const existing = await dv.query<{ msdyn_workorderproductid: string }>(
           "msdyn_workorderproducts",
@@ -1343,21 +1352,17 @@ export async function seedFromPreset(
         );
         if (existing[0]) continue;
 
-        try {
-          const lineId = await dv.create("msdyn_workorderproducts", {
-            msdyn_name: lineName,
-            msdyn_description: tag(),
-            msdyn_linestatus: lineStatus,
-            msdyn_estimatequantity: 1 + (j % 2),
-            msdyn_quantity: lineStatus === 690970001 ? 1 + (j % 2) : 0,
-            msdyn_lineorder: j + 1,
-            "msdyn_workorder@odata.bind": `/msdyn_workorders(${woId})`,
-            "msdyn_product@odata.bind": `/products(${productId})`,
-          });
-          trackCreated(result, "workOrderProducts", lineId);
-        } catch {
-          /* per-line best effort — FS may require a price list */
-        }
+        const lineId = await dv.create("msdyn_workorderproducts", {
+          msdyn_name: lineName,
+          msdyn_description: tag(),
+          msdyn_linestatus: lineStatus,
+          msdyn_estimatequantity: 1 + (j % 2),
+          msdyn_quantity: lineStatus === 690970001 ? 1 + (j % 2) : 0,
+          msdyn_lineorder: j + 1,
+          "msdyn_workorder@odata.bind": `/msdyn_workorders(${woId})`,
+          "msdyn_product@odata.bind": `/products(${productId})`,
+        });
+        trackCreated(result, "workOrderProducts", lineId);
       }
       onProgress({
         step: "WO Products",

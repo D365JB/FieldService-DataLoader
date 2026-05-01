@@ -7,9 +7,19 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.20.4";
+export const APP_VERSION = "v1.20.5";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.20.5",
+    date: "April 30, 2026",
+    tag: "POLISH",
+    features: [
+      "**WO Service Tasks** are now named after the **task type** (e.g. *Safety Lockout/Tagout*) instead of *WO #1 task 1*.",
+      "**WO Products** are now named after the **product** (e.g. *RTU-45T Rooftop Unit*) instead of *WO #1 part 1*.",
+      "Removed silent `try/catch` swallows on those steps so any future Dataverse error surfaces as a real generation failure with the actual message.",
+    ],
+  },
   {
     version: "v1.20.4",
     date: "April 30, 2026",
