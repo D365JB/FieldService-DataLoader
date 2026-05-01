@@ -49,6 +49,8 @@ export function EntityPicker({
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<Array<Record<string, string>>>([]);
   const [search, setSearch] = useState("");
+  type SortBy = "name-asc" | "created-desc" | "modified-desc";
+  const [sortBy, setSortBy] = useState<SortBy>("name-asc");
 
   useEffect(() => {
     let cancelled = false;
@@ -59,7 +61,7 @@ export function EntityPicker({
     dv
       .queryAll<Record<string, string>>(entitySet, {
         filter,
-        select: [idField, nameField],
+        select: [idField, nameField, "createdon", "modifiedon"],
         orderby: `${nameField} asc`,
         maxRecords,
         onPage: (cumulative) => {
@@ -84,9 +86,24 @@ export function EntityPicker({
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r) => (r[nameField] ?? "").toLowerCase().includes(q));
-  }, [rows, search, nameField]);
+    const base = q
+      ? rows.filter((r) => (r[nameField] ?? "").toLowerCase().includes(q))
+      : rows.slice();
+    if (sortBy === "name-asc") {
+      base.sort((a, b) =>
+        (a[nameField] ?? "").localeCompare(b[nameField] ?? "", undefined, {
+          sensitivity: "base",
+        })
+      );
+    } else if (sortBy === "created-desc") {
+      base.sort((a, b) => (b["createdon"] ?? "").localeCompare(a["createdon"] ?? ""));
+    } else if (sortBy === "modified-desc") {
+      base.sort((a, b) =>
+        (b["modifiedon"] ?? "").localeCompare(a["modifiedon"] ?? "")
+      );
+    }
+    return base;
+  }, [rows, search, nameField, sortBy]);
 
   const valueById = useMemo(() => {
     const m = new Map<string, PickedEntity>();
@@ -113,18 +130,30 @@ export function EntityPicker({
             <span className="ml-1 text-accent">· loading more…</span>
           )}
         </div>
-        <div className="relative">
-          <MagnifyingGlass
-            size={12}
-            className="absolute left-2 top-2 text-muted"
-          />
-          <input
-            type="text"
-            placeholder="Filter…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="bg-bg-base border border-border rounded-md pl-7 pr-2 py-1 text-xs text-white w-40 focus:outline-none focus:border-accent"
-          />
+        <div className="flex items-center gap-2">
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as SortBy)}
+            title="Sort records"
+            className="bg-bg-base border border-border rounded-md px-2 py-1 text-xs text-white focus:outline-none focus:border-accent"
+          >
+            <option value="name-asc">Name A–Z</option>
+            <option value="created-desc">Created (newest)</option>
+            <option value="modified-desc">Modified (newest)</option>
+          </select>
+          <div className="relative">
+            <MagnifyingGlass
+              size={12}
+              className="absolute left-2 top-2 text-muted"
+            />
+            <input
+              type="text"
+              placeholder="Filter…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="bg-bg-base border border-border rounded-md pl-7 pr-2 py-1 text-xs text-white w-40 focus:outline-none focus:border-accent"
+            />
+          </div>
         </div>
       </div>
 
@@ -154,6 +183,15 @@ export function EntityPicker({
             const id = r[idField];
             const name = r[nameField] ?? "(unnamed)";
             const checked = valueById.has(id);
+            const dateField =
+              sortBy === "created-desc"
+                ? "createdon"
+                : sortBy === "modified-desc"
+                ? "modifiedon"
+                : null;
+            const dateLabel = dateField
+              ? formatShortDate(r[dateField])
+              : null;
             return (
               <button
                 key={id}
@@ -173,6 +211,11 @@ export function EntityPicker({
                   <Square size={14} className="text-muted flex-shrink-0" />
                 )}
                 <span className="flex-1 text-white truncate">{name}</span>
+                {dateLabel && (
+                  <span className="text-[10px] text-muted flex-shrink-0 tabular-nums">
+                    {dateLabel}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -180,4 +223,15 @@ export function EntityPicker({
       )}
     </div>
   );
+}
+
+function formatShortDate(iso: string | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString(undefined, {
+    year: "2-digit",
+    month: "short",
+    day: "numeric",
+  });
 }

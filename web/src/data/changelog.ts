@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.39.1";
+export const APP_VERSION = "v1.39.2";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.39.2",
+    date: "May 1, 2026",
+    tag: "FEATURE",
+    features: [
+      "**Sort existing-records picker.** On the Generate page, every \"Use existing\" record table now has a sort dropdown next to the filter box: **Name A–Z** (default), **Created (newest)**, and **Modified (newest)**. When sorting by date, the row shows a small timestamp on the right so you can quickly find records you just generated and repurpose them in another run.",
+    ],
+  },
   {
     version: "v1.39.1",
     date: "May 1, 2026",
