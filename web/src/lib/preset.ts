@@ -203,21 +203,75 @@ Generate a Field Service preset for this company as JSON matching exactly this s
 
 import { fetchWebsite, generateJson } from "./aoai";
 
+// Client-side analyzer cache. The AOAI call is the slow part of the
+// analyzer (15–60s); re-running for the same URL within a session should
+// be instant. Keyed by normalized URL, 30-minute TTL, sessionStorage so
+// it survives soft refreshes but doesn't leak across browser sessions.
+const ANALYZE_CACHE_KEY = "fs-data-studio:analyze-cache:v1";
+const ANALYZE_CACHE_TTL_MS = 30 * 60 * 1000;
+
+interface AnalyzeCacheEntry {
+  ts: number;
+  preset: FsPreset;
+}
+
+function normalizeUrl(url: string): string {
+  const trimmed = url.trim().toLowerCase();
+  return /^https?:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+function readAnalyzeCache(url: string): FsPreset | null {
+  try {
+    const raw = sessionStorage.getItem(ANALYZE_CACHE_KEY);
+    if (!raw) return null;
+    const map = JSON.parse(raw) as Record<string, AnalyzeCacheEntry>;
+    const hit = map[normalizeUrl(url)];
+    if (!hit) return null;
+    if (Date.now() - hit.ts > ANALYZE_CACHE_TTL_MS) return null;
+    return hit.preset;
+  } catch {
+    return null;
+  }
+}
+
+function writeAnalyzeCache(url: string, preset: FsPreset): void {
+  try {
+    const raw = sessionStorage.getItem(ANALYZE_CACHE_KEY);
+    const map = (raw ? JSON.parse(raw) : {}) as Record<string, AnalyzeCacheEntry>;
+    map[normalizeUrl(url)] = { ts: Date.now(), preset };
+    sessionStorage.setItem(ANALYZE_CACHE_KEY, JSON.stringify(map));
+  } catch {
+    // sessionStorage full or disabled — silently skip caching.
+  }
+}
+
 export async function analyzeCompany(
   url: string,
   onStatus?: (msg: string) => void,
 ): Promise<FsPreset> {
+  // Fast path: did we already analyze this URL this session?
+  const cached = readAnalyzeCache(url);
+  if (cached) {
+    onStatus?.("Using cached analysis from this session.");
+    return cached;
+  }
+
   onStatus?.("Fetching company website…");
   const site = await fetchWebsite(url);
   onStatus?.(
     `Read ${site.text.length.toLocaleString()} chars from "${site.title || site.url}". Asking GPT to infer the Field Service vertical…`,
   );
+  // 5000 tokens is a comfortable budget for the full preset (~3K visible
+  // JSON + reasoning headroom for gpt-5-mini at "low" effort). The previous
+  // 9000-token cap let the model meander; tightening it shaves 10–20s off
+  // typical analyses without truncating output.
   const result = await generateJson<FsPreset>({
     systemPrompt: SYSTEM_PROMPT,
     prompt: USER_TEMPLATE(site.url, site.title, site.description, site.text),
-    maxCompletionTokens: 9000,
+    maxCompletionTokens: 5000,
     reasoningEffort: "low",
   });
   onStatus?.("Building your tailored preset…");
+  writeAnalyzeCache(url, result);
   return result;
 }

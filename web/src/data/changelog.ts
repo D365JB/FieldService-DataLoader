@@ -7,9 +7,18 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.33.1";
+export const APP_VERSION = "v1.33.2";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.33.2",
+    date: "May 1, 2026",
+    tag: "POLISH",
+    improvements: [
+      "**Customer Analyzer is faster.** Per-session client-side cache (sessionStorage, 30-min TTL) keyed by normalized URL — re-analyzing the same site is now instant. Also reduced the AOAI completion budget from 9000 to 5000 tokens, which trims 10–20s off typical first-time runs without truncating output.",
+      "Status panel now shows *\"Using cached analysis from this session\"* on cache hit so the instant return doesn't feel like a glitch.",
+    ],
+  },
   {
     version: "v1.33.1",
     date: "May 1, 2026",
