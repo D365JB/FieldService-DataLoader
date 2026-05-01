@@ -1545,28 +1545,35 @@ export async function seedFromPreset(
       const existing = await dv.query<{
         msdyn_timeentryid: string;
         _msdyn_bookableresourcebooking_value?: string | null;
+        _msdyn_workorder_value?: string | null;
       }>("msdyn_timeentries", {
         filter: `msdyn_description eq '${oencode(entryName)}'`,
         select: [
           "msdyn_timeentryid",
           "_msdyn_bookableresourcebooking_value",
+          "_msdyn_workorder_value",
         ],
         top: 1,
       });
       if (existing[0]) {
         // Heal orphan time entries created by earlier versions
-        // (v1.20.12–14) which had no booking link due to a casing
-        // bug. If the existing row already binds the right booking,
-        // skip; otherwise PATCH the booking link onto it.
+        // (v1.20.12–14) which had no booking/WO link due to a casing
+        // bug. PATCH whichever links are missing.
         const existingBookingId = existing[0]._msdyn_bookableresourcebooking_value;
+        const existingWoId = existing[0]._msdyn_workorder_value;
+        const patch: Record<string, string> = {};
         if (existingBookingId !== bookingId) {
+          patch["msdyn_BookableResourceBooking@odata.bind"] = `/bookableresourcebookings(${bookingId})`;
+        }
+        if (existingWoId !== woId) {
+          patch["msdyn_WorkOrder@odata.bind"] = `/msdyn_workorders(${woId})`;
+        }
+        if (Object.keys(patch).length > 0) {
           try {
             await dv.update(
               "msdyn_timeentries",
               existing[0].msdyn_timeentryid,
-              {
-                "msdyn_BookableResourceBooking@odata.bind": `/bookableresourcebookings(${bookingId})`,
-              },
+              patch,
             );
           } catch (e) {
             throw new Error(
@@ -1604,9 +1611,12 @@ export async function seedFromPreset(
           // (lowercase), but the *navigation property* used in
           // @odata.bind is PascalCase: msdyn_BookableResourceBooking.
           // Earlier lowercase attempts produced "undeclared property"
-          // 400s. We bind the booking (canonical FS link); the work
-          // order is reached transitively through the booking.
+          // 400s. Same applies to the work order link
+          // (msdyn_WorkOrder). The "All Time Entries (Field Service)"
+          // view filters by Work Order, so without this bind the
+          // entries are invisible in FS even though they exist.
           "msdyn_BookableResourceBooking@odata.bind": `/bookableresourcebookings(${bookingId})`,
+          "msdyn_WorkOrder@odata.bind": `/msdyn_workorders(${woId})`,
         });
         trackCreated(result, "timeEntries", teId);
         const woNumber = result.labels?.workOrders?.[woId];

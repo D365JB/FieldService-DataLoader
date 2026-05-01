@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.20.16";
+export const APP_VERSION = "v1.20.17";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.20.17",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Time Entries** now bind the **Work Order** as well as the booking, using the PascalCase nav property `msdyn_WorkOrder@odata.bind`. The *All Time Entries (Field Service)* view filters by Work Order, so without this lookup populated the rows were invisible in FS even though they existed. Existing rows are healed in place.",
+    ],
+  },
   {
     version: "v1.20.16",
     date: "April 30, 2026",
