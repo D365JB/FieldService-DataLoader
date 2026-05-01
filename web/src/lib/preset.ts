@@ -80,6 +80,26 @@ export interface FsPreset {
      *   85=London, 110=Berlin, 145=Moscow, 92=UTC.
      */
     timeZoneCode?: number;
+    /**
+     * v1.42.0 — Additional skills beyond the headline `primarySkill`.
+     * Each entry creates one `bookableresourcecharacteristic` row linking
+     * the resource to the matching characteristic; `rating` (1–5, where
+     * 5 = Expert) is mapped to a Field Service `ratingvalue` lookup at
+     * seed time using whatever rating model the org has configured.
+     * Optional — older presets that only carry `primarySkill` keep
+     * their single-skill behavior.
+     */
+    skills?: Array<{
+      /** Must match one of the characteristics[].name above. */
+      name: string;
+      /**
+       * 1–5 proficiency level. 1 = Familiar / Trainee, 5 = Expert.
+       * Mapped to the org's `ratingvalue.value` column; if no value
+       * matches, the characteristic is still linked but without a
+       * rating (matches FS UI behavior of "untyped" skills).
+       */
+      rating?: number;
+    }>;
   }>;
   /**
    * Phase 2 — Functional location tree per account. Optional; older presets

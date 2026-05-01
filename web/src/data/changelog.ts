@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.41.6";
+export const APP_VERSION = "v1.42.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.42.0",
+    date: "May 1, 2026",
+    tag: "FEAT",
+    features: [
+      "**Multi-skill technicians with proficiency ratings — every bookable resource can now carry as many skills as the demo needs, each with a 1–5 star rating.** Until now each tech got exactly one skill (`primarySkill`) attached as an untyped `bookableresourcecharacteristic`. v1.42.0 introduces an optional `skills?: Array<{name, rating?}>` field on `FsTechnician` that the seeder iterates in addition to the headline primary skill, deduping by characteristic id so listing the same skill twice is harmless. Each entry creates one `bookableresourcecharacteristic` row with a `RatingValue@odata.bind` lookup pointing at the org's existing `ratingvalue` whose integer `value` column matches the chosen rating (1=Familiar, 2=Trainee, 3=Beginner, 4=Capable, 5=Expert in the OOB Field Service \"Proficiency\" model). On the **Preset Review** page each tech row now has a sub-row of skill chips below the work-hours grid: chips show `Skill name ★N` with an inline rating dropdown and an × button, plus an `+ skill` opener that pops out a name+rating picker constrained to skills not already on the row. Behind the scenes the seeder pre-fetches `ratingvalues` once per run (capped at top:50) so the per-resource link inserts add no extra round-trips, and gracefully degrades to untyped characteristic links when an org has no rating values defined or when a `rating` doesn't match any existing value. The BR augmentation pass that fixes up existing-resource picks shares the same `skillLinksFor()` helper, so re-running with the same preset on already-imported resources also gets the multi-skill treatment instead of the v1.41 single-fallback link. Older presets and history entries lacking the `skills[]` array keep working — primarySkill alone is the v1.41 default.",
+    ],
+  },
   {
     version: "v1.41.6",
     date: "May 1, 2026",

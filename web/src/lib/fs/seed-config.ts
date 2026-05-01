@@ -1084,6 +1084,57 @@ export async function seedFromPreset(
   // use onCreated rather than onResolved.
   // (territoryNameByCode was built above so the contact geocode step can
   // share the same lookup table.)
+
+  // v1.42.0 — Pre-fetch ratingvalues once so we can attach a proficiency
+  // rating to each bookableresourcecharacteristic. Field Service ships with
+  // a "Proficiency" ratingmodel whose values use the integer column `value`
+  // (1=Familiar … 5=Expert). We map by that column. If the org has no rating
+  // values defined (some demo orgs strip them), `ratingValueByLevel` stays
+  // empty and the seeder just creates skill links without ratings — same as
+  // pre-1.42 behavior.
+  const ratingValueByLevel = new Map<number, string>();
+  try {
+    const rvs = await dv.query<{
+      ratingvalueid: string;
+      value: number | null;
+    }>("ratingvalues", { select: ["ratingvalueid", "value"], top: 50 });
+    for (const rv of rvs) {
+      if (typeof rv.value === "number" && !ratingValueByLevel.has(rv.value)) {
+        ratingValueByLevel.set(rv.value, rv.ratingvalueid);
+      }
+    }
+  } catch {
+    /* non-fatal — skill ratings are optional decoration */
+  }
+  /**
+   * Build the set of distinct (characteristicId, ratingValueId | null) pairs
+   * we should link to a bookable resource, given a tech preset row. Includes
+   * the headline `primarySkill` (untyped) plus any entries from the
+   * `skills[]` array that resolve to known characteristics. Deduped by
+   * characteristicId so we don't insert two rows for the same skill when a
+   * preset lists it both as primary and again in skills[].
+   */
+  function skillLinksFor(t: FsPreset["sampleTechnicians"][number]) {
+    const seen = new Set<string>();
+    const out: Array<{ charId: string; ratingValueId?: string }> = [];
+    const primaryId = result.characteristicIds[t.primarySkill];
+    if (primaryId) {
+      seen.add(primaryId);
+      out.push({ charId: primaryId });
+    }
+    for (const s of t.skills ?? []) {
+      const id = result.characteristicIds[s.name];
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const ratingValueId =
+        typeof s.rating === "number"
+          ? ratingValueByLevel.get(s.rating)
+          : undefined;
+      out.push({ charId: id, ratingValueId });
+    }
+    return out;
+  }
+
   await runEntityStep(
     dv,
     result,
@@ -1234,14 +1285,23 @@ export async function seedFromPreset(
       onCreated: async (resourceId, t) => {
         result.createdResourceIds.push(resourceId);
 
-        // Best-effort: link primary skill via bookableresourcecharacteristic.
-        const charId = result.characteristicIds[t.primarySkill];
-        if (charId) {
+        // Best-effort: link skills via bookableresourcecharacteristic. v1.42.0:
+        // this used to insert one row for `primarySkill`; now it iterates
+        // skillLinksFor(t) which dedupes the headline + all entries from
+        // `t.skills[]` and attaches a `RatingValue@odata.bind` whenever the
+        // org has a matching ratingvalue.value. Failures are swallowed
+        // per-row so one bad skill doesn't block the rest.
+        for (const link of skillLinksFor(t)) {
           try {
-            await dv.create("bookableresourcecharacteristics", {
+            const payload: Record<string, unknown> = {
               "Resource@odata.bind": `/bookableresources(${resourceId})`,
-              "Characteristic@odata.bind": `/characteristics(${charId})`,
-            });
+              "Characteristic@odata.bind": `/characteristics(${link.charId})`,
+            };
+            if (link.ratingValueId) {
+              payload["RatingValue@odata.bind"] =
+                `/ratingvalues(${link.ratingValueId})`;
+            }
+            await dv.create("bookableresourcecharacteristics", payload);
           } catch {
             /* skill linking is non-critical for the demo */
           }
@@ -1302,17 +1362,37 @@ export async function seedFromPreset(
       }
       if (!hasChar && allCharIds.length > 0) {
         const tech = techByName.get(resourceName);
-        const charId =
-          (tech && result.characteristicIds[tech.primarySkill]) ||
-          allCharIds[Math.floor(Math.random() * allCharIds.length)];
-        if (charId) {
-          try {
-            await dv.create("bookableresourcecharacteristics", {
-              "Resource@odata.bind": `/bookableresources(${resourceId})`,
-              "Characteristic@odata.bind": `/characteristics(${charId})`,
-            });
-          } catch {
-            /* non-critical */
+        // v1.42.0 — when the preset row carries `skills[]`, link them all
+        // (with ratings) instead of a single fallback. Otherwise keep the
+        // original behavior: try primarySkill, fall back to a random char.
+        if (tech) {
+          for (const link of skillLinksFor(tech)) {
+            try {
+              const payload: Record<string, unknown> = {
+                "Resource@odata.bind": `/bookableresources(${resourceId})`,
+                "Characteristic@odata.bind": `/characteristics(${link.charId})`,
+              };
+              if (link.ratingValueId) {
+                payload["RatingValue@odata.bind"] =
+                  `/ratingvalues(${link.ratingValueId})`;
+              }
+              await dv.create("bookableresourcecharacteristics", payload);
+            } catch {
+              /* non-critical */
+            }
+          }
+        } else {
+          const charId =
+            allCharIds[Math.floor(Math.random() * allCharIds.length)];
+          if (charId) {
+            try {
+              await dv.create("bookableresourcecharacteristics", {
+                "Resource@odata.bind": `/bookableresources(${resourceId})`,
+                "Characteristic@odata.bind": `/characteristics(${charId})`,
+              });
+            } catch {
+              /* non-critical */
+            }
           }
         }
       }

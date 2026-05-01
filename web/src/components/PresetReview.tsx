@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import {
   MapPin,
   Wrench,
@@ -696,6 +696,25 @@ function TechnicianEditor({
     patch(index, { workDays: next });
   }
 
+  // v1.42.0 — Multi-skill helpers. `skills[]` lives alongside the headline
+  // `primarySkill`; the seeder dedupes so listing primarySkill again here is
+  // harmless. Ratings 1–5 map to FS `ratingvalue.value` at seed time.
+  function addSkill(index: number, name: string, rating: number) {
+    const cur = techs[index].skills ?? [];
+    if (cur.some((s) => s.name === name)) return;
+    patch(index, { skills: [...cur, { name, rating }] });
+  }
+  function updateSkillRating(index: number, name: string, rating: number) {
+    const cur = techs[index].skills ?? [];
+    patch(index, {
+      skills: cur.map((s) => (s.name === name ? { ...s, rating } : s)),
+    });
+  }
+  function removeSkill(index: number, name: string) {
+    const cur = techs[index].skills ?? [];
+    patch(index, { skills: cur.filter((s) => s.name !== name) });
+  }
+
   return (
     <div className="space-y-4">
       <ApplyToAllPanel onApply={applyToAll} />
@@ -718,10 +737,16 @@ function TechnicianEditor({
               const startH = t.workStartHour ?? 8;
               const endH = t.workEndHour ?? 17;
               const tz = t.timeZoneCode ?? 4;
+              const extraSkills = t.skills ?? [];
+              const usedSkillNames = new Set([
+                t.primarySkill,
+                ...extraSkills.map((s) => s.name),
+              ]);
+              const availSkills = skills.filter((s) => !usedSkillNames.has(s));
               return (
+                <Fragment key={i}>
                 <tr
-                  key={i}
-                  className="border-b border-border/40 last:border-0 group align-top"
+                  className="border-b border-border/40 group align-top"
                 >
                   <td className="py-2 px-2">
                     <input
@@ -855,6 +880,67 @@ function TechnicianEditor({
                     <RemoveBtn onClick={() => onRemove(i)} />
                   </td>
                 </tr>
+                <tr className="border-b border-border/40 last:border-0">
+                  <td className="py-1 px-2" />
+                  <td colSpan={6} className="py-1 px-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] uppercase tracking-wider text-muted mr-1">
+                        Skills
+                      </span>
+                      {extraSkills.length === 0 && (
+                        <span className="text-[11px] text-muted/70 italic">
+                          (only primary)
+                        </span>
+                      )}
+                      {extraSkills.map((s) => (
+                        <span
+                          key={s.name}
+                          className="inline-flex items-center gap-1 rounded-md bg-bg-base border border-border px-1.5 py-0.5 text-[11px] text-slate-200"
+                          title={`${s.name} — proficiency ${s.rating ?? "untyped"}`}
+                        >
+                          <span>{s.name}</span>
+                          <select
+                            value={s.rating ?? 3}
+                            onChange={(e) =>
+                              updateSkillRating(
+                                i,
+                                s.name,
+                                Number(e.target.value),
+                              )
+                            }
+                            title="Proficiency rating (1=Familiar … 5=Expert)"
+                            aria-label={`Rating for ${s.name}`}
+                            className="bg-transparent border-0 text-accent text-[11px] focus:outline-none cursor-pointer"
+                          >
+                            {[1, 2, 3, 4, 5].map((n) => (
+                              <option key={n} value={n}>
+                                ★{n}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => removeSkill(i, s.name)}
+                            title={`Remove ${s.name}`}
+                            aria-label={`Remove ${s.name}`}
+                            className="text-muted hover:text-red-300 leading-none"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                      {availSkills.length > 0 && (
+                        <AddSkillButton
+                          options={availSkills}
+                          onAdd={(name, rating) =>
+                            addSkill(i, name, rating)
+                          }
+                        />
+                      )}
+                    </div>
+                  </td>
+                </tr>
+                </Fragment>
               );
             })}
           </tbody>
@@ -867,6 +953,92 @@ function TechnicianEditor({
         leaves the resource unscheduled.
       </p>
     </div>
+  );
+}
+
+/**
+ * v1.42.0 — pop-out picker for adding additional skills to a tech row.
+ * Opens an inline panel with a skill dropdown + 1–5 proficiency rating, then
+ * commits via `onAdd` and collapses. Disabled when no available skills remain.
+ */
+function AddSkillButton({
+  options,
+  onAdd,
+}: {
+  options: string[];
+  onAdd: (name: string, rating: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(options[0] ?? "");
+  const [rating, setRating] = useState(3);
+
+  // Keep `name` valid when options shift (e.g. a skill is removed elsewhere).
+  if (open && options.length > 0 && !options.includes(name)) {
+    setName(options[0]);
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setName(options[0] ?? "");
+          setOpen(true);
+        }}
+        title="Add another skill"
+        className="text-[11px] text-accent hover:text-white border border-dashed border-border hover:border-accent rounded-md px-1.5 py-0.5"
+      >
+        + skill
+      </button>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md bg-bg-elevated border border-accent/40 px-1.5 py-0.5 text-[11px]">
+      <select
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        title="Skill"
+        aria-label="Skill to add"
+        className="bg-bg-base border border-border rounded px-1 py-0.5 text-slate-200 text-[11px]"
+      >
+        {options.map((o) => (
+          <option key={o} value={o}>
+            {o}
+          </option>
+        ))}
+      </select>
+      <select
+        value={rating}
+        onChange={(e) => setRating(Number(e.target.value))}
+        title="Proficiency rating (1=Familiar … 5=Expert)"
+        aria-label="Proficiency rating"
+        className="bg-bg-base border border-border rounded px-1 py-0.5 text-accent text-[11px]"
+      >
+        {[1, 2, 3, 4, 5].map((n) => (
+          <option key={n} value={n}>
+            ★{n}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={() => {
+          if (name) onAdd(name, rating);
+          setOpen(false);
+        }}
+        className="text-emerald-300 hover:text-emerald-200 font-semibold"
+      >
+        Add
+      </button>
+      <button
+        type="button"
+        onClick={() => setOpen(false)}
+        className="text-muted hover:text-white"
+      >
+        ×
+      </button>
+    </span>
   );
 }
 
