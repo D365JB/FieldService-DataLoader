@@ -7,9 +7,18 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.29.0";
+export const APP_VERSION = "v1.30.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.30.0",
+    date: "April 30, 2026",
+    tag: "PERF",
+    improvements: [
+      "**Edit with AI is noticeably faster.** Three changes layered together: (1) reasoning effort dropped to *minimal* for edits since add/remove/rename/repoint operations don't benefit from extra thinking budget; (2) Azure OpenAI **JSON mode** turned on so the model emits a single valid object and stops sooner — no more fence-stripping retry path; (3) the preset payload sent to the model is now compact JSON instead of pretty-printed, cutting input tokens (and prefill latency) by roughly a third on large presets.",
+      "Net effect: typical edits like *Add three territories* or *Rename the company* now return in a few seconds instead of 10–20. Quality is unchanged — referential-integrity rules in the system prompt still cascade through technicians, agreements, customer assets, etc.",
+    ],
+  },
   {
     version: "v1.29.0",
     date: "April 30, 2026",

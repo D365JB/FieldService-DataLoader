@@ -9,8 +9,9 @@ import { DefaultAzureCredential } from "@azure/identity";
 interface GenerateRequest {
   prompt: string;
   maxCompletionTokens?: number;
-  reasoningEffort?: "low" | "medium" | "high";
+  reasoningEffort?: "minimal" | "low" | "medium" | "high";
   systemPrompt?: string;
+  jsonMode?: boolean;
 }
 
 interface GenerateResponse {
@@ -119,6 +120,11 @@ export async function generateContent(
   // gpt-5* family supports `reasoning_effort`; older models will reject it.
   if (AOAI_DEPLOYMENT.startsWith("gpt-5") || AOAI_DEPLOYMENT.startsWith("o")) {
     aoaiBody.reasoning_effort = reasoning;
+  }
+  // JSON mode: make the model emit a single valid JSON object — skips client-side
+  // fence-stripping retries and lets the decoder stop earlier.
+  if (body.jsonMode) {
+    aoaiBody.response_format = { type: "json_object" };
   }
 
   let auth: Record<string, string>;

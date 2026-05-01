@@ -4,7 +4,9 @@ export interface GenerateOptions {
   prompt: string;
   systemPrompt?: string;
   maxCompletionTokens?: number;
-  reasoningEffort?: "low" | "medium" | "high";
+  reasoningEffort?: "minimal" | "low" | "medium" | "high";
+  /** When true, asks AOAI to enforce a JSON object response (skips fence-stripping, faster + safer). */
+  jsonMode?: boolean;
 }
 
 export interface GenerateResult {
@@ -29,6 +31,7 @@ export async function generateContent(
       systemPrompt: opts.systemPrompt,
       maxCompletionTokens: opts.maxCompletionTokens ?? 4000,
       reasoningEffort: opts.reasoningEffort ?? "low",
+      jsonMode: opts.jsonMode ?? false,
     }),
   });
 
@@ -48,6 +51,7 @@ export async function generateJson<T = unknown>(
 ): Promise<T> {
   const result = await generateContent({
     ...opts,
+    jsonMode: true,
     systemPrompt:
       (opts.systemPrompt ?? "") +
       "\n\nRespond with valid JSON only. No prose, no markdown fences.",

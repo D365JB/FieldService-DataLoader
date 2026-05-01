@@ -24,7 +24,7 @@ Rules:
 
 const USER_TEMPLATE = (preset: FsPreset, instruction: string) =>
   `Current preset JSON:
-${JSON.stringify(preset, null, 2)}
+${JSON.stringify(preset)}
 
 Edit instruction:
 ${instruction}
@@ -39,6 +39,8 @@ export async function editPreset(
     systemPrompt: SYSTEM_PROMPT,
     prompt: USER_TEMPLATE(preset, instruction),
     maxCompletionTokens: 16000,
-    reasoningEffort: "low",
+    // Edits are mechanical (add/remove/rename/repoint) — `minimal` reasoning is fast
+    // and reliable here; the heavy lifting was done at preset *generation* time.
+    reasoningEffort: "minimal",
   });
 }
