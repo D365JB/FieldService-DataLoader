@@ -7,9 +7,18 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.34.0";
+export const APP_VERSION = "v1.34.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.34.1",
+    date: "May 1, 2026",
+    tag: "FIX",
+    fixes: [
+      "**Analyzer 400 outage fixed.** Linking the Function App as a Static Web App backend silently re-enabled EasyAuth with the `azureStaticWebApps` provider, which then rejected every anonymous `/api/*` call with `400 Login not supported for provider azureStaticWebApps`. Bicep now explicitly disables EasyAuth on the function (depends on the linked backend so it always runs after) and the analyzer is reachable again.",
+      "**`AzureWebJobsStorage` switched to managed-identity auth.** The storage account has shared-key access disabled by Azure Policy, which was marking the function host unhealthy. Bicep now sets `AzureWebJobsStorage__accountName` + `AzureWebJobsStorage__credential=managedidentity` and grants the function MI Storage Blob Data Owner + Queue Data Contributor + Table Data Contributor on the storage account.",
+    ],
+  },
   {
     version: "v1.34.0",
     date: "May 1, 2026",

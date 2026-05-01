@@ -223,9 +223,17 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         supportCredentials: false
       }
       appSettings: [
+        // Identity-based AzureWebJobsStorage (storage account has shared-key
+        // auth disabled by Azure Policy). The Function App MI must hold
+        // Storage Blob Data Owner + Queue Data Contributor + Table Data
+        // Contributor on the storage account (granted below).
         {
-          name: 'AzureWebJobsStorage'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storage.name};AccountKey=${storage.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
+          name: 'AzureWebJobsStorage__accountName'
+          value: storage.name
+        }
+        {
+          name: 'AzureWebJobsStorage__credential'
+          value: 'managedidentity'
         }
         {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
@@ -338,6 +346,61 @@ resource funcStorageAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' 
       storageBlobDataOwnerRoleId
     )
   }
+}
+
+// Function App MI → "Storage Queue Data Contributor" (AzureWebJobsStorage queues)
+var storageQueueDataContributorRoleId = '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
+
+resource funcStorageQueueAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: storage
+  name: guid(storage.id, functionApp.id, storageQueueDataContributorRoleId)
+  properties: {
+    principalId: functionApp.identity.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      storageQueueDataContributorRoleId
+    )
+  }
+}
+
+// Function App MI → "Storage Table Data Contributor" (AzureWebJobsStorage tables)
+var storageTableDataContributorRoleId = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
+
+resource funcStorageTableAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: storage
+  name: guid(storage.id, functionApp.id, storageTableDataContributorRoleId)
+  properties: {
+    principalId: functionApp.identity.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      storageTableDataContributorRoleId
+    )
+  }
+}
+
+// ── EasyAuth disabled on Function App ─────────────────────────────────────
+// Linking a backend to a Static Web App auto-enables EasyAuth on the
+// function with the azureStaticWebApps provider. This breaks anonymous
+// /api/* calls with: 400 "Login not supported for provider azureStaticWebApps".
+// Our /api routes are anonymous and pass through SWA without auth,
+// so we explicitly disable EasyAuth after the linked backend is created.
+resource functionAuthDisabled 'Microsoft.Web/sites/config@2023-12-01' = {
+  parent: functionApp
+  name: 'authsettingsV2'
+  properties: {
+    platform: {
+      enabled: false
+    }
+    globalValidation: {
+      requireAuthentication: false
+      unauthenticatedClientAction: 'AllowAnonymous'
+    }
+  }
+  dependsOn: [
+    linkedBackend
+  ]
 }
 
 // ── Outputs ───────────────────────────────────────────────────────────────
