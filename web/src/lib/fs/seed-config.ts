@@ -515,6 +515,13 @@ export async function seedFromPreset(
     for (const [name, id] of Object.entries(result.incidentTypeIds)) {
       incidentNameById[id] = name;
     }
+    // {productId → productName} for the same reason. Built from the preset
+    // catalog so we don't need a per-row retrieve on existing rows.
+    const productNameForLabel: Record<string, string> = {};
+    for (const p of preset.products ?? []) {
+      const id = result.productIds[p.productNumber];
+      if (id) productNameForLabel[id] = p.name;
+    }
     const productsPerIncident = Math.min(3, productIdsForLink.length);
     const total = incidentIdsForLink.length * productsPerIncident;
     onProgress({ step: "Incident Type Products", done: 0, total });
@@ -582,13 +589,18 @@ export async function seedFromPreset(
           }
           id = await dv.create("msdyn_incidenttypeproducts", payload);
           trackCreated(result, "incidentTypeProducts", id);
-          // e.g. "RTU-45T Rooftop Unit → HVAC Maintenance".
+        }
+        // Always (re-)label, including for rows reused from a prior run that
+        // pre-dates the labels registry.
+        if (id) {
+          const productName =
+            productNameForLabel[productId] ?? "Product";
           const incidentName = incidentNameById[incidentId] ?? "Incident";
           setLabel(
             result,
             "incidentTypeProducts",
             id,
-            `${prod.name} → ${incidentName}`,
+            `${productName} → ${incidentName}`,
           );
         }
         itpMap[linkKey] = id;
@@ -622,7 +634,51 @@ export async function seedFromPreset(
     onProgress,
   );
 
-  // ── Bookable Resources (Equipment-type, no admin needed) ─────────────────
+  // ── Bookable Resources (Contact-type — matches real techs) ───────────────
+  // Each tech needs an underlying contact record; bookableresource.resourcetype
+  // = 2 (Contact) requires Contact@odata.bind at create time. We pre-resolve
+  // contacts here (idempotent by fullname) so existing contacts are reused.
+  const techList = preset.sampleTechnicians ?? [];
+  const techContactIdByName: Record<string, string> = {};
+  if (techList.length > 0) {
+    const contactsMap = getIdMap(result, "technicianContacts");
+    onProgress({
+      step: "Technician Contacts",
+      done: 0,
+      total: techList.length,
+    });
+    for (let i = 0; i < techList.length; i++) {
+      const t = techList[i];
+      const parts = t.name.trim().split(/\s+/);
+      const firstname = parts.shift() ?? t.name;
+      const lastname = parts.join(" ") || firstname;
+      // Idempotency: match by fullname (case-sensitive Dataverse default).
+      const existing = await dv.query<{ contactid: string }>("contacts", {
+        filter: `fullname eq '${oencode(t.name)}'`,
+        select: ["contactid"],
+        top: 1,
+      });
+      let contactId = existing[0]?.contactid;
+      if (!contactId) {
+        contactId = await dv.create("contacts", {
+          firstname,
+          lastname,
+          description: tag(`Field technician`),
+        });
+        trackCreated(result, "technicianContacts", contactId);
+      }
+      contactsMap[t.name] = contactId;
+      techContactIdByName[t.name] = contactId;
+      setLabel(result, "technicianContacts", contactId, t.name);
+      onProgress({
+        step: "Technician Contacts",
+        done: i + 1,
+        total: techList.length,
+      });
+    }
+  }
+
+  // ── Bookable Resources ───────────────────────────────────────────────────
   // We need post-create side-effects (track createdResourceIds, link primary
   // skill + territory) that only fire when we actually inserted the row, so we
   // use onCreated rather than onResolved.
@@ -638,15 +694,21 @@ export async function seedFromPreset(
       findField: "name",
       findValue: (t) => t.name,
       mapKey: (t) => t.name,
-      build: (t) => ({
-        name: t.name,
-        // bookableresource has no `description` column on this org's schema.
-        // 4 = Equipment. Avoids needing to create a systemuser.
-        resourcetype: 4,
-        // Required field on this org. 4 = Pacific Time (US & Canada).
-        // Standard Windows TimeZoneCode; safe US default for demo data.
-        timezone: 4,
-      }),
+      build: (t) => {
+        const contactId = techContactIdByName[t.name];
+        const payload: Record<string, unknown> = {
+          name: t.name,
+          // 2 = Contact. Requires the Contact lookup to be set at create.
+          resourcetype: 2,
+          // Required field on this org. 4 = Pacific Time (US & Canada).
+          // Standard Windows TimeZoneCode; safe US default for demo data.
+          timezone: 4,
+        };
+        if (contactId) {
+          payload["Contact@odata.bind"] = `/contacts(${contactId})`;
+        }
+        return payload;
+      },
       onCreated: async (resourceId, t) => {
         result.createdResourceIds.push(resourceId);
 
@@ -1893,6 +1955,11 @@ export async function deleteRun(
     }
   }
   await sweepIds("Bookable Resources", "bookableresources", ourResourceIds);
+  await sweepIds(
+    "Technician Contacts",
+    "contacts",
+    Object.values(result.idMaps?.technicianContacts ?? {}),
+  );
 
   await sweepIds(
     "Incident Types",

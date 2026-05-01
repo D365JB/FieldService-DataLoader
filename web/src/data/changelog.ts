@@ -7,9 +7,19 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.20.8";
+export const APP_VERSION = "v1.20.9";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.20.9",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Bookable Resources** are now created as **Contact**-type resources backed by real Contact records (firstname/lastname split from the technician name) instead of Equipment. New seeder step *Technician Contacts* runs before Bookable Resources.",
+      "**Incident Type Products** now show their *Product → Incident* label even for rows reused from a previous run (the label was previously only applied to newly-created rows, so re-runs still showed GUIDs).",
+      "Reset now sweeps the technician contacts it created.",
+    ],
+  },
   {
     version: "v1.20.8",
     date: "April 30, 2026",
