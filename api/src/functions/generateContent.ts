@@ -12,6 +12,8 @@ interface GenerateRequest {
   reasoningEffort?: "minimal" | "low" | "medium" | "high";
   systemPrompt?: string;
   jsonMode?: boolean;
+  /** Optional AOAI deployment name. Must be in AOAI_ALLOWED_DEPLOYMENTS. */
+  model?: string;
 }
 
 interface GenerateResponse {
@@ -28,6 +30,13 @@ const AOAI_ENDPOINT = process.env.AOAI_ENDPOINT ?? "";
 const AOAI_DEPLOYMENT = process.env.AOAI_DEPLOYMENT ?? "gpt-4o-mini";
 const AOAI_API_KEY = process.env.AOAI_API_KEY;
 const AOAI_API_VERSION = process.env.AOAI_API_VERSION ?? "2024-10-21";
+// Allowlist of deployments the client may select via the `model` field.
+// Defaults to just the primary deployment so unconfigured environments fail
+// closed. Set AOAI_ALLOWED_DEPLOYMENTS=gpt-4o-mini,gpt-5-mini to expose both.
+const AOAI_ALLOWED_DEPLOYMENTS = (process.env.AOAI_ALLOWED_DEPLOYMENTS ?? AOAI_DEPLOYMENT)
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? "")
   .split(",")
   .map((s) => s.trim())
@@ -119,7 +128,22 @@ export async function generateContent(
   const maxTokens = Math.min(Math.max(body.maxCompletionTokens ?? 4000, 100), 16000);
   const reasoning = body.reasoningEffort ?? "low";
 
-  const url = `${AOAI_ENDPOINT.replace(/\/+$/, "")}/openai/deployments/${AOAI_DEPLOYMENT}/chat/completions?api-version=${AOAI_API_VERSION}`;
+  // Resolve deployment: client-selected (validated against allowlist) or default.
+  let deployment = AOAI_DEPLOYMENT;
+  if (body.model) {
+    if (!AOAI_ALLOWED_DEPLOYMENTS.includes(body.model)) {
+      return {
+        status: 400,
+        headers: cors,
+        jsonBody: {
+          error: `Model '${body.model}' is not allowed. Allowed: ${AOAI_ALLOWED_DEPLOYMENTS.join(", ")}`,
+        },
+      };
+    }
+    deployment = body.model;
+  }
+
+  const url = `${AOAI_ENDPOINT.replace(/\/+$/, "")}/openai/deployments/${deployment}/chat/completions?api-version=${AOAI_API_VERSION}`;
   const messages = [
     ...(body.systemPrompt
       ? [{ role: "system", content: body.systemPrompt }]
@@ -132,7 +156,7 @@ export async function generateContent(
     max_completion_tokens: maxTokens,
   };
   // gpt-5* family supports `reasoning_effort`; older models will reject it.
-  if (AOAI_DEPLOYMENT.startsWith("gpt-5") || AOAI_DEPLOYMENT.startsWith("o")) {
+  if (deployment.startsWith("gpt-5") || deployment.startsWith("o")) {
     aoaiBody.reasoning_effort = reasoning;
   }
   // JSON mode: make the model emit a single valid JSON object — skips client-side

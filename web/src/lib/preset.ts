@@ -220,12 +220,17 @@ function normalizeUrl(url: string): string {
   return /^https?:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
-function readAnalyzeCache(url: string): FsPreset | null {
+/** Cache key includes the model so different models keep separate analyses. */
+function cacheKey(url: string, model?: string): string {
+  return model ? `${normalizeUrl(url)}::${model}` : normalizeUrl(url);
+}
+
+function readAnalyzeCache(url: string, model?: string): FsPreset | null {
   try {
     const raw = sessionStorage.getItem(ANALYZE_CACHE_KEY);
     if (!raw) return null;
     const map = JSON.parse(raw) as Record<string, AnalyzeCacheEntry>;
-    const hit = map[normalizeUrl(url)];
+    const hit = map[cacheKey(url, model)];
     if (!hit) return null;
     if (Date.now() - hit.ts > ANALYZE_CACHE_TTL_MS) return null;
     return hit.preset;
@@ -234,11 +239,11 @@ function readAnalyzeCache(url: string): FsPreset | null {
   }
 }
 
-function writeAnalyzeCache(url: string, preset: FsPreset): void {
+function writeAnalyzeCache(url: string, preset: FsPreset, model?: string): void {
   try {
     const raw = sessionStorage.getItem(ANALYZE_CACHE_KEY);
     const map = (raw ? JSON.parse(raw) : {}) as Record<string, AnalyzeCacheEntry>;
-    map[normalizeUrl(url)] = { ts: Date.now(), preset };
+    map[cacheKey(url, model)] = { ts: Date.now(), preset };
     sessionStorage.setItem(ANALYZE_CACHE_KEY, JSON.stringify(map));
   } catch {
     // sessionStorage full or disabled — silently skip caching.
@@ -248,9 +253,10 @@ function writeAnalyzeCache(url: string, preset: FsPreset): void {
 export async function analyzeCompany(
   url: string,
   onStatus?: (msg: string) => void,
+  model?: string,
 ): Promise<FsPreset> {
-  // Fast path: did we already analyze this URL this session?
-  const cached = readAnalyzeCache(url);
+  // Fast path: did we already analyze this URL+model this session?
+  const cached = readAnalyzeCache(url, model);
   if (cached) {
     onStatus?.("Using cached analysis from this session.");
     return cached;
@@ -270,8 +276,9 @@ export async function analyzeCompany(
     prompt: USER_TEMPLATE(site.url, site.title, site.description, site.text),
     maxCompletionTokens: 5000,
     reasoningEffort: "low",
+    model,
   });
   onStatus?.("Building your tailored preset…");
-  writeAnalyzeCache(url, result);
+  writeAnalyzeCache(url, result, model);
   return result;
 }

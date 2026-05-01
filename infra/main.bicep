@@ -248,6 +248,14 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           value: openAiDeploymentName
         }
         {
+          // Comma-separated allowlist of deployments the client may pick via
+          // the `model` field on /api/generateContent. The /api/models
+          // endpoint also returns this list. Keep in sync with the actual
+          // openAiDeployment{,Fallback}Name params above.
+          name: 'AOAI_ALLOWED_DEPLOYMENTS'
+          value: empty(openAiFallbackDeploymentName) ? openAiDeploymentName : '${openAiDeploymentName},${openAiFallbackDeploymentName}'
+        }
+        {
           name: 'AOAI_API_VERSION'
           value: '2024-10-21'
         }

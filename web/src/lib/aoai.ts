@@ -7,6 +7,8 @@ export interface GenerateOptions {
   reasoningEffort?: "minimal" | "low" | "medium" | "high";
   /** When true, asks AOAI to enforce a JSON object response (skips fence-stripping, faster + safer). */
   jsonMode?: boolean;
+  /** Optional AOAI deployment name. Server validates against allowlist; falls back to default when omitted. */
+  model?: string;
 }
 
 export interface GenerateResult {
@@ -34,6 +36,7 @@ export async function generateContent(
     maxCompletionTokens: opts.maxCompletionTokens ?? 4000,
     reasoningEffort: opts.reasoningEffort ?? "low",
     jsonMode: opts.jsonMode ?? false,
+    ...(opts.model ? { model: opts.model } : {}),
   });
 
   const transientStatuses = new Set([429, 502, 503, 504]);
@@ -145,4 +148,16 @@ export async function fetchWebsite(url: string): Promise<{
     );
   }
   throw new Error(`fetchWebsite failed: ${lastDetail}`);
+}
+
+/** Returns the list of AOAI deployments the client may select. */
+export async function listModels(): Promise<{
+  models: string[];
+  default: string;
+}> {
+  const res = await fetch("/api/models");
+  if (!res.ok) {
+    throw new Error(`listModels ${res.status}: ${await res.text().catch(() => "")}`);
+  }
+  return (await res.json()) as { models: string[]; default: string };
 }

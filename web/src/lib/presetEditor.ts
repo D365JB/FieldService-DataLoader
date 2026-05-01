@@ -34,6 +34,7 @@ Return the FULL updated preset object as JSON, with the same shape.`;
 export async function editPreset(
   preset: FsPreset,
   instruction: string,
+  model?: string,
 ): Promise<FsPreset> {
   return generateJson<FsPreset>({
     systemPrompt: SYSTEM_PROMPT,
@@ -42,5 +43,6 @@ export async function editPreset(
     // Edits are mechanical (add/remove/rename/repoint) — `minimal` reasoning is fast
     // and reliable here; the heavy lifting was done at preset *generation* time.
     reasoningEffort: "minimal",
+    model,
   });
 }

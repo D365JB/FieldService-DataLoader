@@ -3,11 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { useMsal } from "@azure/msal-react";
 import { Sparkle, Globe, Warning, ArrowRight, FastForward, Package, CircleNotch } from "@phosphor-icons/react";
 import { AppHeader } from "@/components/AppHeader";
+import { ModelPicker } from "@/components/ModelPicker";
 import { PresetReview } from "@/components/PresetReview";
 import { analyzeCompany } from "@/lib/preset";
 import type { FsPreset } from "@/lib/preset";
 import { GENERIC_PRESET } from "@/lib/genericPreset";
 import { DEMO_PACKS } from "@/lib/demoPacks";
+import { modelStore } from "@/lib/modelStore";
 import { orgStore } from "@/lib/orgStore";
 
 export function Analyze() {
@@ -20,6 +22,9 @@ export function Analyze() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("");
   const [elapsed, setElapsed] = useState(0);
+  const [selectedModel, setSelectedModel] = useState<string | undefined>(
+    modelStore.get() ?? undefined,
+  );
   const startedAtRef = useRef<number | null>(null);
   const [preset, setPreset] = useState<FsPreset | null>(() => {
     // Restore the previously generated preset so navigating back shows it.
@@ -57,7 +62,7 @@ export function Analyze() {
     setStatus("Starting…");
     setBusy(true);
     try {
-      const result = await analyzeCompany(companyUrl, (msg) => setStatus(msg));
+      const result = await analyzeCompany(companyUrl, (msg) => setStatus(msg), selectedModel);
       setStatus("Done.");
       setPreset(result);
       orgStore.setPreset(JSON.stringify(result));
@@ -106,9 +111,15 @@ export function Analyze() {
         </p>
 
         <div className="card p-6">
-          <label className="block text-sm font-medium text-slate-300 mb-2">
-            Company website
-          </label>
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <label className="block text-sm font-medium text-slate-300">
+              Company website
+            </label>
+            <ModelPicker
+              disabled={busy}
+              onChange={(m) => setSelectedModel(m)}
+            />
+          </div>
           <div className="flex items-center gap-3">
             <div className="relative flex-1">
               <Globe

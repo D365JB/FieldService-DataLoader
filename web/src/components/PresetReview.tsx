@@ -23,6 +23,7 @@ import {
 } from "@phosphor-icons/react";
 import type { FsPreset } from "@/lib/preset";
 import { editPreset } from "@/lib/presetEditor";
+import { modelStore } from "@/lib/modelStore";
 import { removePresetItem, type RemoveKind } from "@/lib/presetRemove";
 
 interface Props {
@@ -42,7 +43,7 @@ export function PresetReview({ preset, onChange }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const next = await editPreset(preset, instruction);
+      const next = await editPreset(preset, instruction, modelStore.get() ?? undefined);
       setHistory((h) => [preset, ...h].slice(0, 10));
       onChange(next);
       setInstruction("");

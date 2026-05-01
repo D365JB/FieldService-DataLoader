@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.34.1";
+export const APP_VERSION = "v1.35.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.35.0",
+    date: "May 1, 2026",
+    tag: "FEATURE",
+    features: [
+      "**Pick your model.** A new Model dropdown on the Analyze page lets you choose between the deployed AOAI models (today: `gpt-4o-mini` and `gpt-5-mini`) for both the website analyzer and the AI preset editor. Your choice is remembered across sessions in `localStorage` and is honored on every `/api/generateContent` call. The list comes from a new `/api/models` endpoint that mirrors the `AOAI_ALLOWED_DEPLOYMENTS` setting (provisioned in Bicep), so adding a new deployment server-side automatically lights up in the picker — no UI redeploy needed. Cached analyses are now keyed by URL + model, so flipping models doesn't return a stale result.",
+    ],
+  },
   {
     version: "v1.34.1",
     date: "May 1, 2026",
