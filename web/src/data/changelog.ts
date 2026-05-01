@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.31.5";
+export const APP_VERSION = "v1.31.6";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.31.6",
+    date: "May 1, 2026",
+    tag: "FIX",
+    fixes: [
+      "**A single Posted Work Order can no longer abort the run.** Previously when an existing target-Closed WO was already Posted in Dataverse and FS refused to re-Open it, child-row phases (Service Tasks, Bookings, WO Products, Time Entries) would still try to attach rows and 400 with *\"A record can't be added to a work order that's been posted.\"* Now: failed re-Opens mark the WO as Posted in a skip-set, and every child-create site detects the Posted error and gracefully skips the WO. The run completes; affected WOs simply end with whatever rows they already had.",
+    ],
+  },
   {
     version: "v1.31.5",
     date: "May 1, 2026",

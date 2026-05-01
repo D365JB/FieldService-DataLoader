@@ -1561,6 +1561,24 @@ export async function seedFromPreset(
     accountId: string;
     incidentName: string;
   }> = [];
+  // WOs that are currently Posted (either we couldn't re-open them, or a
+  // child-create surfaced a `been posted` 400). Every child-row phase
+  // (Service Tasks, Bookings, WO Products, Time Entries) skips these so a
+  // single stuck WO can never abort the entire run.
+  const postedWoIds = new Set<string>();
+  // Detects the FS plugin's "posted" error so a single stuck WO never
+  // fails the run. The exact wording varies slightly across orgs/versions
+  // ("can't be added to a work order that's been posted", "work order is
+  // already posted", etc.) so we match on a forgiving substring.
+  const isPostedWoError = (e: unknown): boolean => {
+    const msg = ((e as Error)?.message ?? "").toLowerCase();
+    return (
+      msg.includes("been posted") ||
+      msg.includes("already posted") ||
+      msg.includes("work order that's posted") ||
+      msg.includes("work order that is posted")
+    );
+  };
   // Incident-id → name lookup so we can record the human-readable name
   // for skill matching during booking.
   const incidentNameById: Record<string, string> = {};
@@ -1611,9 +1629,9 @@ export async function seedFromPreset(
           msdyn_systemstatus: 690970000,
         });
       } catch (e) {
-        // FS may block reopening a Posted WO. Surface a warning in the
-        // progress detail but keep going — the WO stays Posted and
-        // child-row creation will skip it.
+        // FS may block reopening a Posted WO. Mark it Posted so all
+        // child-row phases skip it instead of 400ing.
+        postedWoIds.add(woId);
         onProgress({
           step: "Work Orders",
           done: i + 1,
@@ -1732,6 +1750,15 @@ export async function seedFromPreset(
     });
     for (let i = 0; i < tasksWoMeta.length; i++) {
       const woId = tasksWoMeta[i].woId;
+      if (postedWoIds.has(woId)) {
+        onProgress({
+          step: "WO Service Tasks",
+          done: i + 1,
+          total: tasksWoMeta.length,
+          detail: "Skipped (WO is Posted)",
+        });
+        continue;
+      }
       for (let j = 0; j < tasksPerWo; j++) {
         const taskTypeId = taskTypeIds[(i + j) % taskTypeIds.length];
         const taskName = taskTypeNameById[taskTypeId] ?? `WO task ${j + 1}`;
@@ -1745,14 +1772,22 @@ export async function seedFromPreset(
           },
         );
         if (existing[0]) continue;
-        const id = await dv.create("msdyn_workorderservicetasks", {
-          msdyn_name: taskName,
-          msdyn_description: tag(),
-          "msdyn_workorder@odata.bind": `/msdyn_workorders(${woId})`,
-          "msdyn_tasktype@odata.bind": `/msdyn_servicetasktypes(${taskTypeId})`,
-        });
-        trackCreated(result, "workOrderServiceTasks", id);
-        setLabel(result, "workOrderServiceTasks", id, taskName);
+        try {
+          const id = await dv.create("msdyn_workorderservicetasks", {
+            msdyn_name: taskName,
+            msdyn_description: tag(),
+            "msdyn_workorder@odata.bind": `/msdyn_workorders(${woId})`,
+            "msdyn_tasktype@odata.bind": `/msdyn_servicetasktypes(${taskTypeId})`,
+          });
+          trackCreated(result, "workOrderServiceTasks", id);
+          setLabel(result, "workOrderServiceTasks", id, taskName);
+        } catch (e) {
+          if (isPostedWoError(e)) {
+            postedWoIds.add(woId);
+            break; // skip remaining tasks on this Posted WO
+          }
+          throw e;
+        }
       }
       onProgress({
         step: "WO Service Tasks",
@@ -1967,6 +2002,9 @@ export async function seedFromPreset(
             "msdyn_workorder@odata.bind": `/msdyn_workorders(${woId})`,
           });
         } catch (e) {
+          if (isPostedWoError(e)) {
+            postedWoIds.add(woId);
+          }
           // FS booking validation can reject for many reasons (e.g. resource
           // type mismatch). Skip without breaking the rest of the seed.
           onProgress({
@@ -2022,6 +2060,15 @@ export async function seedFromPreset(
     });
     for (let i = 0; i < productsWoMeta.length; i++) {
       const { woId, targetStatus } = productsWoMeta[i];
+      if (postedWoIds.has(woId)) {
+        onProgress({
+          step: "WO Products",
+          done: i + 1,
+          total: productsWoMeta.length,
+          detail: "Skipped (WO is Posted)",
+        });
+        continue;
+      }
       const linesForThisWo = 1 + (i % 3); // 1, 2, or 3
       // Closed (target=690970004) → Used (690970001). Anything else → Estimated.
       const lineStatus = targetStatus === 690970004 ? 690970001 : 690970000;
@@ -2081,7 +2128,18 @@ export async function seedFromPreset(
           }
         }
 
-        const lineId = await dv.create("msdyn_workorderproducts", payload);
+        const lineId = await (async () => {
+          try {
+            return await dv.create("msdyn_workorderproducts", payload);
+          } catch (e) {
+            if (isPostedWoError(e)) {
+              postedWoIds.add(woId);
+              return null;
+            }
+            throw e;
+          }
+        })();
+        if (lineId === null) break; // WO got Posted mid-flight — skip remaining lines
         nextLineOrder++;
         trackCreated(result, "workOrderProducts", lineId);
         setLabel(result, "workOrderProducts", lineId, lineName);
@@ -2196,7 +2254,19 @@ export async function seedFromPreset(
           : `Time entry ${i + 1}`;
         setLabel(result, "timeEntries", teId, label);
       } catch (e) {
-        // Surface the real error — silent swallow previously hid every
+        if (isPostedWoError(e)) {
+          // WO posted between phases — skip this time entry instead of
+          // killing the run.
+          postedWoIds.add(woId);
+          onProgress({
+            step: "Time Entries",
+            done: i + 1,
+            total: bookingMeta.length,
+            detail: "Skipped (WO is Posted)",
+          });
+          continue;
+        }
+        // Surface non-posted errors — silent swallow previously hid every
         // schema/permission failure for all 6 entries.
         throw new Error(
           `Time Entry create failed for booking ${i + 1}: ${(e as Error).message ?? e}`,
