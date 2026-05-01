@@ -7,9 +7,22 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.31.6";
+export const APP_VERSION = "v1.32.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.32.0",
+    date: "May 1, 2026",
+    tag: "FEATURE",
+    features: [
+      "**Stability sweep: a single Field Service plugin error can no longer abort the run.** Every Dataverse write in the seeder now flows through a `safeCreate` / `safeUpdate` wrapper that classifies known-benign 400s — Posted Work Order, asset/account mismatch, missing lookup, FS validation, permission denial — and records them on the run summary instead of throwing. The previous five hotfixes (v1.31.2–v1.31.6) addressed specific failure modes one at a time; this generalizes the pattern across all 12 catalog steps plus Work Orders, Service Tasks, Bookings, WO Products, and Time Entries.",
+      "**\"N records skipped\" panel on the success card.** When the seeder gracefully skips records, the success view now shows a collapsible panel grouped by entity, with counts per skip reason (e.g. *\"3 already Posted, 1 missing lookup\"*) and a sample of the affected record labels. Run history is unaffected; existing runs still load correctly.",
+    ],
+    improvements: [
+      "Schema-fallback retry (which strips columns the org's FS solution doesn't ship) is now centralized in `safeCreate` instead of duplicated in `createWithSchemaFallback`. All catalog steps benefit, not just Work Orders.",
+      "Removed three rounds of ad-hoc `try/catch` + `isPostedWoError` handlers added in v1.31.4–v1.31.6; the same behavior is now driven by `classifyError` in one place.",
+    ],
+  },
   {
     version: "v1.31.6",
     date: "May 1, 2026",

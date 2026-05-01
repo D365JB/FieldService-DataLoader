@@ -10,6 +10,13 @@ import {
   weightFromName,
   type GenerationKnobs,
 } from "@/lib/generationKnobs";
+import {
+  safeCreate,
+  safeUpdate,
+  type SafeWriteContext,
+  type SkipInfo,
+  type SkipReason,
+} from "@/lib/fs/safeWrite";
 
 /**
  * Inlined geocode helper. Was previously imported from `./geo` but Rollup
@@ -188,6 +195,23 @@ export interface SeedResult {
    * Optional for backward compat with old run history.
    */
   labels?: Record<string, Record<string, string>>;
+  /**
+   * Records the seeder gracefully skipped — Posted WOs, asset/account
+   * mismatches, validation failures, etc. Keyed by logical entity (same
+   * keys as `idMaps` / `createdIds`). The success card on Generate.tsx
+   * groups these by `SkipReason` so users see "3 records already Posted in
+   * Dataverse" rather than 3 raw error strings. Optional for backward
+   * compat with pre-v1.32 history records.
+   */
+  skipped?: Record<string, SkippedRecord[]>;
+}
+
+/** A single skipped write captured by `safeCreate` / `safeUpdate`. */
+export interface SkippedRecord {
+  reason: SkipReason;
+  message: string;
+  recordLabel?: string;
+  step?: string;
 }
 
 type ProgressFn = (p: SeedProgress) => void;
@@ -261,44 +285,6 @@ async function findByField(
 }
 
 /**
- * Create a record, retrying with offending properties stripped out if the
- * server rejects the payload with an "Invalid property 'X'" or "undeclared
- * property 'X'" error. FS schemas vary between orgs (some columns ship with
- * the FS solution, others don't) so this lets us include richer demo data
- * without hard-failing when a column is missing on a specific tenant. Only
- * structural columns are stripped — `@odata.bind` nav props are required and
- * must succeed on the first try.
- */
-async function createWithSchemaFallback(
-  dv: DataverseClient,
-  entitySet: string,
-  payload: Record<string, unknown>,
-  maxRetries = 5,
-): Promise<string> {
-  const working = { ...payload };
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await dv.create(entitySet, working);
-    } catch (e) {
-      const msg = (e as Error).message ?? "";
-      // Match either ` 'fieldname' was found in entity ` (Invalid property)
-      // or `undeclared property 'fieldname'` (no metadata).
-      const m =
-        msg.match(/Invalid property '([^']+)'/i) ??
-        msg.match(/undeclared property '([^']+)'/i) ??
-        msg.match(/property '([^']+)' .* does not exist on type/i);
-      if (!m) throw e;
-      const bad = m[1];
-      // Never strip nav properties — those are required relationships.
-      if (bad.includes("@odata.bind") || !(bad in working)) throw e;
-      delete working[bad];
-    }
-  }
-  // Last attempt with whatever is left.
-  return dv.create(entitySet, working);
-}
-
-/**
  * If the caller provided existing records for a catalog entity, register them
  * up-front in the result map keyed by name. This way Object.values(...) on the
  * map (used by work-order/booking generation) will pick them up regardless of
@@ -337,6 +323,12 @@ function shouldCreate(choice: EntityChoice | undefined): boolean {
  */
 interface EntityStepConfig<T> {
   label: string;
+  /**
+   * Optional override for the key under `result.skipped[...]`. Defaults to
+   * `label`. Use this when an entity step's display label differs from a
+   * pre-existing skip-key convention.
+   */
+  skipEntityKey?: string;
   items: T[];
   choice: EntityChoice | undefined;
   target: Record<string, string>;
@@ -352,6 +344,7 @@ interface EntityStepConfig<T> {
 
 async function runEntityStep<T>(
   dv: DataverseClient,
+  result: SeedResult,
   cfg: EntityStepConfig<T>,
   onProgress: ProgressFn,
 ): Promise<void> {
@@ -360,6 +353,10 @@ async function runEntityStep<T>(
   const total = create ? cfg.items.length : 0;
   onProgress({ step: cfg.label, done: 0, total });
   if (!create) return;
+
+  // Skips on catalog steps are recorded under the human-friendly label so
+  // the success card groups them with the visible step name.
+  const skipKey = cfg.skipEntityKey ?? cfg.label;
 
   for (let i = 0; i < cfg.items.length; i++) {
     const item = cfg.items[i];
@@ -373,7 +370,19 @@ async function runEntityStep<T>(
     );
     let isNew = false;
     if (!id) {
-      id = await dv.create(cfg.entitySet, cfg.build(item));
+      const ctx = makeSafeCtx(result, skipKey, cfg.label, findVal);
+      const res = await safeCreate(dv, cfg.entitySet, cfg.build(item), ctx);
+      if (!res.ok) {
+        // Skip recorded; advance progress and continue with next item.
+        onProgress({
+          step: cfg.label,
+          done: i + 1,
+          total: cfg.items.length,
+          detail: `${cfg.mapKey(item)} (skipped: ${res.skipped.reason})`,
+        });
+        continue;
+      }
+      id = res.id;
       isNew = true;
       if (cfg.onCreated) await cfg.onCreated(id, item);
     }
@@ -423,6 +432,42 @@ export function setLabel(
   (result.labels[key] ??= {})[id] = label;
 }
 
+/**
+ * Record a graceful skip on the run summary. Called by `safeCreate` /
+ * `safeUpdate` via the `onSkip` callback installed by `makeSafeCtx`.
+ */
+export function recordSkip(
+  result: SeedResult,
+  entityKey: string,
+  info: SkipInfo,
+): void {
+  result.skipped ??= {};
+  (result.skipped[entityKey] ??= []).push({
+    reason: info.reason,
+    message: info.message,
+    recordLabel: info.recordLabel,
+    step: info.step,
+  });
+}
+
+/**
+ * Build a `SafeWriteContext` that auto-records skips against the result
+ * under `entityKey`. Pass to every `safeCreate` / `safeUpdate` call so the
+ * success card knows what didn't land and why.
+ */
+export function makeSafeCtx(
+  result: SeedResult,
+  entityKey: string,
+  step: string,
+  recordLabel?: string,
+): SafeWriteContext {
+  return {
+    step,
+    recordLabel,
+    onSkip: (info) => recordSkip(result, entityKey, info),
+  };
+}
+
 export async function seedFromPreset(
   dv: DataverseClient,
   preset: FsPreset,
@@ -447,6 +492,7 @@ export async function seedFromPreset(
     idMaps: {},
     createdIds: {},
     labels: {},
+    skipped: {},
   };
 
   try {
@@ -454,6 +500,7 @@ export async function seedFromPreset(
   // ── Territories ──────────────────────────────────────────────────────────
   await runEntityStep(
     dv,
+    result,
     {
       label: "Territories",
       items: preset.territories,
@@ -472,6 +519,7 @@ export async function seedFromPreset(
   // ── Work Order Types ─────────────────────────────────────────────────────
   await runEntityStep(
     dv,
+    result,
     {
       label: "Work Order Types",
       items: preset.workOrderTypes,
@@ -492,6 +540,7 @@ export async function seedFromPreset(
   // ── Characteristics ──────────────────────────────────────────────────────
   await runEntityStep(
     dv,
+    result,
     {
       label: "Characteristics",
       items: preset.characteristics,
@@ -518,6 +567,7 @@ export async function seedFromPreset(
   // is itself idempotent against the parent incident id).
   await runEntityStep(
     dv,
+    result,
     {
       label: "Incident Types",
       items: preset.incidentTypes,
@@ -580,6 +630,7 @@ export async function seedFromPreset(
 
   await runEntityStep(
     dv,
+    result,
     {
       label: "Products",
       items: preset.products,
@@ -737,6 +788,7 @@ export async function seedFromPreset(
   // ── Accounts ─────────────────────────────────────────────────────────────
   await runEntityStep(
     dv,
+    result,
     {
       label: "Accounts",
       items: preset.sampleAccounts ?? [],
@@ -873,6 +925,7 @@ export async function seedFromPreset(
   // share the same lookup table.)
   await runEntityStep(
     dv,
+    result,
     {
       label: "Bookable Resources",
       items: preset.sampleTechnicians ?? [],
@@ -1039,6 +1092,7 @@ export async function seedFromPreset(
   const flMap = getIdMap(result, "functionalLocations");
   await runEntityStep(
     dv,
+    result,
     {
       label: "Functional Locations",
       items: functionalLocations,
@@ -1080,6 +1134,7 @@ export async function seedFromPreset(
   const assetsByAccount: Record<string, string[]> = {};
   await runEntityStep(
     dv,
+    result,
     {
       label: "Customer Assets",
       items: customerAssets,
@@ -1171,6 +1226,7 @@ export async function seedFromPreset(
   const taskTypeMap = getIdMap(result, "serviceTaskTypes");
   await runEntityStep(
     dv,
+    result,
     {
       label: "Service Task Types",
       items: serviceTaskTypes,
@@ -1285,6 +1341,7 @@ export async function seedFromPreset(
   }
   await runEntityStep(
     dv,
+    result,
     {
       label: "Agreements",
       items: agreements,
@@ -1394,6 +1451,7 @@ export async function seedFromPreset(
   const warehouseMap = getIdMap(result, "warehouses");
   await runEntityStep(
     dv,
+    result,
     {
       label: "Warehouses",
       items: warehouses,
@@ -1562,24 +1620,14 @@ export async function seedFromPreset(
     incidentName: string;
   }> = [];
   // WOs that are currently Posted (either we couldn't re-open them, or a
-  // child-create surfaced a `been posted` 400). Every child-row phase
-  // (Service Tasks, Bookings, WO Products, Time Entries) skips these so a
-  // single stuck WO can never abort the entire run.
+  // child-create surfaced a `been posted` skip from safeCreate). Every
+  // child-row phase (Service Tasks, Bookings, WO Products, Time Entries)
+  // checks this set as a fast-path so a single stuck WO incurs at most one
+  // skipped round-trip per phase. Classification still happens via
+  // `safeWrite.classifyError`; this set is purely a perf optimization.
   const postedWoIds = new Set<string>();
-  // Detects the FS plugin's "posted" error so a single stuck WO never
-  // fails the run. The exact wording varies slightly across orgs/versions
-  // ("can't be added to a work order that's been posted", "work order is
-  // already posted", etc.) so we match on a forgiving substring.
-  const isPostedWoError = (e: unknown): boolean => {
-    const msg = ((e as Error)?.message ?? "").toLowerCase();
-    return (
-      msg.includes("been posted") ||
-      msg.includes("already posted") ||
-      msg.includes("work order that's posted") ||
-      msg.includes("work order that is posted")
-    );
-  };
   // Incident-id → name lookup so we can record the human-readable name
+  // for skill matching during booking.
   // for skill matching during booking.
   const incidentNameById: Record<string, string> = {};
   for (const inc of preset.incidentTypes ?? []) {
@@ -1624,19 +1672,22 @@ export async function seedFromPreset(
       existing[0]?.msdyn_systemstatus === 690970004 &&
       targetStatus === 690970004
     ) {
-      try {
-        await dv.update("msdyn_workorders", woId, {
-          msdyn_systemstatus: 690970000,
-        });
-      } catch (e) {
-        // FS may block reopening a Posted WO. Mark it Posted so all
-        // child-row phases skip it instead of 400ing.
+      const reopenRes = await safeUpdate(
+        dv,
+        "msdyn_workorders",
+        woId,
+        { msdyn_systemstatus: 690970000 },
+        makeSafeCtx(result, "workOrders", "Work Orders", `Reopen ${summary}`),
+      );
+      if (!reopenRes.ok) {
+        // Reopen blocked (typically posted-wo). Mark it Posted so all
+        // child-row phases skip it instead of incurring 400s.
         postedWoIds.add(woId);
         onProgress({
           step: "Work Orders",
           done: i + 1,
           total: targetWoCount,
-          detail: `Reopen failed: ${(e as Error).message?.slice(0, 60) ?? "error"}`,
+          detail: `Reopen failed: ${reopenRes.skipped.reason}`,
         });
       }
     }
@@ -1692,9 +1743,25 @@ export async function seedFromPreset(
             `/msdyn_customerassets(${candidateAssetId})`;
         }
       }
-      // Surface real failures instead of silently swallowing them — historically
-      // the catch here marked all 16 WOs "complete" while none actually landed.
-      woId = await createWithSchemaFallback(dv, "msdyn_workorders", woPayload);
+      // Surface real failures via the run summary (a per-WO 400 used to
+      // abort the whole run). safeCreate auto-strips schema-mismatched
+      // columns and classifies known-benign 400s as skips.
+      const woRes = await safeCreate(
+        dv,
+        "msdyn_workorders",
+        woPayload,
+        makeSafeCtx(result, "workOrders", "Work Orders", summary),
+      );
+      if (!woRes.ok) {
+        onProgress({
+          step: "Work Orders",
+          done: i + 1,
+          total: targetWoCount,
+          detail: `${summary} (skipped: ${woRes.skipped.reason})`,
+        });
+        continue;
+      }
+      woId = woRes.id;
     }
     result.workOrderIds.push(woId);
     trackCreated(result, "workOrders", woId);
@@ -1772,22 +1839,28 @@ export async function seedFromPreset(
           },
         );
         if (existing[0]) continue;
-        try {
-          const id = await dv.create("msdyn_workorderservicetasks", {
+        const res = await safeCreate(
+          dv,
+          "msdyn_workorderservicetasks",
+          {
             msdyn_name: taskName,
             msdyn_description: tag(),
             "msdyn_workorder@odata.bind": `/msdyn_workorders(${woId})`,
             "msdyn_tasktype@odata.bind": `/msdyn_servicetasktypes(${taskTypeId})`,
-          });
-          trackCreated(result, "workOrderServiceTasks", id);
-          setLabel(result, "workOrderServiceTasks", id, taskName);
-        } catch (e) {
-          if (isPostedWoError(e)) {
+          },
+          makeSafeCtx(result, "workOrderServiceTasks", "WO Service Tasks", taskName),
+        );
+        if (!res.ok) {
+          // Posted-WO is the common case here — cache so remaining tasks on
+          // this WO skip the round-trip. Other reasons just continue.
+          if (res.skipped.reason === "posted-wo") {
             postedWoIds.add(woId);
-            break; // skip remaining tasks on this Posted WO
+            break;
           }
-          throw e;
+          continue;
         }
+        trackCreated(result, "workOrderServiceTasks", res.id);
+        setLabel(result, "workOrderServiceTasks", res.id, taskName);
       }
       onProgress({
         step: "WO Service Tasks",
@@ -1992,29 +2065,32 @@ export async function seedFromPreset(
         }
       }
       if (!bookingId) {
-        try {
-          bookingId = await dv.create("bookableresourcebookings", {
+        const res = await safeCreate(
+          dv,
+          "bookableresourcebookings",
+          {
             name: bookingName,
             starttime: start.toISOString(),
             endtime: end.toISOString(),
             "Resource@odata.bind": `/bookableresources(${resourceId})`,
             "BookingStatus@odata.bind": `/bookingstatuses(${bookingStatusId})`,
             "msdyn_workorder@odata.bind": `/msdyn_workorders(${woId})`,
-          });
-        } catch (e) {
-          if (isPostedWoError(e)) {
-            postedWoIds.add(woId);
-          }
+          },
+          makeSafeCtx(result, "bookings", "Bookings", bookingName),
+        );
+        if (!res.ok) {
+          if (res.skipped.reason === "posted-wo") postedWoIds.add(woId);
           // FS booking validation can reject for many reasons (e.g. resource
           // type mismatch). Skip without breaking the rest of the seed.
           onProgress({
             step: "Bookings",
             done: i + 1,
             total: bookingTarget,
-            detail: `Skipped (${(e as Error).message?.slice(0, 60) ?? "error"})`,
+            detail: `Skipped (${res.skipped.reason})`,
           });
           continue;
         }
+        bookingId = res.id;
       }
       result.bookingIds.push(bookingId);
       bookingMeta.push({ bookingId, woId, resourceId, start, end });
@@ -2128,21 +2204,22 @@ export async function seedFromPreset(
           }
         }
 
-        const lineId = await (async () => {
-          try {
-            return await dv.create("msdyn_workorderproducts", payload);
-          } catch (e) {
-            if (isPostedWoError(e)) {
-              postedWoIds.add(woId);
-              return null;
-            }
-            throw e;
+        const lineRes = await safeCreate(
+          dv,
+          "msdyn_workorderproducts",
+          payload,
+          makeSafeCtx(result, "workOrderProducts", "WO Products", lineName),
+        );
+        if (!lineRes.ok) {
+          if (lineRes.skipped.reason === "posted-wo") {
+            postedWoIds.add(woId);
+            break; // WO got Posted mid-flight — skip remaining lines
           }
-        })();
-        if (lineId === null) break; // WO got Posted mid-flight — skip remaining lines
+          continue;
+        }
         nextLineOrder++;
-        trackCreated(result, "workOrderProducts", lineId);
-        setLabel(result, "workOrderProducts", lineId, lineName);
+        trackCreated(result, "workOrderProducts", lineRes.id);
+        setLabel(result, "workOrderProducts", lineRes.id, lineName);
       }
       onProgress({
         step: "WO Products",
@@ -2224,8 +2301,10 @@ export async function seedFromPreset(
         continue;
       }
 
-      try {
-        const teId = await dv.create("msdyn_timeentries", {
+      const teRes = await safeCreate(
+        dv,
+        "msdyn_timeentries",
+        {
           msdyn_description: entryName,
           msdyn_start: start.toISOString(),
           msdyn_end: end.toISOString(),
@@ -2246,32 +2325,26 @@ export async function seedFromPreset(
           // entries are invisible in FS even though they exist.
           "msdyn_BookableResourceBooking@odata.bind": `/bookableresourcebookings(${bookingId})`,
           "msdyn_WorkOrder@odata.bind": `/msdyn_workorders(${woId})`,
+        },
+        makeSafeCtx(result, "timeEntries", "Time Entries", entryName),
+      );
+      if (!teRes.ok) {
+        if (teRes.skipped.reason === "posted-wo") postedWoIds.add(woId);
+        // Skip recorded; advance progress.
+        onProgress({
+          step: "Time Entries",
+          done: i + 1,
+          total: bookingMeta.length,
+          detail: `Skipped (${teRes.skipped.reason})`,
         });
-        trackCreated(result, "timeEntries", teId);
-        const woNumber = result.labels?.workOrders?.[woId];
-        const label = woNumber
-          ? `${woNumber} — ${start.toLocaleDateString()}`
-          : `Time entry ${i + 1}`;
-        setLabel(result, "timeEntries", teId, label);
-      } catch (e) {
-        if (isPostedWoError(e)) {
-          // WO posted between phases — skip this time entry instead of
-          // killing the run.
-          postedWoIds.add(woId);
-          onProgress({
-            step: "Time Entries",
-            done: i + 1,
-            total: bookingMeta.length,
-            detail: "Skipped (WO is Posted)",
-          });
-          continue;
-        }
-        // Surface non-posted errors — silent swallow previously hid every
-        // schema/permission failure for all 6 entries.
-        throw new Error(
-          `Time Entry create failed for booking ${i + 1}: ${(e as Error).message ?? e}`,
-        );
+        continue;
       }
+      trackCreated(result, "timeEntries", teRes.id);
+      const woNumber = result.labels?.workOrders?.[woId];
+      const label = woNumber
+        ? `${woNumber} — ${start.toLocaleDateString()}`
+        : `Time entry ${i + 1}`;
+      setLabel(result, "timeEntries", teRes.id, label);
       onProgress({
         step: "Time Entries",
         done: i + 1,

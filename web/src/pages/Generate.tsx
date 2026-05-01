@@ -12,6 +12,7 @@ import {
 import { AppHeader } from "@/components/AppHeader";
 import { DataverseClient, deepLink } from "@/lib/dataverse";
 import { seedFromPreset, type SeedProgress, type SeedResult, type SeedOptions, type EntityChoice } from "@/lib/fs/seed-config";
+import { SKIP_REASON_LABEL, type SkipReason } from "@/lib/fs/safeWrite";
 import { buildResultSections } from "@/lib/fs/resultSections";
 import type { FsPreset } from "@/lib/preset";
 import { orgStore } from "@/lib/orgStore";
@@ -808,6 +809,81 @@ function ResultSummary({
             </div>
           </div>
         ))}
+      </div>
+      <SkippedRecords result={result} />
+    </div>
+  );
+}
+
+/**
+ * Records the seeder gracefully skipped (Posted WOs, asset/account
+ * mismatches, lat/long validation, etc.). Hidden when nothing was skipped.
+ * Each entity is collapsed to a count-by-reason summary plus a
+ * disclosure with the first few raw record labels for context.
+ */
+function SkippedRecords({ result }: { result: SeedResult }) {
+  const skipped = result.skipped ?? {};
+  const entities = Object.entries(skipped).filter(([, rows]) => rows.length > 0);
+  if (entities.length === 0) return null;
+  const totalSkipped = entities.reduce((n, [, rows]) => n + rows.length, 0);
+
+  return (
+    <div className="mt-6 pt-4 border-t border-border">
+      <div className="flex items-center gap-2 mb-2">
+        <Warning size={18} weight="fill" className="text-amber-400" />
+        <h3 className="text-sm font-semibold text-white">
+          {totalSkipped} record{totalSkipped === 1 ? "" : "s"} skipped
+        </h3>
+      </div>
+      <p className="text-xs text-slate-400 mb-3">
+        Field Service business rules rejected these records. The rest of the
+        run completed successfully.
+      </p>
+      <div className="space-y-3">
+        {entities.map(([entity, rows]) => {
+          const byReason = rows.reduce<Record<SkipReason, typeof rows>>(
+            (acc, r) => {
+              (acc[r.reason] ??= []).push(r);
+              return acc;
+            },
+            {} as Record<SkipReason, typeof rows>,
+          );
+          return (
+            <details
+              key={entity}
+              className="rounded border border-border bg-bg-elevated/50 px-3 py-2"
+            >
+              <summary className="cursor-pointer text-xs text-slate-300 hover:text-white">
+                <span className="font-medium">{entity}</span>{" "}
+                <span className="text-slate-500">
+                  ({rows.length} skipped:{" "}
+                  {Object.entries(byReason)
+                    .map(
+                      ([reason, list]) =>
+                        `${list.length} ${SKIP_REASON_LABEL[reason as SkipReason]}`,
+                    )
+                    .join("; ")}
+                  )
+                </span>
+              </summary>
+              <ul className="mt-2 space-y-1 text-xs text-slate-400">
+                {rows.slice(0, 8).map((r, i) => (
+                  <li key={i} className="font-mono">
+                    {r.recordLabel ?? "(no label)"} —{" "}
+                    <span className="text-slate-500">
+                      {SKIP_REASON_LABEL[r.reason]}
+                    </span>
+                  </li>
+                ))}
+                {rows.length > 8 && (
+                  <li className="text-slate-500 italic">
+                    …and {rows.length - 8} more
+                  </li>
+                )}
+              </ul>
+            </details>
+          );
+        })}
       </div>
     </div>
   );
