@@ -251,6 +251,23 @@ export interface SeedOptions {
    * window). When omitted, `DEFAULT_KNOBS` are used.
    */
   knobs?: GenerationKnobs;
+  /**
+   * Optional short, run-scoped id (e.g. `r-260501-1432-a7c9`) appended to
+   * generated record names that have a high duplicate-collision risk —
+   * primarily the auto-generated Work Order summaries. When set, two
+   * back-to-back runs against the same org produce two *separate* sets of
+   * Work Orders instead of trying to reuse the same `Auto-generated WO #N`
+   * records (which fails when the previous run left bookings on them).
+   *
+   * When omitted, the seeder falls back to the historical name-only
+   * idempotency for backwards compatibility with older callers.
+   *
+   * Resume-friendly: the active-run store keeps the same runId across
+   * navigation / progress events within a single Generate click, so a mid-
+   * run crash that the user retries with the same runId still re-finds its
+   * own WOs and continues.
+   */
+  runId?: string;
 }
 
 export interface EntityChoice {
@@ -1914,7 +1931,15 @@ export async function seedFromPreset(
     // lets us attach tasks/products/bookings/time entries. The final
     // "Close Work Orders" phase flips status back to Posted.
     const effectiveStatus = targetStatus === 690970004 ? 690970000 : targetStatus;
-    const summary = tag(`Auto-generated WO #${i + 1}`);
+    // Per-run scoping: when a runId is supplied, suffix every WO summary
+    // so this run's WOs don't collide with a previous run's WOs of the
+    // same index. Without this, re-runs would land on the same
+    // `Auto-generated WO #1` records and trip the FS plugin's
+    // "can't change status to Unscheduled" guard whenever those WOs
+    // already had bookings. With it, each run produces a fresh set.
+    const summary = options.runId
+      ? tag(`Auto-generated WO #${i + 1} \u2014 ${options.runId}`)
+      : tag(`Auto-generated WO #${i + 1}`);
     const accountInstructions = tag(
       accountInstructionTemplates[i % accountInstructionTemplates.length],
     );

@@ -7,9 +7,18 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.39.6";
+export const APP_VERSION = "v1.40.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.40.0",
+    date: "May 1, 2026",
+    tag: "FEAT",
+    fixes: [
+      "**Each Generate run now produces a fresh set of Work Orders.** Previously every run reused the same `Auto-generated WO #1 … #N` records, which made re-runs idempotent for the easy case but blew up the moment a previous run had attached bookings: the FS plugin refused to re-Open those WOs and the run aborted. Now the active-run store mints a short, sortable, run-scoped id at click-time (e.g. `r-260501-1432-a7c9`) and the seeder appends it to every auto-generated WO summary (`Auto-generated WO #1 — r-260501-1432-a7c9`). Two consecutive Generate clicks therefore land on two *separate* sets of WOs in the org — no collisions, no re-Open fights, no skipped rows. Older runs stay visible on the Reset page with their own per-run inventory so you can still clean them up explicitly.",
+      "**Mid-run resilience preserved.** The runId lives in the active-run store for the duration of the click, so progress events and the live header badge all line up with the same id. v1.39.6's *can't change status to Unscheduled* skip-classifier stays in place as a safety net for any pre-1.40 WOs left over in the org.",
+    ],
+  },
   {
     version: "v1.39.6",
     date: "May 1, 2026",

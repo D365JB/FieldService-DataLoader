@@ -278,7 +278,7 @@ export function Generate() {
     setResult(null);
     setRunning(true);
     setSteps(STEP_ORDER.map((name) => ({ name, done: 0, total: 0, status: "pending" })));
-    activeRunStore.start({
+    const runId = activeRunStore.start({
       companyName: preset.companyName,
       orgUrl,
       stepOrder: STEP_ORDER,
@@ -298,6 +298,7 @@ export function Generate() {
       });
       const seedOptions: SeedOptions = {};
       seedOptions.knobs = knobs;
+      seedOptions.runId = runId;
       const keys: EntityKey[] = [
         "territories",
         "workOrderTypes",

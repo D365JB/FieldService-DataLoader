@@ -36,6 +36,13 @@ export interface ActiveRunSnapshot {
   result: SeedResult | null;
   /** Epoch ms when the current run started. 0 when idle. */
   startedAt: number;
+  /**
+   * Short run-scoped id minted at start (e.g. `r-260501-1432-a7c9`) and
+   * passed through to the seeder so generated record names (currently the
+   * auto-generated WO summaries) are unique per run instead of colliding
+   * with previous runs' records.
+   */
+  runId: string;
 }
 
 const EMPTY: ActiveRunSnapshot = {
@@ -48,6 +55,7 @@ const EMPTY: ActiveRunSnapshot = {
   error: null,
   result: null,
   startedAt: 0,
+  runId: "",
 };
 
 let state: ActiveRunSnapshot = EMPTY;
@@ -77,7 +85,18 @@ export const activeRunStore = {
     companyName: string;
     orgUrl: string;
     stepOrder: string[];
-  }): void {
+  }): string {
+    // Mint a short, sortable, human-readable run id. Format:
+    //   r-YYMMDD-HHMM-<4-char-random>
+    // Sortable lex-by-time, easy to read in record summaries, low
+    // collision risk for back-to-back runs.
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const yy = String(now.getFullYear()).slice(-2);
+    const datePart = `${yy}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+    const timePart = `${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const rand = Math.random().toString(36).slice(2, 6);
+    const runId = `r-${datePart}-${timePart}-${rand}`;
     state = {
       running: true,
       companyName: opts.companyName,
@@ -93,8 +112,10 @@ export const activeRunStore = {
       error: null,
       result: null,
       startedAt: Date.now(),
+      runId,
     };
     emit();
+    return runId;
   },
 
   /** Forward a SeedProgress event from `seedFromPreset`. */
