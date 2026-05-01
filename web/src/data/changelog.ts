@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.20.13";
+export const APP_VERSION = "v1.20.14";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.20.14",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**IoT Alerts** no longer write `msdyn_iotalertstatus`. Like `msdyn_severity`, that column does not exist on `msdyn_iotalert` in some orgs. New alerts are created at the platform default state and can be transitioned post-create if a demo needs Active/InProgress/Closed mix.",
+    ],
+  },
   {
     version: "v1.20.13",
     date: "April 30, 2026",

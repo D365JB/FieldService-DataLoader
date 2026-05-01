@@ -1628,11 +1628,6 @@ export async function seedFromPreset(
         const assetId = assetIds[i];
         const template = iotAlertTemplates[templateIdx % iotAlertTemplates.length];
         templateIdx++;
-        // Most alerts are still Active so the demo shows active issues to triage.
-        const status =
-          done % 5 === 4 ? 192350002 // Closed
-            : done % 3 === 2 ? 192350001 // InProgress
-              : 192350000; // Active
 
         const alertTime = new Date();
         alertTime.setHours(alertTime.getHours() - (done * 3 + 1));
@@ -1658,10 +1653,10 @@ export async function seedFromPreset(
                 severity: template.severity,
                 message: template.message,
               }),
-              // msdyn_severity does not exist on msdyn_iotalert in
-              // this org's schema (Invalid property error). The
-              // severity is preserved inside msdyn_alertdata JSON.
-              msdyn_iotalertstatus: status,
+              // Neither msdyn_severity nor msdyn_iotalertstatus exist
+              // on msdyn_iotalert in this org's schema (Invalid
+              // property errors). Severity stays in msdyn_alertdata
+              // JSON; alert status is left at the platform default.
               // msdyn_iotalert has no Account lookup — relationship is
               // resolved via msdyn_CustomerAsset → msdyn_account. Verified via $metadata.
               "msdyn_CustomerAsset@odata.bind": `/msdyn_customerassets(${assetId})`,
