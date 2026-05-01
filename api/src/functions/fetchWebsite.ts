@@ -4,6 +4,7 @@ import {
   type HttpResponseInit,
   type InvocationContext,
 } from "@azure/functions";
+import { TtlCache } from "../lib/cache";
 
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? "")
   .split(",")
@@ -24,6 +25,19 @@ function corsHeaders(origin: string | null): Record<string, string> {
 }
 
 const MAX_BYTES = 256 * 1024; // 256 KB cap on remote pages
+const FETCH_TIMEOUT_MS = 15_000; // upstream sites under load can be slow
+
+interface ParsedSite {
+  url: string;
+  title: string;
+  description: string;
+  text: string;
+}
+
+// Per-instance cache. During a multi-attendee demo, the first analyze of a
+// given URL does the upstream work; everyone else gets the parsed result
+// instantly. 10-minute TTL is short enough to pick up updated demo sites.
+const siteCache = new TtlCache<ParsedSite>(10 * 60 * 1000, 100);
 
 export async function fetchWebsite(
   req: HttpRequest,
@@ -87,31 +101,48 @@ export async function fetchWebsite(
   }
 
   try {
-    const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), 10_000);
+    const cacheKey = parsed.toString();
+    const cached = siteCache.get(cacheKey);
+    if (cached) {
+      return { status: 200, headers: cors, jsonBody: cached };
+    }
+    const result = await siteCache.coalesce(cacheKey, () =>
+      fetchAndParse(parsed),
+    );
+    siteCache.set(cacheKey, result);
+    return { status: 200, headers: cors, jsonBody: result };
+  } catch (err) {
+    context.error("fetchWebsite failed", err);
+    const isAbort = (err as Error)?.name === "AbortError";
+    return {
+      status: isAbort ? 504 : 502,
+      headers: cors,
+      jsonBody: {
+        error: isAbort
+          ? `Upstream timeout after ${FETCH_TIMEOUT_MS / 1000}s`
+          : `Fetch failed: ${(err as Error).message}`,
+      },
+    };
+  }
+}
+
+/** Fetch + parse a remote page. Caller handles caching/coalescing. */
+async function fetchAndParse(parsed: URL): Promise<ParsedSite> {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
+  try {
     const res = await fetch(parsed.toString(), {
       headers: { "User-Agent": "FS-Data-Studio/1.0 (+branding-extract)" },
       redirect: "follow",
       signal: ac.signal,
     });
-    clearTimeout(timer);
 
     if (!res.ok) {
-      return {
-        status: res.status,
-        headers: cors,
-        jsonBody: { error: `Upstream returned ${res.status}` },
-      };
+      throw new Error(`Upstream returned ${res.status}`);
     }
 
     const reader = res.body?.getReader();
-    if (!reader) {
-      return {
-        status: 502,
-        headers: cors,
-        jsonBody: { error: "No response body" },
-      };
-    }
+    if (!reader) throw new Error("No response body");
     const chunks: Uint8Array[] = [];
     let total = 0;
     while (total < MAX_BYTES) {
@@ -126,10 +157,14 @@ export async function fetchWebsite(
       Buffer.concat(chunks.map((c) => Buffer.from(c))),
     );
 
-    // Extract just title + meta description + first ~3KB of visible text — enough for AI to reason about.
-    const title = html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim() ?? "";
+    const title =
+      html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim() ?? "";
     const description =
-      html.match(/<meta\s+name=["']description["']\s+content=["']([^"']+)["']/i)?.[1]?.trim() ?? "";
+      html
+        .match(
+          /<meta\s+name=["']description["']\s+content=["']([^"']+)["']/i,
+        )?.[1]
+        ?.trim() ?? "";
     const stripped = html
       .replace(/<script[\s\S]*?<\/script>/gi, "")
       .replace(/<style[\s\S]*?<\/style>/gi, "")
@@ -138,18 +173,9 @@ export async function fetchWebsite(
       .trim()
       .slice(0, 3000);
 
-    return {
-      status: 200,
-      headers: cors,
-      jsonBody: { url: parsed.toString(), title, description, text: stripped },
-    };
-  } catch (err) {
-    context.error("fetchWebsite failed", err);
-    return {
-      status: 502,
-      headers: cors,
-      jsonBody: { error: `Fetch failed: ${(err as Error).message}` },
-    };
+    return { url: parsed.toString(), title, description, text: stripped };
+  } finally {
+    clearTimeout(timer);
   }
 }
 

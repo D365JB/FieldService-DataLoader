@@ -4,6 +4,7 @@ import {
   type HttpResponseInit,
   type InvocationContext,
 } from "@azure/functions";
+import { TtlCache } from "../lib/cache";
 
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? "")
   .split(",")
@@ -24,6 +25,7 @@ function corsHeaders(origin: string | null): Record<string, string> {
 }
 
 const MAX_BYTES = 1024 * 1024; // 1 MB cap on logo size
+const FETCH_TIMEOUT_MS = 15_000;
 const ALLOWED_TYPES = new Set([
   "image/png",
   "image/jpeg",
@@ -34,6 +36,16 @@ const ALLOWED_TYPES = new Set([
   "image/x-icon",
   "image/vnd.microsoft.icon",
 ]);
+
+interface FetchedImage {
+  contentType: string;
+  bytes: number;
+  base64: string;
+}
+
+// Per-instance cache. Same demo-attendee scenario as fetchWebsite —
+// everyone fetching the same logo only fans out to upstream once.
+const imageCache = new TtlCache<FetchedImage>(60 * 60 * 1000, 100);
 
 export async function fetchImage(
   req: HttpRequest,
@@ -70,36 +82,76 @@ export async function fetchImage(
   }
 
   try {
-    const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), 10_000);
+    const cacheKey = parsed.toString();
+    const cached = imageCache.get(cacheKey);
+    if (cached) {
+      return { status: 200, headers: cors, jsonBody: cached };
+    }
+    const result = await imageCache.coalesce(cacheKey, () =>
+      fetchAndEncode(parsed),
+    );
+    imageCache.set(cacheKey, result);
+    return { status: 200, headers: cors, jsonBody: result };
+  } catch (err) {
+    context.error("fetchImage failed", err);
+    const e = err as Error & { code?: string; status?: number };
+    if (e.code === "UNSUPPORTED_TYPE") {
+      return {
+        status: 415,
+        headers: cors,
+        jsonBody: { error: e.message },
+      };
+    }
+    if (typeof e.status === "number") {
+      return {
+        status: e.status,
+        headers: cors,
+        jsonBody: { error: e.message },
+      };
+    }
+    const isAbort = e?.name === "AbortError";
+    return {
+      status: isAbort ? 504 : 502,
+      headers: cors,
+      jsonBody: {
+        error: isAbort
+          ? `Upstream timeout after ${FETCH_TIMEOUT_MS / 1000}s`
+          : `Fetch failed: ${e.message}`,
+      },
+    };
+  }
+}
+
+/** Fetch + base64-encode an image. Caller handles caching/coalescing. */
+async function fetchAndEncode(parsed: URL): Promise<FetchedImage> {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
+  try {
     const res = await fetch(parsed.toString(), {
       headers: { "User-Agent": "FS-Data-Studio/1.0 (+image-proxy)" },
       redirect: "follow",
       signal: ac.signal,
     });
-    clearTimeout(timer);
     if (!res.ok) {
-      return {
-        status: res.status,
-        headers: cors,
-        jsonBody: { error: `Upstream ${res.status}` },
+      const err = new Error(`Upstream ${res.status}`) as Error & {
+        status: number;
       };
+      err.status = res.status;
+      throw err;
     }
     const ctype = (res.headers.get("content-type") ?? "")
       .split(";")[0]
       .trim()
       .toLowerCase();
     if (!ALLOWED_TYPES.has(ctype)) {
-      return {
-        status: 415,
-        headers: cors,
-        jsonBody: { error: `Unsupported content-type: ${ctype}` },
+      const err = new Error(`Unsupported content-type: ${ctype}`) as Error & {
+        code: string;
       };
+      err.code = "UNSUPPORTED_TYPE";
+      throw err;
     }
     const reader = res.body?.getReader();
-    if (!reader) {
-      return { status: 502, headers: cors, jsonBody: { error: "No body" } };
-    }
+    if (!reader) throw new Error("No body");
     const chunks: Uint8Array[] = [];
     let total = 0;
     while (total < MAX_BYTES) {
@@ -110,23 +162,13 @@ export async function fetchImage(
     }
     reader.cancel().catch(() => {});
     const buf = Buffer.concat(chunks.map((c) => Buffer.from(c)));
-    const base64 = buf.toString("base64");
     return {
-      status: 200,
-      headers: cors,
-      jsonBody: {
-        contentType: ctype,
-        bytes: buf.byteLength,
-        base64,
-      },
+      contentType: ctype,
+      bytes: buf.byteLength,
+      base64: buf.toString("base64"),
     };
-  } catch (err) {
-    context.error("fetchImage failed", err);
-    return {
-      status: 502,
-      headers: cors,
-      jsonBody: { error: `Fetch failed: ${(err as Error).message}` },
-    };
+  } finally {
+    clearTimeout(timer);
   }
 }
 

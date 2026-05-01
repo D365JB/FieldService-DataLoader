@@ -7,9 +7,24 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.32.0";
+export const APP_VERSION = "v1.33.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.33.0",
+    date: "May 1, 2026",
+    tag: "FEATURE",
+    features: [
+      "**Multi-user stability sweep across the AI proxy and helper APIs.** The app is now hardened against the kind of contention you get when several presenters demo simultaneously: the upstream-fetch endpoints (`fetchWebsite`, `fetchImage`) keep a per-instance 10-minute / 1-hour TTL cache and coalesce concurrent requests for the same URL into a single upstream call, and the AOAI proxy honors the model's `Retry-After` header, adds jitter to its exponential backoff, enforces a hard per-attempt timeout, caps prompt input size, and surfaces `Retry-After` to the client on saturation. The browser layer (`generateContent`, `fetchWebsite`) does one outer retry on transient 429/502/503/504 with friendlier error messages.",
+    ],
+    improvements: [
+      "AOAI proxy retry budget bumped from 5 to 6 attempts; uses full-jitter so simultaneous 429s don't resync into a thundering herd.",
+      "Generate proxy now returns 503 with `Retry-After` (not 502) on final exhaustion so the UI can wait politely instead of erroring.",
+      "Per-attempt 110s `AbortController` budget on the AOAI fetch so a single hung connection can't hold the function instance for SWA's full 230s gateway window.",
+      "Image proxy: 415 on disallowed content-types and 504 on upstream timeouts (was previously a generic 502 in both cases).",
+      "Note: a brief Customer Analyzer outage on Apr 30 was traced to the deployment storage's `publicNetworkAccess` flipping to *Disabled* out-of-band — Bicep specifies *Enabled*, so suspect Azure Policy drift. Re-enabling it and restarting the function restored service.",
+    ],
+  },
   {
     version: "v1.32.0",
     date: "May 1, 2026",

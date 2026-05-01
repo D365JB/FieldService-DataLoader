@@ -102,6 +102,20 @@ export async function generateContent(
     };
   }
 
+  // Cap total input size to protect the function instance from a runaway
+  // client. 200 KB of input is well above any legitimate prompt we send.
+  const inputSize =
+    body.prompt.length + (body.systemPrompt?.length ?? 0);
+  if (inputSize > 200_000) {
+    return {
+      status: 413,
+      headers: cors,
+      jsonBody: {
+        error: `Input too large (${inputSize} chars > 200,000 limit)`,
+      },
+    };
+  }
+
   const maxTokens = Math.min(Math.max(body.maxCompletionTokens ?? 4000, 100), 16000);
   const reasoning = body.reasoningEffort ?? "low";
 
@@ -139,22 +153,48 @@ export async function generateContent(
     };
   }
 
-  // Retry on 429/5xx with exponential backoff (matches reference behavior).
-  const maxAttempts = 5;
+  // Retry on 429/5xx with backoff. Multi-user notes:
+  //   - Honor `Retry-After` from AOAI when present — under load, the server
+  //     knows the right wait better than our fixed exponential.
+  //   - Add jitter so 50 simultaneous 429s don't all retry at the exact
+  //     same instant ("thundering herd").
+  //   - Hard request timeout per-attempt via AbortController so a single
+  //     hung connection can't tie up an instance for the full 230s SWA limit.
+  //   - Surface `Retry-After` to the client on final failure so the UI can
+  //     pause before re-prompting.
+  const maxAttempts = 6;
+  const perAttemptTimeoutMs = 110_000;
   let lastError = "";
+  let lastRetryAfterSec = 0;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), perAttemptTimeoutMs);
     try {
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...auth },
         body: JSON.stringify(aoaiBody),
+        signal: ac.signal,
       });
 
       if (res.status === 429 || (res.status >= 500 && res.status < 600)) {
         lastError = `${res.status} ${res.statusText}`;
-        const wait = Math.min(2 ** attempt * 1000, 16000);
+        const retryAfterRaw = res.headers.get("retry-after");
+        const retryAfterSec = retryAfterRaw ? parseInt(retryAfterRaw, 10) : NaN;
+        // Drain body so the connection can be reused.
+        await res.text().catch(() => {});
+        if (Number.isFinite(retryAfterSec)) lastRetryAfterSec = retryAfterSec;
+        // Base = honor Retry-After up to 30s, otherwise exponential capped at 16s.
+        const base =
+          Number.isFinite(retryAfterSec) && retryAfterSec > 0
+            ? Math.min(retryAfterSec * 1000, 30_000)
+            : Math.min(2 ** attempt * 1000, 16_000);
+        // Full jitter — wait randomly in [base/2, base].
+        const wait = Math.floor(base / 2 + Math.random() * (base / 2));
         context.warn(
-          `AOAI ${res.status}, retry ${attempt + 1}/${maxAttempts} in ${wait}ms`,
+          `AOAI ${res.status}, retry ${attempt + 1}/${maxAttempts} in ${wait}ms${
+            Number.isFinite(retryAfterSec) ? ` (Retry-After=${retryAfterSec}s)` : ""
+          }`,
         );
         await new Promise((r) => setTimeout(r, wait));
         continue;
@@ -184,17 +224,35 @@ export async function generateContent(
       };
       return { status: 200, headers: cors, jsonBody: response };
     } catch (err) {
-      lastError = (err as Error).message;
-      const wait = Math.min(2 ** attempt * 1000, 16000);
-      context.warn(`AOAI fetch error, retry in ${wait}ms: ${lastError}`);
-      await new Promise((r) => setTimeout(r, wait));
+      const isAbort = (err as Error).name === "AbortError";
+      lastError = isAbort
+        ? `request aborted after ${perAttemptTimeoutMs / 1000}s`
+        : (err as Error).message;
+      const wait = Math.min(2 ** attempt * 1000, 16_000);
+      const jittered = Math.floor(wait / 2 + Math.random() * (wait / 2));
+      context.warn(
+        `AOAI fetch error, retry ${attempt + 1}/${maxAttempts} in ${jittered}ms: ${lastError}`,
+      );
+      await new Promise((r) => setTimeout(r, jittered));
+    } finally {
+      clearTimeout(timer);
     }
   }
 
+  // Surface Retry-After so the client can show a friendly "high load, please
+  // wait" message instead of immediately retrying.
+  const retryHeaders =
+    lastRetryAfterSec > 0
+      ? { ...cors, "Retry-After": String(lastRetryAfterSec) }
+      : cors;
   return {
-    status: 502,
-    headers: cors,
-    jsonBody: { error: `AOAI unavailable after ${maxAttempts} attempts`, detail: lastError },
+    status: 503,
+    headers: retryHeaders,
+    jsonBody: {
+      error: `AOAI unavailable after ${maxAttempts} attempts`,
+      detail: lastError,
+      retryAfterSec: lastRetryAfterSec || undefined,
+    },
   };
 }
 
