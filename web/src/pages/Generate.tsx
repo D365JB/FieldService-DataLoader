@@ -17,8 +17,6 @@ import type { FsPreset } from "@/lib/preset";
 import { orgStore } from "@/lib/orgStore";
 import { runHistory } from "@/lib/runHistory";
 import { EntityPicker, type PickedEntity } from "@/components/EntityPicker";
-import { TerritoryLocationsPanel } from "@/components/TerritoryLocationsPanel";
-import { territoryLocations, type TerritoryLocationMap } from "@/lib/territoryLocations";
 
 interface StepState {
   name: string;
@@ -180,9 +178,6 @@ export function Generate() {
     timeEntries: [],
     iotAlerts: [],
   });
-  const [locMap, setLocMap] = useState<TerritoryLocationMap>(() =>
-    orgUrl ? territoryLocations.load(orgUrl) : {},
-  );
   function setMode(k: EntityKey, m: Mode) {
     setEntityModes((s) => ({ ...s, [k]: m }));
   }
@@ -245,7 +240,6 @@ export function Generate() {
         },
       });
       const seedOptions: SeedOptions = {};
-      seedOptions.territoryLocations = locMap;
       const keys: EntityKey[] = [
         "territories",
         "workOrderTypes",
@@ -315,17 +309,6 @@ export function Generate() {
           <strong className="text-white">{preset.companyName}</strong> into{" "}
           <code className="text-accent">{new URL(orgUrl).host}</code>.
         </p>
-
-        {!result && !running && (
-          <>
-            <TerritoryLocationsPanel
-              orgUrl={orgUrl}
-              territories={preset.territories ?? []}
-              value={locMap}
-              onChange={setLocMap}
-            />
-          </>
-        )}
 
         {!result && !running && (
           <div className="card p-6 mb-6">
@@ -612,17 +595,6 @@ export function Generate() {
         </div>
 
         {result && <ResultSummary result={result} preset={preset} orgUrl={orgUrl} />}
-        {result && Object.keys(locMap).length > 0 && (
-          <div className="card p-4 mt-4 border-accent/40 bg-accent/5">
-            <div className="flex items-start gap-3">
-              <Info size={20} weight="duotone" className="text-accent mt-0.5 flex-shrink-0" />
-              <div className="text-sm text-slate-300">
-                <div className="font-semibold text-white mb-1">Enable travel-time arrows</div>
-                Accounts and technicians now have geocoded street addresses inside their territory's metro. To see Field Service draw travel-time arrows on the schedule board, open <strong>Field Service → Settings → Maps</strong> and turn on <strong>Connect to Maps</strong> with a Bing Maps key. Bookable resources are already configured to use the resource's home address as travel start/end.
-              </div>
-            </div>
-          </div>
-        )}
       </main>
     </div>
   );

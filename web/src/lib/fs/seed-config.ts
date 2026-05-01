@@ -1,6 +1,5 @@
 import { DataverseClient, oencode } from "@/lib/dataverse";
 import type { FsPreset } from "@/lib/preset";
-import { metroById, scatterInMetro, type Metro, type ScatteredAddress } from "./metros";
 
 /**
  * Seeds the configuration tier (territories, WO types, incident types + service tasks,
@@ -146,14 +145,6 @@ export interface SeedOptions {
   timeEntries?: EntityChoice;
   iotAlerts?: EntityChoice;
   incidentTypeProducts?: EntityChoice;
-  /**
-   * Per-territory metro id (from `metros.ts`). When set, accounts and
-   * technician contacts get a randomised street address inside that metro's
-   * 15-mile radius and bookable resources are configured to use the
-   * resource's home address as travel start/end. Territories not in the map
-   * fall back to the preset's city/state strings with no coords.
-   */
-  territoryLocations?: Record<string, string>;
 }
 
 export interface EntityChoice {
@@ -300,7 +291,7 @@ async function runEntityStep<T>(
     );
     let isNew = false;
     if (!id) {
-      id = await createWithSchemaFallback(dv, cfg.entitySet, cfg.build(item));
+      id = await dv.create(cfg.entitySet, cfg.build(item));
       isNew = true;
       if (cfg.onCreated) await cfg.onCreated(id, item);
     }
@@ -373,25 +364,6 @@ export async function seedFromPreset(
   };
 
   try {
-
-  // Territory → metro lookup. Built once up-front so account+contact builds
-  // can scatter coords inside the right city without re-resolving each row.
-  const metroByTerritoryCode: Record<string, Metro> = {};
-  if (options.territoryLocations) {
-    for (const [code, metroId] of Object.entries(options.territoryLocations)) {
-      const m = metroById(metroId);
-      if (m) metroByTerritoryCode[code] = m;
-    }
-  }
-  const territoryCodes = (preset.territories ?? []).map((t) => t.code);
-  // Round-robin assignment of accounts to territories (the preset doesn't
-  // pin accounts to territories explicitly, so we derive a consistent
-  // mapping by index and fold it into the per-account scatter seed).
-  const accountTerritoryByName: Record<string, string> = {};
-  (preset.sampleAccounts ?? []).forEach((a, i) => {
-    if (territoryCodes.length === 0) return;
-    accountTerritoryByName[a.name] = territoryCodes[i % territoryCodes.length];
-  });
 
   // ── Territories ──────────────────────────────────────────────────────────
   await runEntityStep(
@@ -689,30 +661,13 @@ export async function seedFromPreset(
       findField: "name",
       findValue: (a) => a.name,
       mapKey: (a) => a.name,
-      build: (a) => {
-        const territoryCode = accountTerritoryByName[a.name];
-        const metro = territoryCode ? metroByTerritoryCode[territoryCode] : undefined;
-        const addr: ScatteredAddress | undefined = metro
-          ? scatterInMetro(metro, `acct:${a.name}`)
-          : undefined;
-        const payload: Record<string, unknown> = {
-          name: a.name,
-          description: tag(a.siteDescription),
-          address1_country: "United States",
-        };
-        if (addr) {
-          payload.address1_line1 = addr.line1;
-          payload.address1_city = addr.city;
-          payload.address1_stateorprovince = addr.state;
-          payload.address1_postalcode = addr.postal;
-          payload.address1_latitude = addr.lat;
-          payload.address1_longitude = addr.lng;
-        } else {
-          payload.address1_city = a.city;
-          payload.address1_stateorprovince = a.state;
-        }
-        return payload;
-      },
+      build: (a) => ({
+        name: a.name,
+        description: tag(a.siteDescription),
+        address1_city: a.city,
+        address1_stateorprovince: a.state,
+        address1_country: "United States",
+      }),
     },
     onProgress,
   );
@@ -754,23 +709,11 @@ export async function seedFromPreset(
         }
       }
       if (!contactId) {
-        const metro = metroByTerritoryCode[t.primaryTerritoryCode];
-        const addr = metro ? scatterInMetro(metro, `tech:${t.name}`) : undefined;
-        const payload: Record<string, unknown> = {
+        contactId = await dv.create("contacts", {
           firstname,
           lastname,
           description: tag(`Field technician`),
-        };
-        if (addr) {
-          payload.address1_line1 = addr.line1;
-          payload.address1_city = addr.city;
-          payload.address1_stateorprovince = addr.state;
-          payload.address1_postalcode = addr.postal;
-          payload.address1_country = "United States";
-          payload.address1_latitude = addr.lat;
-          payload.address1_longitude = addr.lng;
-        }
-        contactId = await dv.create("contacts", payload);
+        });
         trackCreated(result, "technicianContacts", contactId);
       }
       contactsMap[t.name] = contactId;
@@ -814,13 +757,6 @@ export async function seedFromPreset(
           // Nav property name on bookableresource is `ContactId` (PascalCase
           // matching the `contactid` lookup column). `Contact` is undeclared.
           payload["ContactId@odata.bind"] = `/contacts(${contactId})`;
-        }
-        // When territory geocoding is on, point start/end of day at the
-        // resource's home address so FS computes travel time off Bing maps.
-        // 690970001 = Resource Address.
-        if (metroByTerritoryCode[t.primaryTerritoryCode]) {
-          payload.msdyn_startlocation = 690970001;
-          payload.msdyn_endlocation = 690970001;
         }
         return payload;
       },

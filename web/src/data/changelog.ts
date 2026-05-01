@@ -7,20 +7,9 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.24.0";
+export const APP_VERSION = "v1.23.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
-  {
-    version: "v1.24.0",
-    date: "April 30, 2026",
-    tag: "FEATURE",
-    features: [
-      "**Territory locations.** New panel on the Generate page lets you pick a US metro for each AI-generated territory. Metros are auto-matched from the territory name (e.g. *Pacific Northwest → Seattle*), and you can override any of them from a dropdown of ~27 US metros. Choices persist per org.",
-      "**Geocoded addresses.** Accounts and technician contacts now get a randomised street address (`address1_line1/city/state/postalcode/latitude/longitude`) scattered uniformly inside ~15 mi of their territory's metro. Same name → same address (deterministic seed), so re-runs land on top of existing rows.",
-      "**Bookable resources** are now created with `msdyn_startlocation = msdyn_endlocation = 690970001` (Resource Address). Combined with the geocoded contact addresses, Field Service can draw travel-time arrows on the schedule board once Bing Maps is connected — the post-run summary surfaces a one-click hint pointing to *FS → Settings → Maps*.",
-      "Accounts are round-robined across the configured territories (the AI preset doesn't pin accounts to territories), so pins cluster sensibly in every metro you've chosen.",
-    ],
-  },
   {
     version: "v1.23.0",
     date: "April 30, 2026",
