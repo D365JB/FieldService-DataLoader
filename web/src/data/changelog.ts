@@ -7,9 +7,26 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.27.0";
+export const APP_VERSION = "v1.28.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.28.0",
+    date: "April 30, 2026",
+    tag: "FEATURE",
+    features: [
+      "**Schedule start date.** New date picker on the Generation knobs panel anchors the schedule. Future bookings step forward from this date by *Days forward*; closed bookings step backward by *Days backward*. Leave it blank to keep the previous behaviour (anchor = tomorrow). Persists per-org alongside the other knobs.",
+      "**Larger demos.** Maximum *Work orders* per run raised from 60 → 200. Note that 200 WOs run for several minutes since each WO produces tasks, products, a booking, and a time entry; pace yourself.",
+    ],
+  },
+  {
+    version: "v1.27.1",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Edit with AI** now actually removes items when you say *remove*. The system prompt was too defensive (\"preserve every field that wasn't asked to be changed\") so the model often returned the territories/products/etc. unchanged. The prompt now explicitly states: apply removals literally, then cascade-fix references (technicians' territory codes & skills, agreement coverage lists, asset product / functional-location pointers, account-scoped children) so the preset stays internally consistent. Token budget bumped 9k → 16k to avoid truncated edits on large presets.",
+    ],
+  },
   {
     version: "v1.27.0",
     date: "April 30, 2026",

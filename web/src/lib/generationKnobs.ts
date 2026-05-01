@@ -4,9 +4,18 @@
  * the Generate page reuses the same settings.
  */
 
+/** Hard upper bound for woCount. Larger demos run for several minutes. */
+export const MAX_WO_COUNT = 200;
+
 export interface GenerationKnobs {
-  /** Total work orders to generate. Hard limit kept at 60 to avoid runaway demos. */
+  /** Total work orders to generate. Capped at {@link MAX_WO_COUNT}. */
   woCount: number;
+  /**
+   * Anchor date for the schedule (YYYY-MM-DD). Future bookings spread
+   * across `daysForward` days starting on this date; closed bookings
+   * spread `daysBackward` days before it. Empty string = use today.
+   */
+  startDate: string;
   /** Status mix as percentages (must sum to 100). Closed-Posted goes through the close phase. */
   statusMix: {
     openUnscheduled: number;
@@ -47,6 +56,7 @@ export interface GenerationKnobs {
 
 export const DEFAULT_KNOBS: GenerationKnobs = {
   woCount: 24,
+  startDate: "",
   statusMix: { openUnscheduled: 50, scheduled: 33, closedPosted: 17 },
   priorityMix: { low: 10, medium: 60, high: 25, critical: 5 },
   daysForward: 14,

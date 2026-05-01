@@ -1,6 +1,7 @@
 import { Sliders } from "@phosphor-icons/react";
 import {
   generationKnobs,
+  MAX_WO_COUNT,
   type GenerationKnobs,
 } from "@/lib/generationKnobs";
 
@@ -52,10 +53,10 @@ export function GenerationKnobsPanel({ orgUrl, value, onChange }: Props) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         <NumberInput
           label="Work orders"
-          hint="2 – 60"
+          hint={`2 – ${MAX_WO_COUNT}`}
           value={value.woCount}
           min={2}
-          max={60}
+          max={MAX_WO_COUNT}
           onChange={(n) => update({ woCount: n })}
         />
         <NumberInput
@@ -77,6 +78,12 @@ export function GenerationKnobsPanel({ orgUrl, value, onChange }: Props) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <DateInput
+          label="Schedule start date"
+          hint="Leave blank to use tomorrow"
+          value={value.startDate}
+          onChange={(s) => update({ startDate: s })}
+        />
         <NumberInput
           label="Workday starts at"
           hint="Hour 0–23 (local)"
@@ -187,6 +194,26 @@ function NumberInput(props: {
           const clamped = Math.max(props.min, Math.min(props.max, Math.round(n)));
           props.onChange(clamped);
         }}
+        className="w-full bg-bg-elevated border border-border rounded-md px-2 py-1.5 text-sm text-white focus:outline-none focus:border-accent"
+      />
+      {props.hint && <div className="text-xs text-muted mt-1">{props.hint}</div>}
+    </label>
+  );
+}
+
+function DateInput(props: {
+  label: string;
+  hint?: string;
+  value: string;
+  onChange: (s: string) => void;
+}) {
+  return (
+    <label className="block">
+      <div className="text-xs text-muted mb-1">{props.label}</div>
+      <input
+        type="date"
+        value={props.value}
+        onChange={(e) => props.onChange(e.target.value)}
         className="w-full bg-bg-elevated border border-border rounded-md px-2 py-1.5 text-sm text-white focus:outline-none focus:border-accent"
       />
       {props.hint && <div className="text-xs text-muted mt-1">{props.hint}</div>}

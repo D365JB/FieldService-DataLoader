@@ -2,6 +2,7 @@ import { DataverseClient, oencode } from "@/lib/dataverse";
 import type { FsPreset } from "@/lib/preset";
 import {
   DEFAULT_KNOBS,
+  MAX_WO_COUNT,
   buildStatusBag,
   buildPriorityBag,
   deterministicShuffle,
@@ -1304,7 +1305,7 @@ export async function seedFromPreset(
     accountIdList.length > 0 &&
     incidentIdList.length > 0 &&
     woTypeIdList.length > 0
-      ? Math.max(1, Math.min(60, knobs.woCount))
+      ? Math.max(1, Math.min(MAX_WO_COUNT, knobs.woCount))
       : 0;
   // Status + priority bags built up-front from the knob percentages.
   // We shuffle them with seeds derived from the org so re-runs are stable
@@ -1606,11 +1607,22 @@ export async function seedFromPreset(
   }
 
   if (bookingTarget > 0 && scheduledStatusId) {
-    // Spread bookings across business days starting tomorrow at the
-    // configured workday-start hour (knob default = 9am local).
-    const baseStart = new Date();
-    baseStart.setDate(baseStart.getDate() + 1);
-    baseStart.setHours(knobs.workdayStartHour, 0, 0, 0);
+    // Schedule anchor: knob.startDate (YYYY-MM-DD) when set, else tomorrow.
+    // Future bookings step forward from this date; closed bookings step
+    // backward.
+    const baseStart = (() => {
+      const raw = (knobs.startDate ?? "").trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+        const [y, m, d] = raw.split("-").map(Number);
+        const dt = new Date(y, m - 1, d);
+        dt.setHours(knobs.workdayStartHour, 0, 0, 0);
+        return dt;
+      }
+      const dt = new Date();
+      dt.setDate(dt.getDate() + 1);
+      dt.setHours(knobs.workdayStartHour, 0, 0, 0);
+      return dt;
+    })();
     const slotHours = 2;
     const slotsPerDay = 4; // workdayStart, +2h, +4h, +6h
     // Total span (in days) for forward and backward booking spread.
