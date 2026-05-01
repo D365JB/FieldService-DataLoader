@@ -84,7 +84,7 @@ export function Landing() {
             <span>Principal Solution Specialist | Manufacturing &amp; Mobility</span>
           </div>
           <h1 className="text-5xl md:text-6xl font-bold text-white mb-6 tracking-tight">
-            Realistic FS demo data
+            Realistic Field Service demo data
             <br />
             <span className="text-accent">in minutes, not days.</span>
           </h1>
