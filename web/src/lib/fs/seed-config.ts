@@ -1577,6 +1577,24 @@ export async function seedFromPreset(
       const linesForThisWo = 1 + (i % 3); // 1, 2, or 3
       // Closed (target=690970004) → Used (690970001). Anything else → Estimated.
       const lineStatus = targetStatus === 690970004 ? 690970001 : 690970000;
+      // FS rejects two product lines on the same WO with the same
+      // msdyn_lineorder. Earlier seeder versions wrote lineorder 1..N
+      // and didn't clean up on partial failure, so on re-runs new
+      // names collided with old line orders. Compute the next free
+      // line order from what's already on the WO.
+      const existingOrders = await dv.query<{ msdyn_lineorder: number }>(
+        "msdyn_workorderproducts",
+        {
+          filter: `_msdyn_workorder_value eq ${woId}`,
+          select: ["msdyn_lineorder"],
+          top: 50,
+        },
+      );
+      let nextLineOrder =
+        existingOrders.reduce(
+          (m, r) => Math.max(m, r.msdyn_lineorder ?? 0),
+          0,
+        ) + 1;
       for (let j = 0; j < linesForThisWo; j++) {
         const productId = productIdList[(i + j) % productIdList.length];
         const lineName = productNameById[productId] ?? `WO part ${j + 1}`;
@@ -1597,10 +1615,11 @@ export async function seedFromPreset(
           msdyn_linestatus: lineStatus,
           msdyn_estimatequantity: 1 + (j % 2),
           msdyn_quantity: lineStatus === 690970001 ? 1 + (j % 2) : 0,
-          msdyn_lineorder: j + 1,
+          msdyn_lineorder: nextLineOrder,
           "msdyn_workorder@odata.bind": `/msdyn_workorders(${woId})`,
           "msdyn_product@odata.bind": `/products(${productId})`,
         });
+        nextLineOrder++;
         trackCreated(result, "workOrderProducts", lineId);
         setLabel(result, "workOrderProducts", lineId, lineName);
       }

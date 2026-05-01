@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.21.0";
+export const APP_VERSION = "v1.21.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.21.1",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**WO Products** now compute the next free `msdyn_lineorder` from existing rows on each WO. Earlier runs left lines at orders 1..N and the new closed-WO content tried to insert at colliding orders, producing *\"You can't add a product with the same line order.\"*. New lines now append after the highest existing order on each WO.",
+    ],
+  },
   {
     version: "v1.21.0",
     date: "April 30, 2026",
