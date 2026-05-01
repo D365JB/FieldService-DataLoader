@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.31.0";
+export const APP_VERSION = "v1.31.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.31.1",
+    date: "May 1, 2026",
+    tag: "FIX",
+    fixes: [
+      "**\"Cannot access 'ut' before initialization\" — proper fix.** v1.30.1 swapped the geo import to a relative path but Rollup still chunked `seed-config` and `geo` together, and depending on initialisation order the closure inside the bookable-resource `build()` could reference the imported `geocodeTech` binding before the `geo` module had finished initialising. Inlined the geocode lookup table + helper directly into `seed-config.ts` so there is no cross-module import to race against. The `Geocode techs to territory` toggle still works the same way.",
+    ],
+  },
   {
     version: "v1.31.0",
     date: "May 1, 2026",

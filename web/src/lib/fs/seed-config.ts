@@ -10,7 +10,60 @@ import {
   weightFromName,
   type GenerationKnobs,
 } from "@/lib/generationKnobs";
-import { geocodeTech } from "./geo";
+
+/**
+ * Inlined geocode helper. Was previously imported from `./geo` but Rollup
+ * chunked both modules together and the closure inside `build()` could
+ * reference the imported binding before the `geo` module finished
+ * initialising → "Cannot access 'ut' before initialization" in production.
+ * Inlining sidesteps the module-init order entirely.
+ */
+const TERRITORY_CENTRES: Record<string, { lat: number; lng: number }> = {
+  PNW: { lat: 47.6062, lng: -122.3321 }, SEA: { lat: 47.6062, lng: -122.3321 },
+  POR: { lat: 45.5152, lng: -122.6784 }, BAY: { lat: 37.7749, lng: -122.4194 },
+  SFO: { lat: 37.7749, lng: -122.4194 }, SV: { lat: 37.3382, lng: -121.8863 },
+  LA: { lat: 34.0522, lng: -118.2437 }, SD: { lat: 32.7157, lng: -117.1611 },
+  PHX: { lat: 33.4484, lng: -112.074 }, DEN: { lat: 39.7392, lng: -104.9903 },
+  SLC: { lat: 40.7608, lng: -111.891 }, LV: { lat: 36.1699, lng: -115.1398 },
+  CTX: { lat: 30.2672, lng: -97.7431 }, ATX: { lat: 30.2672, lng: -97.7431 },
+  DFW: { lat: 32.7767, lng: -96.797 }, HOU: { lat: 29.7604, lng: -95.3698 },
+  SATX: { lat: 29.4241, lng: -98.4936 }, SAT: { lat: 29.4241, lng: -98.4936 },
+  NOLA: { lat: 29.9511, lng: -90.0715 }, MIA: { lat: 25.7617, lng: -80.1918 },
+  TPA: { lat: 27.9506, lng: -82.4572 }, ORL: { lat: 28.5384, lng: -81.3789 },
+  ATL: { lat: 33.749, lng: -84.388 }, CLT: { lat: 35.2271, lng: -80.8431 },
+  RDU: { lat: 35.7796, lng: -78.6382 }, NSH: { lat: 36.1627, lng: -86.7816 },
+  NYC: { lat: 40.7128, lng: -74.006 }, NJ: { lat: 40.7357, lng: -74.1724 },
+  PHL: { lat: 39.9526, lng: -75.1652 }, DC: { lat: 38.9072, lng: -77.0369 },
+  BAL: { lat: 39.2904, lng: -76.6122 }, NE: { lat: 42.3601, lng: -71.0589 },
+  BOS: { lat: 42.3601, lng: -71.0589 }, PIT: { lat: 40.4406, lng: -79.9959 },
+  CLE: { lat: 41.4993, lng: -81.6944 }, CIN: { lat: 39.1031, lng: -84.512 },
+  DET: { lat: 42.3314, lng: -83.0458 }, MW: { lat: 41.8781, lng: -87.6298 },
+  CHI: { lat: 41.8781, lng: -87.6298 }, IND: { lat: 39.7684, lng: -86.1581 },
+  STL: { lat: 38.627, lng: -90.1994 }, MSP: { lat: 44.9778, lng: -93.265 },
+  KC: { lat: 39.0997, lng: -94.5786 }, OKC: { lat: 35.4676, lng: -97.5164 },
+};
+const US_CENTRE = { lat: 39.8283, lng: -98.5795 };
+
+function geocodeTech(
+  techName: string,
+  territoryCode: string | undefined,
+  territoryName: string | undefined,
+): { lat: number; lng: number } {
+  const base =
+    (territoryCode && TERRITORY_CENTRES[territoryCode.toUpperCase()]) ||
+    (territoryName &&
+      TERRITORY_CENTRES[territoryName.replace(/\s+/g, "").toUpperCase()]) ||
+    US_CENTRE;
+  // djb2 hash → ±0.04° (~3 mi) jitter so techs in the same metro don't stack.
+  let h = 5381;
+  const seed = techName ?? "";
+  for (let i = 0; i < seed.length; i++) {
+    h = ((h << 5) + h + seed.charCodeAt(i)) | 0;
+  }
+  const a = ((h & 0xffff) / 0xffff) * 2 - 1;
+  const b = (((h >>> 16) & 0xffff) / 0xffff) * 2 - 1;
+  return { lat: base.lat + a * 0.04, lng: base.lng + b * 0.04 };
+}
 
 /**
  * Seeds the configuration tier (territories, WO types, incident types + service tasks,
