@@ -899,19 +899,23 @@ export async function seedFromPreset(
           payload["ContactId@odata.bind"] = `/contacts(${contactId})`;
         }
         if (knobs.geocodeResources) {
-          // Auto-geocode: territory metro centre + per-name jitter. Sets
-          // start/end location to "Resource Address" (690970000) so RSO
-          // routes from this lat/long. Wrapped defensively so any failure
-          // resolving a coord (or any unexpected runtime issue) skips the
-          // geocoding step instead of crashing the entire seed.
+          // Auto-geocode: territory metro centre + per-name jitter.
+          // We deliberately do NOT set msdyn_startlocation/endlocation =
+          // 690970000 ("Resource Address") here — that triggers the FS
+          // plugin to validate the *Contact*'s address1_latitude/longitude
+          // and 400 with "latitude or longitude for the Contact record …
+          // is invalid" if the Contact's address columns aren't perfectly
+          // populated. Stamping lat/long directly on the resource is
+          // enough for map visualization and RSO will fall back to these
+          // when no start location override is set. Wrapped defensively
+          // so any failure resolving a coord skips the geocoding step
+          // instead of crashing the entire seed.
           try {
             const coord = geocodeTech(
               t.name,
               t.primaryTerritoryCode,
               territoryNameByCode[t.primaryTerritoryCode],
             );
-            payload.msdyn_startlocation = 690970000; // Resource Address
-            payload.msdyn_endlocation = 690970000;
             payload.msdyn_latitude = coord.lat;
             payload.msdyn_longitude = coord.lng;
           } catch (err) {
@@ -976,9 +980,9 @@ export async function seedFromPreset(
               territoryNameByCode[t.primaryTerritoryCode],
             );
             try {
+              // Stamp lat/long only — see note in build() above for why
+              // we don't set msdyn_startlocation = Resource Address.
               await dv.update("bookableresources", resourceId, {
-                msdyn_startlocation: 690970000,
-                msdyn_endlocation: 690970000,
                 msdyn_latitude: coord.lat,
                 msdyn_longitude: coord.lng,
               });

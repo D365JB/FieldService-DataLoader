@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.31.3";
+export const APP_VERSION = "v1.31.4";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.31.4",
+    date: "May 1, 2026",
+    tag: "FIX",
+    fixes: [
+      "**Bookable Resource create no longer 400s with *\"latitude or longitude for the Contact record … is invalid\"*.** The previous fix stamped lat/long on the Contact, but the FS plugin's validation of *Resource Address* mode is too strict for synthetic demo contacts (no full street address, etc.). Dropped the `msdyn_startlocation`/`endlocation = Resource Address` flag from the bookable resource payload. Lat/long is still written to both the Contact and the resource, so map pins and RSO routing keep working — without triggering the plugin's Contact-address validation.",
+    ],
+  },
   {
     version: "v1.31.3",
     date: "May 1, 2026",
