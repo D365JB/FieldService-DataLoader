@@ -2169,6 +2169,86 @@ export async function seedFromPreset(
     });
   }
 
+  // ── Resource Requirements: from/to dates ─────────────────────────────────
+  // FS auto-creates one msdyn_resourcerequirement per WO. The schedule
+  // board's Open Requirements tab binds its From Date / To Date columns
+  // (and the date-range filter) to msdyn_fromdate / msdyn_todate on that
+  // requirement record. Without these, the columns are blank and the
+  // board's date filter excludes the rows entirely. We patch only the
+  // truly-Open WOs (targetStatus === Open-Unscheduled) — Scheduled and
+  // Closed-Posted WOs already have a booking that drives placement.
+  const openWoIds = woMeta
+    .filter((m) => m.targetStatus === 690970000)
+    .map((m) => m.woId);
+  if (openWoIds.length > 0) {
+    // Window: today @ workdayStartHour → today + daysForward @ workdayStartHour+8.
+    // Matches the same anchor used by Bookings so the dispatcher sees a
+    // consistent demo window across Unscheduled and Scheduled buckets.
+    const reqFrom = new Date();
+    reqFrom.setHours(knobs.workdayStartHour, 0, 0, 0);
+    const reqTo = new Date(reqFrom);
+    reqTo.setDate(reqTo.getDate() + Math.max(1, knobs.daysForward));
+    reqTo.setHours(knobs.workdayStartHour + 8, 0, 0, 0);
+    const fromIso = reqFrom.toISOString();
+    const toIso = reqTo.toISOString();
+    onProgress({
+      step: "Resource Requirements",
+      done: 0,
+      total: openWoIds.length,
+    });
+    for (let i = 0; i < openWoIds.length; i++) {
+      const woId = openWoIds[i];
+      let reqId: string | undefined;
+      try {
+        const rows = await dv.query<{ msdyn_resourcerequirementid: string }>(
+          "msdyn_resourcerequirements",
+          {
+            filter: `_msdyn_workorder_value eq ${woId}`,
+            select: ["msdyn_resourcerequirementid"],
+            top: 1,
+          },
+        );
+        reqId = rows[0]?.msdyn_resourcerequirementid;
+      } catch {
+        /* lookup failed — record skip below */
+      }
+      if (!reqId) {
+        recordSkip(result, "resourceRequirements", {
+          recordLabel: `WO ${woId.slice(0, 8)}`,
+          reason: "lookup-not-found",
+          message: "No msdyn_resourcerequirement found for WO",
+        });
+        onProgress({
+          step: "Resource Requirements",
+          done: i + 1,
+          total: openWoIds.length,
+          detail: `WO ${woId.slice(0, 8)} (skipped: no requirement)`,
+        });
+        continue;
+      }
+      const patchRes = await safeUpdate(
+        dv,
+        "msdyn_resourcerequirements",
+        reqId,
+        { msdyn_fromdate: fromIso, msdyn_todate: toIso },
+        makeSafeCtx(
+          result,
+          "resourceRequirements",
+          "Resource Requirements",
+          `WO ${woId.slice(0, 8)}`,
+        ),
+      );
+      onProgress({
+        step: "Resource Requirements",
+        done: i + 1,
+        total: openWoIds.length,
+        detail: patchRes.ok
+          ? `WO ${woId.slice(0, 8)} dated`
+          : `WO ${woId.slice(0, 8)} (skipped: ${patchRes.skipped.reason})`,
+      });
+    }
+  }
+
   // ── WO Service Tasks (Phase 2) ───────────────────────────────────────────
   // For each created WO, attach 2–4 service tasks from the catalog so the
   // checklist surfaces in demos. Skipped silently if no service-task types

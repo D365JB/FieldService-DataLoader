@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.40.1";
+export const APP_VERSION = "v1.40.2";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.40.2",
+    date: "May 1, 2026",
+    tag: "FEAT",
+    features: [
+      "**Open Requirements now have From / To dates on the schedule board.** FS auto-creates one `msdyn_resourcerequirement` per Work Order, but the auto-created row leaves `msdyn_fromdate` and `msdyn_todate` null — which means the schedule board's Open Requirements tab shows blank From Date / To Date columns and the board's date-range filter excludes those rows entirely. Generate now adds a new \"Resource Requirements\" phase right after Work Orders that patches each Unscheduled WO's requirement with a window of today @ `workdayStartHour` through today + `daysForward` @ `workdayStartHour + 8h`. The window matches the same anchor used by the Bookings phase, so the dispatcher sees a consistent demo window across the Unscheduled and Scheduled buckets. Scheduled and Closed-Posted WOs are intentionally skipped — those already have a booking that drives placement on the board.",
+    ],
+  },
   {
     version: "v1.40.1",
     date: "May 1, 2026",
