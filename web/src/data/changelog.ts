@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.41.2";
+export const APP_VERSION = "v1.41.3";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.41.3",
+    date: "May 1, 2026",
+    tag: "FIX",
+    fixes: [
+      "**Schedule Assistant now finds matching resources first time — bookable resources actually get working hours and the availability-search flag.** Diagnosing the \"No resources are available for this requirement\" message in the Field Service Schedule Assistant against a freshly-seeded org with otherwise complete data revealed two missing pieces on every bookable resource: (1) `msdyn_enableforavailabilitysearch` was null/false (Schedule Assistant filters these resources out entirely), and (2) the auto-created calendar on each resource had no rules at all (Schedule Assistant treats resources with no working hours as never-available regardless of territory or characteristic match). v1.41.3 fixes both: (a) the bookable-resource create payload now sets `msdyn_enableforavailabilitysearch: true`, and the heal pass for picked-existing resources patches the same column; (b) a brand-new \"Work Hours\" phase runs right after Bookable Resources — for every resource (created or picked) it fetches the auto-created `_calendarid_value` and POSTs to the unbound FS action `msdyn_SaveCalendar` with a single weekly recurrence rule (Mon–Fri, 8 AM–5 PM Pacific, capacity 1, anchored on 2024-01-01 which was a Monday). Reference: the official Edit work hour calendars by using APIs page at learn.microsoft.com/dynamics365/field-service/field-service-work-hours-calendar-api — `CalendarEventInfo` is a single JSON string parameter with `CalendarId`, `EntityLogicalName: \"bookableresource\"`, `TimeZoneCode: 4`, and a `RulesAndRecurrences` array containing a `Rules` array plus `RecurrencePattern: \"FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TU,WE,TH,FR\"`. The new phase appears in the live progress card; failures classify as a skip under `workHours` so a single bad row doesn't abort the run. Net effect: from a fresh Generate, every Open Work Order's auto-created Resource Requirement now matches at least one resource end-to-end (territory + characteristic + work hours + availability-search flag all populated), so clicking the schedule board's Find Resources button returns matches without manual configuration.",
+    ],
+  },
   {
     version: "v1.41.2",
     date: "May 1, 2026",

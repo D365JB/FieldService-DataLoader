@@ -43,6 +43,7 @@ const STEP_ORDER = [
   "Accounts",
   "Technician Contacts",
   "Bookable Resources",
+  "Work Hours",
   "Functional Locations",
   "Customer Assets",
   "Service Task Types",

@@ -1090,6 +1090,13 @@ export async function seedFromPreset(
           // Required field on this org. 4 = Pacific Time (US & Canada).
           // Standard Windows TimeZoneCode; safe US default for demo data.
           timezone: 4,
+          // Schedule Assistant filters out any resource where this is false
+          // — without it set to true, no amount of work hours, characteristics,
+          // or territories will make the resource appear as a match. The
+          // FS UI sets this to true by default for new resources, but at the
+          // Web API level it can land null/false depending on plugin config,
+          // so we set it explicitly. v1.41.3.
+          msdyn_enableforavailabilitysearch: true,
         };
         if (contactId) {
           // Nav property name on bookableresource is `ContactId` (PascalCase
@@ -1136,6 +1143,7 @@ export async function seedFromPreset(
           _contactid_value: string | null;
           msdyn_latitude?: number | null;
           msdyn_longitude?: number | null;
+          msdyn_enableforavailabilitysearch?: boolean | null;
         }>("bookableresources", {
           filter: `bookableresourceid eq ${resourceId}`,
           select: [
@@ -1143,6 +1151,7 @@ export async function seedFromPreset(
             "_contactid_value",
             "msdyn_latitude",
             "msdyn_longitude",
+            "msdyn_enableforavailabilitysearch",
           ],
           top: 1,
         });
@@ -1159,6 +1168,17 @@ export async function seedFromPreset(
             // Most common cause: existing bookings prevent type change. Log and
             // continue — demo will still mostly work with the existing rows.
             console.warn(`Could not heal bookable resource ${t.name} to Contact type:`, err);
+          }
+        }
+        // Heal availability-search flag (Schedule Assistant excludes
+        // resources where this is false — see v1.41.3 build() comment).
+        if (cur.msdyn_enableforavailabilitysearch !== true) {
+          try {
+            await dv.update("bookableresources", resourceId, {
+              msdyn_enableforavailabilitysearch: true,
+            });
+          } catch {
+            /* non-critical — best effort */
           }
         }
         // Heal geocoding when the user has the toggle on and this resource
@@ -1319,6 +1339,103 @@ export async function seedFromPreset(
         done: augDone,
         total: resourceEntries.length,
         detail: resourceName,
+      });
+    }
+  }
+
+  // ── Work Hours ───────────────────────────────────────────────────────────
+  // Apply a Mon–Fri 8 AM–5 PM Pacific weekly recurrence to every bookable
+  // resource's auto-created calendar via the FS unbound action
+  // `msdyn_SaveCalendar`. Without working hours rules, the Schedule
+  // Assistant treats a resource as never-available and returns "No
+  // resources are available for this requirement" even when the resource
+  // matches the requirement's territory + characteristics. Reference:
+  // https://learn.microsoft.com/en-us/dynamics365/field-service/field-service-work-hours-calendar-api
+  //
+  // For each resource we:
+  //   1. Fetch its `_calendarid_value` (auto-created on insert).
+  //   2. POST `/msdyn_SaveCalendar` with a single weekly recurrence rule.
+  // Idempotency: re-running creates a parallel rule which Save Calendar V1
+  // dedupes by replacing the most-recent overlap (per "What happens if
+  // there are overlapping rules?" doc). For demo data this is fine — the
+  // calendar ends with exactly one Mon–Fri 8a–5p rule.
+  if (Object.keys(result.resourceIds).length > 0) {
+    const whEntries = Object.entries(result.resourceIds);
+    onProgress({ step: "Work Hours", done: 0, total: whEntries.length });
+    // Anchor on a known Monday so the BYDAY clause makes sense without
+    // any date-juggling. 2024-01-01 was a Monday.
+    const anchor = "2024-01-01";
+    const startTime = `${anchor}T08:00:00.000Z`;
+    const endTime = `${anchor}T17:00:00.000Z`;
+    const tzCode = 4; // Pacific Time (US & Canada) — matches resource.timezone
+    for (let i = 0; i < whEntries.length; i++) {
+      const [resourceName, resourceId] = whEntries[i];
+      let detail = "applied";
+      try {
+        // Fetch the auto-created CalendarId.
+        const rows = await dv.query<{ _calendarid_value: string | null }>(
+          "bookableresources",
+          {
+            filter: `bookableresourceid eq ${resourceId}`,
+            select: ["_calendarid_value"],
+            top: 1,
+          },
+        );
+        const calendarId = rows[0]?._calendarid_value;
+        if (!calendarId) {
+          detail = "skipped (no calendarid)";
+        } else {
+          const calendarEventInfo = JSON.stringify({
+            CalendarId: calendarId,
+            EntityLogicalName: "bookableresource",
+            TimeZoneCode: tzCode,
+            RulesAndRecurrences: [
+              {
+                Rules: [
+                  {
+                    StartTime: startTime,
+                    EndTime: endTime,
+                    Effort: 1,
+                    WorkHourType: 0,
+                  },
+                ],
+                RecurrencePattern:
+                  "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TU,WE,TH,FR",
+              },
+            ],
+          });
+          const res = await dv.request("/msdyn_SaveCalendar", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ CalendarEventInfo: calendarEventInfo }),
+          });
+          if (!res.ok) {
+            const text = await res.text().catch(() => "");
+            // Most common: "Invalid recurrence pattern" or already-applied.
+            // Both are non-fatal for the demo.
+            recordSkip(result, "workHours", {
+              reason: "validation",
+              message: `msdyn_SaveCalendar ${res.status}: ${text.slice(0, 200)}`,
+              recordLabel: resourceName,
+              step: "Work Hours",
+            });
+            detail = `skipped (${res.status})`;
+          }
+        }
+      } catch (err) {
+        recordSkip(result, "workHours", {
+          reason: "validation",
+          message: (err as Error)?.message ?? "unknown",
+          recordLabel: resourceName,
+          step: "Work Hours",
+        });
+        detail = "skipped (error)";
+      }
+      onProgress({
+        step: "Work Hours",
+        done: i + 1,
+        total: whEntries.length,
+        detail: `${resourceName} — ${detail}`,
       });
     }
   }
