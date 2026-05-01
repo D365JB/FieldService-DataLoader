@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.21.3";
+export const APP_VERSION = "v1.21.4";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.21.4",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Bookable Resources** heal step now selects the correct lookup column `_contactid_value` (not `_contact_value`). The heal in v1.21.3 short-circuited the entire run with *\"Could not find a property named '_contact_value'\"*; column name corrected.",
+    ],
+  },
   {
     version: "v1.21.3",
     date: "April 30, 2026",

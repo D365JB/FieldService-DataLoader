@@ -717,15 +717,15 @@ export async function seedFromPreset(
         if (!contactId) return;
         const rows = await dv.query<{
           resourcetype: number | null;
-          _contact_value: string | null;
+          _contactid_value: string | null;
         }>("bookableresources", {
           filter: `bookableresourceid eq ${resourceId}`,
-          select: ["resourcetype", "_contact_value"],
+          select: ["resourcetype", "_contactid_value"],
           top: 1,
         });
         const cur = rows[0];
         if (!cur) return;
-        if (cur.resourcetype === 2 && cur._contact_value === contactId) return;
+        if (cur.resourcetype === 2 && cur._contactid_value === contactId) return;
         try {
           await dv.update("bookableresources", resourceId, {
             resourcetype: 2,
