@@ -102,6 +102,23 @@ export function classifyError(err: unknown): SkipReason | null {
     return "posted-wo";
   }
 
+  // FS plugin: re-opening a WO is blocked because it has bookings already
+  // in Scheduled / In Progress / Completed. Same recommended action as
+  // Posted WOs (skip child-row attachment so the run continues), so we
+  // classify under "posted-wo". Triggered v1.39.5 by an existing-mode
+  // Customer Assets re-run that previously left WOs with live bookings.
+  // Real error: `400 You can't change the status to "Unscheduled" because
+  // the work order has bookings that have a "Scheduled," "In Progress,"
+  // or "Completed" status.`
+  if (
+    (msg.includes("can't change the status") ||
+      msg.includes("cannot change the status") ||
+      msg.includes("can\u2019t change the status")) &&
+    msg.includes("unscheduled")
+  ) {
+    return "posted-wo";
+  }
+
   // FS plugin: asset's account doesn't match WO service account.
   // Triggered v1.31.5 at WO #30 mid-run.
   if (

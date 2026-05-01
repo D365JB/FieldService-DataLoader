@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.39.5";
+export const APP_VERSION = "v1.39.6";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.39.6",
+    date: "May 1, 2026",
+    tag: "FIX",
+    fixes: [
+      "**Generation no longer aborts on *\"can't change the status to Unscheduled\"*.** When a previous run left Work Orders with Scheduled / In Progress / Completed bookings, the seeder tried to re-open them so it could attach this run's child rows; the FS plugin refused and the *whole* run failed at WO 1/8 with a red ✕. The error classifier now recognises this exact wording and treats it the same way Posted WOs are treated: the WO is skipped (its child rows aren't attached) and the run continues with the remaining WOs. The skipped WO appears on the run summary under *Records skipped* with reason *Work order is already Posted*, so it's still visible.",
+    ],
+  },
   {
     version: "v1.39.5",
     date: "May 1, 2026",
