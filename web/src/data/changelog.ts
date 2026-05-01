@@ -7,9 +7,18 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.33.0";
+export const APP_VERSION = "v1.33.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.33.1",
+    date: "May 1, 2026",
+    tag: "POLISH",
+    improvements: [
+      "**Customer Analyzer: press Enter in the URL field to run.** No more reaching for the mouse during a demo.",
+      "**Live status during analysis.** The card now shows the current stage (*Fetching company website* → *Read N chars, asking GPT…* → *Building your tailored preset*), an animated spinner, and an elapsed-seconds counter. After 30s it surfaces a soft \"AI service may be under load\" hint so the user knows the app isn't hung.",
+    ],
+  },
   {
     version: "v1.33.0",
     date: "May 1, 2026",

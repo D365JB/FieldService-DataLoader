@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMsal } from "@azure/msal-react";
-import { Sparkle, Globe, Warning, ArrowRight, FastForward, Package } from "@phosphor-icons/react";
+import { Sparkle, Globe, Warning, ArrowRight, FastForward, Package, CircleNotch } from "@phosphor-icons/react";
 import { AppHeader } from "@/components/AppHeader";
 import { PresetReview } from "@/components/PresetReview";
 import { analyzeCompany } from "@/lib/preset";
@@ -18,11 +18,32 @@ export function Analyze() {
   const [companyUrl, setCompanyUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string>("");
+  const [elapsed, setElapsed] = useState(0);
+  const startedAtRef = useRef<number | null>(null);
   const [preset, setPreset] = useState<FsPreset | null>(() => {
     // Restore the previously generated preset so navigating back shows it.
     const raw = orgStore.getPreset();
     return raw ? (JSON.parse(raw) as FsPreset) : null;
   });
+
+  // Tick the elapsed-time counter while busy so the user can see progress
+  // is being made (or, if it stalls way past the typical 10–20s, knows
+  // something's wrong).
+  useEffect(() => {
+    if (!busy) {
+      setElapsed(0);
+      startedAtRef.current = null;
+      return;
+    }
+    startedAtRef.current = Date.now();
+    const id = window.setInterval(() => {
+      if (startedAtRef.current) {
+        setElapsed(Math.floor((Date.now() - startedAtRef.current) / 1000));
+      }
+    }, 250);
+    return () => window.clearInterval(id);
+  }, [busy]);
 
   if (!accounts[0]) {
     navigate("/");
@@ -30,11 +51,14 @@ export function Analyze() {
   }
 
   async function handleAnalyze() {
+    if (!companyUrl || busy) return;
     setError(null);
     setPreset(null);
+    setStatus("Starting…");
     setBusy(true);
     try {
-      const result = await analyzeCompany(companyUrl);
+      const result = await analyzeCompany(companyUrl, (msg) => setStatus(msg));
+      setStatus("Done.");
       setPreset(result);
       orgStore.setPreset(JSON.stringify(result));
     } catch (err) {
@@ -95,8 +119,15 @@ export function Analyze() {
                 type="url"
                 value={companyUrl}
                 onChange={(e) => setCompanyUrl(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void handleAnalyze();
+                  }
+                }}
                 placeholder="https://contoso-hvac.com"
-                className="w-full bg-bg-elevated border border-border rounded-lg pl-10 pr-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-accent"
+                disabled={busy}
+                className="w-full bg-bg-elevated border border-border rounded-lg pl-10 pr-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-accent disabled:opacity-60"
               />
             </div>
             <button
@@ -104,15 +135,35 @@ export function Analyze() {
               disabled={!companyUrl || busy}
               className="btn-primary flex items-center gap-2 disabled:opacity-50 whitespace-nowrap"
             >
-              <Sparkle size={18} weight="bold" />
+              {busy ? (
+                <CircleNotch size={18} weight="bold" className="animate-spin" />
+              ) : (
+                <Sparkle size={18} weight="bold" />
+              )}
               {busy ? "Analyzing…" : "Analyze"}
             </button>
           </div>
 
           {busy && (
-            <div className="mt-4 text-sm text-slate-400">
-              Fetching site → extracting text → asking GPT for a vertical-specific preset.
-              This usually takes 10–20 seconds.
+            <div className="mt-4 p-3 rounded-lg bg-accent/5 border border-accent/30 text-sm">
+              <div className="flex items-center gap-2 text-accent font-medium">
+                <CircleNotch size={16} weight="bold" className="animate-spin" />
+                <span>{status || "Working…"}</span>
+                <span className="ml-auto font-mono text-xs text-slate-400">
+                  {elapsed}s
+                </span>
+              </div>
+              <div className="mt-1.5 text-xs text-slate-400">
+                Typical run is 10–20 seconds. We fetch the site, extract its
+                text, then ask GPT to infer the Field Service vertical and
+                propose a tailored preset.
+                {elapsed > 30 && (
+                  <span className="block mt-1 text-amber-300">
+                    Taking longer than usual — the AI service may be under
+                    load. We'll keep trying.
+                  </span>
+                )}
+              </div>
             </div>
           )}
 

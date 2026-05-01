@@ -203,12 +203,21 @@ Generate a Field Service preset for this company as JSON matching exactly this s
 
 import { fetchWebsite, generateJson } from "./aoai";
 
-export async function analyzeCompany(url: string): Promise<FsPreset> {
+export async function analyzeCompany(
+  url: string,
+  onStatus?: (msg: string) => void,
+): Promise<FsPreset> {
+  onStatus?.("Fetching company website…");
   const site = await fetchWebsite(url);
-  return generateJson<FsPreset>({
+  onStatus?.(
+    `Read ${site.text.length.toLocaleString()} chars from "${site.title || site.url}". Asking GPT to infer the Field Service vertical…`,
+  );
+  const result = await generateJson<FsPreset>({
     systemPrompt: SYSTEM_PROMPT,
     prompt: USER_TEMPLATE(site.url, site.title, site.description, site.text),
     maxCompletionTokens: 9000,
     reasoningEffort: "low",
   });
+  onStatus?.("Building your tailored preset…");
+  return result;
 }
