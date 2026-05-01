@@ -30,6 +30,19 @@ export interface GenerationKnobs {
   daysBackward: number;
   /** Workday starts at this local hour (0–23). Bookings land between here and start+8h. */
   workdayStartHour: number;
+  /**
+   * When true, technician booking selection is weighted (some techs get
+   * 2-3× more bookings than others) instead of plain round-robin. Weights
+   * are derived deterministically from the technician name so re-runs are
+   * stable.
+   */
+  weightedTechs: boolean;
+  /**
+   * When true, only technicians whose `primarySkill` substring-matches the
+   * WO's incident type get considered for that WO's booking. Falls back to
+   * all techs when no match exists, so demos still work.
+   */
+  skillMatch: boolean;
 }
 
 export const DEFAULT_KNOBS: GenerationKnobs = {
@@ -39,6 +52,8 @@ export const DEFAULT_KNOBS: GenerationKnobs = {
   daysForward: 14,
   daysBackward: 21,
   workdayStartHour: 9,
+  weightedTechs: true,
+  skillMatch: false,
 };
 
 const KEY_PREFIX = "fsdl:knobs:";
@@ -118,4 +133,38 @@ export function deterministicShuffle<T>(arr: T[], seed: number): T[] {
     [out[i], out[j]] = [out[j], out[i]];
   }
   return out;
+}
+
+/**
+ * Deterministic 1–3 weight derived from a string. Used by the weighted
+ * technician picker so the same name always gets the same multiplier
+ * across runs (useful for "top performer always has the most bookings").
+ */
+export function weightFromName(name: string): number {
+  let h = 5381;
+  for (let i = 0; i < name.length; i++) h = ((h << 5) + h + name.charCodeAt(i)) | 0;
+  return 1 + Math.abs(h) % 3; // 1, 2, or 3
+}
+
+/**
+ * Returns indices into `techNames` whose primarySkill substring-matches
+ * the incidentName. Match is case-insensitive in either direction. When
+ * `enabled` is false (or the filter would be empty), all indices are
+ * returned so booking still happens.
+ */
+export function filterTechsBySkill(
+  techNames: string[],
+  techSkills: string[],
+  incidentName: string,
+  enabled: boolean,
+): number[] {
+  const all = techNames.map((_, i) => i);
+  if (!enabled) return all;
+  const incidentLower = incidentName.toLowerCase();
+  const matched = all.filter((i) => {
+    const skill = (techSkills[i] ?? "").toLowerCase();
+    if (!skill) return false;
+    return skill.includes(incidentLower) || incidentLower.includes(skill);
+  });
+  return matched.length > 0 ? matched : all;
 }

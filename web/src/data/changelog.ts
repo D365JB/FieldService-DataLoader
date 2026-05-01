@@ -7,9 +7,18 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.24.0";
+export const APP_VERSION = "v1.25.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.25.0",
+    date: "April 30, 2026",
+    tag: "FEATURE",
+    features: [
+      "**Weighted technician picker.** Bookings no longer round-robin evenly across techs. Each tech gets a deterministic 1×/2×/3× weight derived from their name, so the same person consistently looks like a 'top performer' across runs. Toggle off to fall back to flat round-robin.",
+      "**Skill-matched bookings.** Optional toggle that filters booking candidates to techs whose `primarySkill` substring-matches the WO's incident type (case-insensitive, either direction). Empty match falls back to the full roster so nothing goes unassigned.",
+    ],
+  },
   {
     version: "v1.24.0",
     date: "April 30, 2026",

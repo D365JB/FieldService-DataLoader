@@ -5,6 +5,8 @@ import {
   buildStatusBag,
   buildPriorityBag,
   deterministicShuffle,
+  filterTechsBySkill,
+  weightFromName,
   type GenerationKnobs,
 } from "@/lib/generationKnobs";
 
@@ -1340,7 +1342,15 @@ export async function seedFromPreset(
     status: number;
     targetStatus: number;
     accountId: string;
+    incidentName: string;
   }> = [];
+  // Incident-id → name lookup so we can record the human-readable name
+  // for skill matching during booking.
+  const incidentNameById: Record<string, string> = {};
+  for (const inc of preset.incidentTypes ?? []) {
+    const id = result.incidentTypeIds[inc.name];
+    if (id) incidentNameById[id] = inc.name;
+  }
   for (let i = 0; i < targetWoCount; i++) {
     const accountId = accountIdList[i % accountIdList.length];
     const incidentId = incidentIdList[i % incidentIdList.length];
@@ -1431,7 +1441,13 @@ export async function seedFromPreset(
     }
     result.workOrderIds.push(woId);
     trackCreated(result, "workOrders", woId);
-    woMeta.push({ woId, status: effectiveStatus, targetStatus, accountId });
+    woMeta.push({
+      woId,
+      status: effectiveStatus,
+      targetStatus,
+      accountId,
+      incidentName: incidentNameById[incidentId] ?? "",
+    });
     // Both Scheduled and target-Closed WOs need a booking + time entry.
     // (Closed ones get backdated bookings in the Bookings phase.)
     if (targetStatus === 690970001 || targetStatus === 690970004) {
@@ -1513,6 +1529,28 @@ export async function seedFromPreset(
   // shows historical service activity) marked with the "Completed"
   // booking status when available.
   const resourceIdList = Object.values(result.resourceIds);
+  // Tech roster (in preset order) used for weighted / skill-matched picks
+  // below. Each entry pairs a tech's name + primarySkill with the resource
+  // record we already created for them.
+  const techRoster: Array<{ name: string; skill: string; resourceId: string; weight: number }> =
+    [];
+  for (const t of preset.sampleTechnicians ?? []) {
+    const rid = result.resourceIds[t.name];
+    if (rid) {
+      techRoster.push({
+        name: t.name,
+        skill: t.primarySkill,
+        resourceId: rid,
+        weight: knobs.weightedTechs ? weightFromName(t.name) : 1,
+      });
+    }
+  }
+  // Pre-build a weighted index pool so even without skill match we get
+  // a "top performer" skew. Each tech's index appears `weight` times.
+  const weightedFullPool: number[] = [];
+  techRoster.forEach((t, i) => {
+    for (let w = 0; w < t.weight; w++) weightedFullPool.push(i);
+  });
   const skipBookings = (options.bookings?.mode ?? "create") !== "create";
   let bookingTarget = 0;
   if (!skipBookings && scheduledWoIds.length > 0 && resourceIdList.length > 0) {
@@ -1600,7 +1638,30 @@ export async function seedFromPreset(
 
     for (let i = 0; i < scheduledWoIds.length; i++) {
       const woId = scheduledWoIds[i];
-      const resourceId = resourceIdList[i % resourceIdList.length];
+      // Resource pick: skill-match filter first, then weighted pool inside
+      // the candidate set. Falls back to the flat resource list if the
+      // roster is somehow empty (e.g. all techs reused from existing).
+      let resourceId: string;
+      if (techRoster.length > 0) {
+        const incidentName =
+          woMeta.find((m) => m.woId === woId)?.incidentName ?? "";
+        const candidateIdxs = filterTechsBySkill(
+          techRoster.map((t) => t.name),
+          techRoster.map((t) => t.skill),
+          incidentName,
+          knobs.skillMatch,
+        );
+        // Weighted pool restricted to candidates.
+        const candidatePool: number[] = [];
+        for (const idx of candidateIdxs) {
+          for (let w = 0; w < techRoster[idx].weight; w++) candidatePool.push(idx);
+        }
+        const pool = candidatePool.length > 0 ? candidatePool : weightedFullPool;
+        const chosen = pool[i % pool.length];
+        resourceId = techRoster[chosen].resourceId;
+      } else {
+        resourceId = resourceIdList[i % resourceIdList.length];
+      }
       // Look up whether this WO is target-Closed so we know to backdate.
       const targetIsClosed =
         woMeta.find((m) => m.woId === woId)?.targetStatus === 690970004;

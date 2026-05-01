@@ -87,6 +87,22 @@ export function GenerationKnobsPanel({ orgUrl, value, onChange }: Props) {
         />
       </div>
 
+      {/* Tech selection toggles */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
+        <ToggleRow
+          label="Weighted technician picker"
+          hint="Some techs get 2–3× more bookings (top-performer skew)."
+          value={value.weightedTechs}
+          onChange={(b) => update({ weightedTechs: b })}
+        />
+        <ToggleRow
+          label="Skill-matched bookings"
+          hint="Only techs whose primarySkill substring-matches the WO incident."
+          value={value.skillMatch}
+          onChange={(b) => update({ skillMatch: b })}
+        />
+      </div>
+
       {/* Status mix */}
       <div className="mb-5">
         <div className="flex items-baseline justify-between mb-2">
@@ -200,5 +216,27 @@ function PercentSlider(props: {
         {props.value}%
       </div>
     </div>
+  );
+}
+
+function ToggleRow(props: {
+  label: string;
+  hint?: string;
+  value: boolean;
+  onChange: (b: boolean) => void;
+}) {
+  return (
+    <label className="flex items-start gap-3 p-3 rounded-lg border border-border bg-bg-base/40 cursor-pointer hover:border-accent/60">
+      <input
+        type="checkbox"
+        checked={props.value}
+        onChange={(e) => props.onChange(e.target.checked)}
+        className="mt-0.5 accent-accent"
+      />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm text-white">{props.label}</div>
+        {props.hint && <div className="text-xs text-muted mt-0.5">{props.hint}</div>}
+      </div>
+    </label>
   );
 }
