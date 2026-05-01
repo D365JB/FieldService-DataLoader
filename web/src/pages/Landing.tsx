@@ -69,19 +69,21 @@ export function Landing() {
               {APP_VERSION}
             </button>
           </div>
-          <div className="text-xs text-slate-400 mb-6 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
-            <span>
-              Built by <strong className="font-semibold text-slate-200">James Bowen</strong>
-            </span>
-            <span aria-hidden="true" className="text-slate-600">•</span>
-            <a
-              href="mailto:jamesbowen@microsoft.com"
-              className="text-accent hover:underline"
-            >
-              jamesbowen@microsoft.com
-            </a>
-            <span aria-hidden="true" className="text-slate-600">•</span>
-            <span>Principal Solution Specialist | Manufacturing &amp; Mobility</span>
+          <div className="mb-6 flex justify-center">
+            <div className="inline-flex flex-wrap items-center justify-center gap-x-3 gap-y-1 px-4 py-1.5 rounded-full bg-slate-800/60 border border-slate-700 text-xs text-slate-400">
+              <span>
+                Built by <strong className="font-semibold text-slate-200">James Bowen</strong>
+              </span>
+              <span aria-hidden="true" className="text-slate-600">•</span>
+              <a
+                href="mailto:jamesbowen@microsoft.com"
+                className="text-accent hover:underline"
+              >
+                jamesbowen@microsoft.com
+              </a>
+              <span aria-hidden="true" className="text-slate-600">•</span>
+              <span>Principal Solution Specialist | Manufacturing &amp; Mobility</span>
+            </div>
           </div>
           <h1 className="text-5xl md:text-6xl font-bold text-white mb-6 tracking-tight">
             Realistic Field Service demo data
