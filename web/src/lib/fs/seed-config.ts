@@ -1535,7 +1535,7 @@ export async function seedFromPreset(
       total: bookingMeta.length,
     });
     for (let i = 0; i < bookingMeta.length; i++) {
-      const { woId, resourceId, start, end } = bookingMeta[i];
+      const { bookingId, woId, resourceId, start, end } = bookingMeta[i];
       const durationMinutes = Math.max(
         1,
         Math.round((end.getTime() - start.getTime()) / 60000),
@@ -1570,7 +1570,11 @@ export async function seedFromPreset(
           // 192350000 = Submitted
           msdyn_entrystatus: 192350000,
           "msdyn_bookableresource@odata.bind": `/bookableresources(${resourceId})`,
-          "msdyn_workorder@odata.bind": `/msdyn_workorders(${woId})`,
+          // FS canonical link is via the booking — the WO is reached
+          // transitively. Some orgs don't expose msdyn_workorder as a
+          // navigation property on msdyn_timeentry (OData "undeclared
+          // property" 400), so we bind the booking instead.
+          "msdyn_bookableresourcebooking@odata.bind": `/bookableresourcebookings(${bookingId})`,
         });
         trackCreated(result, "timeEntries", teId);
         const woNumber = result.labels?.workOrders?.[woId];

@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.20.10";
+export const APP_VERSION = "v1.20.11";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.20.11",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Time Entries** now bind to the booking (`msdyn_bookableresourcebooking`) instead of the work order. The `msdyn_workorder` navigation property is not declared on `msdyn_timeentry` in many FS orgs, which produced an OData *undeclared property* 400. The work order is reached transitively through the booking.",
+    ],
+  },
   {
     version: "v1.20.10",
     date: "April 30, 2026",
