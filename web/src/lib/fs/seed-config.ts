@@ -10,7 +10,7 @@ import {
   weightFromName,
   type GenerationKnobs,
 } from "@/lib/generationKnobs";
-import { geocodeTech } from "@/lib/fs/geo";
+import { geocodeTech } from "./geo";
 
 /**
  * Seeds the configuration tier (territories, WO types, incident types + service tasks,

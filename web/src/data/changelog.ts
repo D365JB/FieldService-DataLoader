@@ -7,9 +7,18 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.30.0";
+export const APP_VERSION = "v1.30.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.30.1",
+    date: "May 1, 2026",
+    tag: "FIX",
+    fixes: [
+      "**\"Cannot access 'ut' before initialization\" on Generate.** The geocode helper added in v1.29 was imported via the `@/lib/fs/geo` path alias from a file already inside `lib/fs/` — under Vite's production minifier this can produce a temporal-dead-zone reference when both modules land in the same chunk. Switched to a relative `./geo` import which the bundler treats deterministically.",
+      "Production sourcemaps are now generated alongside the bundle so any future runtime error gives a real `seed-config.ts:line:col` stack in the browser console instead of a minified two-letter variable name.",
+    ],
+  },
   {
     version: "v1.30.0",
     date: "April 30, 2026",

@@ -7,6 +7,11 @@ export default defineConfig({
   resolve: {
     alias: { "@": path.resolve(__dirname, "src") },
   },
+  build: {
+    // Sourcemaps are cheap and let production-only TDZ/closure bugs be
+    // diagnosed straight from the browser console without re-running locally.
+    sourcemap: true,
+  },
   server: {
     port: 5173,
     proxy: {
