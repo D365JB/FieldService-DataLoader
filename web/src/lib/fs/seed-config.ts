@@ -1573,8 +1573,17 @@ export async function seedFromPreset(
           "msdyn_workorder@odata.bind": `/msdyn_workorders(${woId})`,
         });
         trackCreated(result, "timeEntries", teId);
-      } catch {
-        /* per-row best effort — entity may not be enabled in this org */
+        const woNumber = result.labels?.workOrders?.[woId];
+        const label = woNumber
+          ? `${woNumber} — ${start.toLocaleDateString()}`
+          : `Time entry ${i + 1}`;
+        setLabel(result, "timeEntries", teId, label);
+      } catch (e) {
+        // Surface the real error — silent swallow previously hid every
+        // schema/permission failure for all 6 entries.
+        throw new Error(
+          `Time Entry create failed for booking ${i + 1}: ${(e as Error).message ?? e}`,
+        );
       }
       onProgress({
         step: "Time Entries",
@@ -1649,8 +1658,20 @@ export async function seedFromPreset(
               "msdyn_CustomerAsset@odata.bind": `/msdyn_customerassets(${assetId})`,
             });
             trackCreated(result, "iotAlerts", alertId);
-          } catch {
-            /* IoT entity may not be enabled in this org — skip silently */
+            setLabel(
+              result,
+              "iotAlerts",
+              alertId,
+              template.message.length > 60
+                ? template.message.slice(0, 57) + "…"
+                : template.message,
+            );
+          } catch (e) {
+            // Surface the real error so we can fix schema/permission
+            // problems instead of silently failing every alert.
+            throw new Error(
+              `IoT Alert create failed (asset ${assetId.slice(0, 8)}…): ${(e as Error).message ?? e}`,
+            );
           }
         }
         done++;

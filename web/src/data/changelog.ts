@@ -7,9 +7,18 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.20.9";
+export const APP_VERSION = "v1.20.10";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.20.10",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Time Entries** and **IoT Alerts** no longer fail silently. The previous `try/catch` on each row swallowed every schema/permission error, so the steps reported success while creating zero records — both now surface the real Dataverse error so the failure can be diagnosed and fixed.",
+      "Time Entries and IoT Alerts now show meaningful labels in the run output (e.g. *WO-01016 — 5/1/2026*, *Compressor outlet pressure exceeded threshold*).",
+    ],
+  },
   {
     version: "v1.20.9",
     date: "April 30, 2026",
