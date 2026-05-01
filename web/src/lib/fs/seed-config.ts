@@ -696,7 +696,18 @@ export async function seedFromPreset(
         select: ["contactid"],
         top: 1,
       });
-      let contactId = existing[0]?.contactid;
+      let contactId: string | undefined = existing[0]?.contactid;
+      // Validate the candidate still exists. After a Reset, the search index
+      // can briefly return ids for rows that are already deleted, which then
+      // breaks bookableresource create with `Entity 'Contact' With Id = ...
+      // Does Not Exist`. A direct retrieve confirms presence.
+      if (contactId) {
+        try {
+          await dv.retrieve("contacts", contactId, ["contactid"]);
+        } catch {
+          contactId = undefined;
+        }
+      }
       if (!contactId) {
         contactId = await dv.create("contacts", {
           firstname,
@@ -2199,31 +2210,42 @@ export async function deleteRun(
   dv: DataverseClient,
   result: SeedResult,
   onProgress: ProgressFn,
-): Promise<{ deletedByEntity: Record<string, number> }> {
+  options: { selectedSectionTitles?: Set<string> } = {},
+): Promise<{ deletedByEntity: Record<string, number>; deletedIdsByKey: Record<string, string[]> }> {
   const deleted: Record<string, number> = {};
+  const deletedIdsByKey: Record<string, string[]> = {};
+  const selected = options.selectedSectionTitles;
+  const isSelected = (sectionTitle: string): boolean =>
+    !selected || selected.has(sectionTitle);
 
   const sweepIds = async (
     label: string,
+    sectionTitle: string,
     entitySet: string,
     ids: string[],
+    resultKey?: string,
   ): Promise<void> => {
     if (ids.length === 0) return;
+    if (!isSelected(sectionTitle)) return;
     onProgress({ step: label, done: 0, total: ids.length });
     let count = 0;
+    const successIds: string[] = [];
     for (let i = 0; i < ids.length; i++) {
       try {
         await dv.delete(entitySet, ids[i]);
+        successIds.push(ids[i]);
         count++;
       } catch {
         /* swallow individual failures — record may already be gone */
       }
       onProgress({ step: label, done: i + 1, total: ids.length });
     }
-    deleted[entitySet] = count;
+    deleted[entitySet] = (deleted[entitySet] ?? 0) + count;
+    if (resultKey) deletedIdsByKey[resultKey] = successIds;
   };
 
   // Children → parents.
-  await sweepIds("Bookings", "bookableresourcebookings", result.bookingIds);
+  await sweepIds("Bookings", "Bookings", "bookableresourcebookings", result.bookingIds, "bookings");
 
   // Phase 2 entries that reference WOs (e.g. WO Service Tasks) — must be
   // deleted before the WOs themselves.
@@ -2232,13 +2254,13 @@ export async function deleteRun(
     for (const entry of phase2EntityOrder.filter((e) => e.phase === "beforeWo")) {
       const ids = result.createdIds[entry.key];
       if (ids?.length) {
-        await sweepIds(entry.label, entry.entitySet, ids);
+        await sweepIds(entry.label, entry.label, entry.entitySet, ids, entry.key);
         handled.add(entry.key);
       }
     }
   }
 
-  await sweepIds("Work Orders", "msdyn_workorders", result.workOrderIds);
+  await sweepIds("Work Orders", "Work Orders", "msdyn_workorders", result.workOrderIds, "workOrders");
 
   // Phase 2 entries that WOs reference (assets, locations, task types) — safe
   // to delete now that WOs are gone.
@@ -2246,7 +2268,17 @@ export async function deleteRun(
     for (const entry of phase2EntityOrder.filter((e) => e.phase === "afterWo")) {
       const ids = result.createdIds[entry.key];
       if (ids?.length) {
-        await sweepIds(entry.label, entry.entitySet, ids);
+        // Agreement booking sub-rows + auto-created price lists don't appear
+        // as their own picker section — they ride along with "Agreements".
+        const sectionTitle =
+          entry.key === "agreementBookingIncidents" ||
+          entry.key === "agreementBookingProducts" ||
+          entry.key === "agreementBookingServices" ||
+          entry.key === "agreementBookingSetups" ||
+          entry.key === "priceLists"
+            ? "Agreements"
+            : entry.label;
+        await sweepIds(entry.label, sectionTitle, entry.entitySet, ids, entry.key);
         handled.add(entry.key);
       }
     }
@@ -2289,35 +2321,147 @@ export async function deleteRun(
       }
     }
   }
-  await sweepIds("Bookable Resources", "bookableresources", ourResourceIds);
+  await sweepIds("Bookable Resources", "Bookable Resources", "bookableresources", ourResourceIds, "createdResourceIds");
   await sweepIds(
+    "Technician Contacts",
     "Technician Contacts",
     "contacts",
     Object.values(result.idMaps?.technicianContacts ?? {}),
+    "technicianContacts",
   );
 
   await sweepIds(
     "Incident Types",
+    "Incident Types",
     "msdyn_incidenttypes",
     Object.values(result.incidentTypeIds),
+    "incidentTypes",
   );
   await sweepIds(
-    "WO Types",
+    "Work Order Types",
+    "Work Order Types",
     "msdyn_workordertypes",
     Object.values(result.workOrderTypeIds),
+    "workOrderTypes",
   );
   await sweepIds(
     "Characteristics",
+    "Characteristics",
     "characteristics",
     Object.values(result.characteristicIds),
+    "characteristics",
   );
-  await sweepIds("Products", "products", Object.values(result.productIds));
-  await sweepIds("Accounts", "accounts", Object.values(result.accountIds));
+  await sweepIds("Products", "Products", "products", Object.values(result.productIds), "products");
+  await sweepIds("Accounts", "Accounts", "accounts", Object.values(result.accountIds), "accounts");
   await sweepIds(
+    "Territories",
     "Territories",
     "territories",
     Object.values(result.territoryIds),
+    "territories",
   );
 
-  return { deletedByEntity: deleted };
+  return { deletedByEntity: deleted, deletedIdsByKey };
+}
+
+/**
+ * Section-title parent → children dependency map for partial deletes.
+ * If the user picks a parent, all listed children are also implicitly picked
+ * (transitively closed by the UI). Order in this object doesn't matter.
+ */
+export const SECTION_DEPENDENCIES: Record<string, string[]> = {
+  Accounts: [
+    "Work Orders",
+    "Customer Assets",
+    "Functional Locations",
+    "Agreements",
+  ],
+  "Work Orders": ["Bookings", "WO Service Tasks", "WO Products", "Time Entries"],
+  "Customer Assets": ["IoT Alerts"],
+  "Bookable Resources": ["Bookings", "Time Entries"],
+  "Technician Contacts": ["Bookable Resources"],
+  Products: ["WO Products", "Product Inventory", "Incident Type Products"],
+  Warehouses: ["Product Inventory"],
+  "Incident Types": ["Incident Type Products", "Work Orders"],
+  "Service Task Types": ["WO Service Tasks"],
+  "Work Order Types": ["Work Orders"],
+  Territories: ["Bookable Resources", "Work Orders"],
+  Characteristics: ["Bookable Resources"],
+};
+
+/** Expand a user selection to include all transitive children. */
+export function expandSelection(picked: Iterable<string>): Set<string> {
+  const out = new Set<string>();
+  const stack = [...picked];
+  while (stack.length) {
+    const t = stack.pop()!;
+    if (out.has(t)) continue;
+    out.add(t);
+    for (const c of SECTION_DEPENDENCIES[t] ?? []) stack.push(c);
+  }
+  return out;
+}
+
+/**
+ * Apply the result of a successful partial delete back onto a SeedResult so
+ * the run history record reflects what's left in Dataverse. Mutates in place.
+ */
+export function pruneDeletedFromResult(
+  result: SeedResult,
+  deletedIdsByKey: Record<string, string[]>,
+): SeedResult {
+  const removeFromArray = (arr: string[] | undefined, ids: string[]) =>
+    arr?.filter((id) => !new Set(ids).has(id)) ?? [];
+  const removeFromMap = (map: Record<string, string> | undefined, ids: string[]) => {
+    if (!map) return {};
+    const drop = new Set(ids);
+    return Object.fromEntries(Object.entries(map).filter(([, v]) => !drop.has(v)));
+  };
+  for (const [key, ids] of Object.entries(deletedIdsByKey)) {
+    if (!ids?.length) continue;
+    switch (key) {
+      case "bookings":
+        result.bookingIds = removeFromArray(result.bookingIds, ids);
+        break;
+      case "workOrders":
+        result.workOrderIds = removeFromArray(result.workOrderIds, ids);
+        break;
+      case "createdResourceIds":
+        result.createdResourceIds = removeFromArray(result.createdResourceIds, ids);
+        result.resourceIds = removeFromMap(result.resourceIds, ids);
+        break;
+      case "incidentTypes":
+        result.incidentTypeIds = removeFromMap(result.incidentTypeIds, ids);
+        break;
+      case "workOrderTypes":
+        result.workOrderTypeIds = removeFromMap(result.workOrderTypeIds, ids);
+        break;
+      case "characteristics":
+        result.characteristicIds = removeFromMap(result.characteristicIds, ids);
+        break;
+      case "products":
+        result.productIds = removeFromMap(result.productIds, ids);
+        break;
+      case "accounts":
+        result.accountIds = removeFromMap(result.accountIds, ids);
+        break;
+      case "territories":
+        result.territoryIds = removeFromMap(result.territoryIds, ids);
+        break;
+      default: {
+        // Phase 2 entries live under createdIds[key] / idMaps[key].
+        if (result.createdIds?.[key]) {
+          result.createdIds[key] = removeFromArray(result.createdIds[key], ids);
+        }
+        if (result.idMaps?.[key]) {
+          result.idMaps[key] = removeFromMap(result.idMaps[key], ids);
+        }
+      }
+    }
+    // Also drop labels for removed ids.
+    if (result.labels?.[key]) {
+      for (const id of ids) delete result.labels[key][id];
+    }
+  }
+  return result;
 }

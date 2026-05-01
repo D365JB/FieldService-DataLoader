@@ -16,6 +16,9 @@ import { AppHeader } from "@/components/AppHeader";
 import { DataverseClient, deepLink } from "@/lib/dataverse";
 import {
   deleteRun,
+  expandSelection,
+  pruneDeletedFromResult,
+  SECTION_DEPENDENCIES,
   type SeedProgress,
 } from "@/lib/fs/seed-config";
 import { buildResultSections } from "@/lib/fs/resultSections";
@@ -71,6 +74,8 @@ export function Reset() {
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
+  const [customRunId, setCustomRunId] = useState<string | null>(null);
+  const [customPicks, setCustomPicks] = useState<Set<string>>(new Set());
   const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -96,6 +101,40 @@ export function Reset() {
       setResult(r.deletedByEntity);
       runHistory.remove(orgUrl, run.id);
       setRuns(runHistory.list(orgUrl));
+      setMode("done");
+    } catch (err) {
+      setError((err as Error).message);
+      setMode("error");
+    } finally {
+      setProgress(null);
+    }
+  }
+
+  async function handleDeletePartial(run: RunRecord) {
+    if (customPicks.size === 0) return;
+    setError(null);
+    setResult(null);
+    setActiveRunId(run.id);
+    setMode("running");
+    try {
+      const dv = new DataverseClient({ orgUrl });
+      const expanded = expandSelection(customPicks);
+      const r = await deleteRun(dv, run.result, setProgress, {
+        selectedSectionTitles: expanded,
+      });
+      setResult(r.deletedByEntity);
+      // Apply the prune locally and decide whether to remove or update the
+      // run record. If the result has no records left, drop the run entirely.
+      const pruned = pruneDeletedFromResult({ ...run.result }, r.deletedIdsByKey);
+      const remainingSections = buildResultSections(pruned);
+      if (remainingSections.length === 0) {
+        runHistory.remove(orgUrl, run.id);
+      } else {
+        runHistory.update(orgUrl, run.id, pruned);
+      }
+      setRuns(runHistory.list(orgUrl));
+      setCustomRunId(null);
+      setCustomPicks(new Set());
       setMode("done");
     } catch (err) {
       setError((err as Error).message);
@@ -310,18 +349,33 @@ export function Reset() {
                           </div>
                         </div>
                       </button>
-                      <button
-                        onClick={() => handleDeleteRun(r)}
-                        disabled={running}
-                        className="text-xs px-3 py-1.5 rounded-md bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 flex items-center gap-1.5 disabled:opacity-40"
-                      >
-                        {isActive ? (
-                          <CircleNotch size={12} className="animate-spin" />
-                        ) : (
-                          <Trash size={12} weight="bold" />
-                        )}
-                        {isActive ? "Deleting…" : "Delete this run"}
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => {
+                            const next = customRunId === r.id ? null : r.id;
+                            setCustomRunId(next);
+                            setCustomPicks(new Set());
+                            if (next) setExpandedRunId(r.id);
+                          }}
+                          disabled={running}
+                          title="Pick specific entity types to delete from this run"
+                          className="text-xs px-3 py-1.5 rounded-md bg-bg-elevated hover:bg-bg-base border border-border hover:border-accent text-slate-300 hover:text-white flex items-center gap-1.5 disabled:opacity-40"
+                        >
+                          {customRunId === r.id ? "Cancel" : "Custom delete…"}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteRun(r)}
+                          disabled={running}
+                          className="text-xs px-3 py-1.5 rounded-md bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 flex items-center gap-1.5 disabled:opacity-40"
+                        >
+                          {isActive ? (
+                            <CircleNotch size={12} className="animate-spin" />
+                          ) : (
+                            <Trash size={12} weight="bold" />
+                          )}
+                          {isActive ? "Deleting…" : "Delete this run"}
+                        </button>
+                      </div>
                     </div>
                     {isExpanded && (
                       <div className="border-t border-border px-3 py-3 bg-bg-base/60 space-y-3">
@@ -331,6 +385,99 @@ export function Reset() {
                           </p>
                         ) : (
                           <>
+                            {customRunId === r.id && (
+                              <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-xs text-amber-200">
+                                    Pick the entity types you want to wipe.
+                                    Children of selected items are deleted
+                                    automatically (e.g. picking{" "}
+                                    <em>Work Orders</em> also clears Bookings,
+                                    Tasks, Products, Time Entries).
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (customPicks.size === sections.length) {
+                                        setCustomPicks(new Set());
+                                      } else {
+                                        setCustomPicks(
+                                          new Set(sections.map((s) => s.title)),
+                                        );
+                                      }
+                                    }}
+                                    className="text-[11px] underline text-amber-200 hover:text-amber-100 shrink-0"
+                                  >
+                                    {customPicks.size === sections.length
+                                      ? "Clear all"
+                                      : "Select all"}
+                                  </button>
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1.5">
+                                  {sections.map((s) => {
+                                    const expanded = expandSelection(customPicks);
+                                    const checked = customPicks.has(s.title);
+                                    const cascaded = !checked && expanded.has(s.title);
+                                    const childOf = Object.entries(
+                                      SECTION_DEPENDENCIES,
+                                    )
+                                      .filter(
+                                        ([parent, kids]) =>
+                                          customPicks.has(parent) &&
+                                          kids.includes(s.title),
+                                      )
+                                      .map(([p]) => p);
+                                    return (
+                                      <label
+                                        key={s.title}
+                                        className={`flex items-center gap-2 text-xs ${
+                                          cascaded
+                                            ? "text-amber-300/70"
+                                            : "text-slate-200"
+                                        }`}
+                                        title={
+                                          cascaded
+                                            ? `Will be deleted as a child of: ${childOf.join(", ")}`
+                                            : undefined
+                                        }
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={checked || cascaded}
+                                          disabled={cascaded}
+                                          onChange={(e) => {
+                                            const next = new Set(customPicks);
+                                            if (e.target.checked) next.add(s.title);
+                                            else next.delete(s.title);
+                                            setCustomPicks(next);
+                                          }}
+                                          className="accent-red-400"
+                                        />
+                                        <span>{s.title}</span>
+                                        <span className="text-[10px] text-muted ml-auto">
+                                          {Object.keys(s.ids).length}
+                                        </span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                                <div className="flex items-center justify-end gap-2 pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeletePartial(r)}
+                                    disabled={running || customPicks.size === 0}
+                                    className="text-xs px-3 py-1.5 rounded-md bg-red-600/80 hover:bg-red-600 text-white flex items-center gap-1.5 disabled:opacity-40"
+                                  >
+                                    {isActive ? (
+                                      <CircleNotch size={12} className="animate-spin" />
+                                    ) : (
+                                      <Trash size={12} weight="bold" />
+                                    )}
+                                    Delete selected
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                             <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-xs">
                               {breakdown.map((b) => (
                                 <li

@@ -97,6 +97,34 @@ export const runHistory = {
     }
   },
 
+  /**
+   * Replace the result + recompute totals for an existing run record. Used
+   * after a partial delete so the history reflects what's left in Dataverse.
+   * No-op if the run isn't found.
+   */
+  update(orgUrl: string, id: string, result: SeedResult): void {
+    const list = runHistory.list(orgUrl);
+    const idx = list.findIndex((r) => r.id === id);
+    if (idx === -1) return;
+    const totals: RunRecord["totals"] = {
+      territories: Object.keys(result.territoryIds).length,
+      workOrderTypes: Object.keys(result.workOrderTypeIds).length,
+      incidentTypes: Object.keys(result.incidentTypeIds).length,
+      characteristics: Object.keys(result.characteristicIds).length,
+      products: Object.keys(result.productIds).length,
+      accounts: Object.keys(result.accountIds).length,
+      resources: Object.keys(result.resourceIds).length,
+      workOrders: result.workOrderIds.length,
+      bookings: result.bookingIds.length,
+    };
+    list[idx] = { ...list[idx], result, totals };
+    try {
+      localStorage.setItem(keyFor(orgUrl), JSON.stringify(list));
+    } catch {
+      /* ignore */
+    }
+  },
+
   clear(orgUrl: string): void {
     try {
       localStorage.removeItem(keyFor(orgUrl));

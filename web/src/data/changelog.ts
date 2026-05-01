@@ -7,9 +7,18 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.22.2";
+export const APP_VERSION = "v1.23.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.23.0",
+    date: "April 30, 2026",
+    tag: "FEATURE",
+    features: [
+      "**Reset → partial delete.** Each run row now has a *Custom delete…* button next to *Delete this run*. Open it to pick exactly which entity types you want to clean up (Bookings only, or Time Entries + IoT Alerts, etc.). Picking a parent automatically ticks its children — *Work Orders* pulls in Bookings, WO Service Tasks, WO Products, Time Entries; *Customer Assets* pulls in IoT Alerts; *Accounts* cascades through everything that references it. The history record updates in place so re-runs only re-create the bits you wiped.",
+      "**Technician Contacts** now verify the candidate id from the fullname search still exists with a direct retrieve before reusing it. After a Reset, Dataverse's search index can briefly return ids for already-deleted rows, which surfaced as `Entity 'Contact' With Id = ... Does Not Exist` when binding `ContactId` on the bookable resource. A 404 on the retrieve falls through to creating a fresh contact.",
+    ],
+  },
   {
     version: "v1.22.2",
     date: "April 30, 2026",
