@@ -1784,24 +1784,56 @@ export async function seedFromPreset(
       const resolution = tag(
         resolutionTemplates[i % resolutionTemplates.length],
       );
-      try {
-        await dv.update("msdyn_workorders", woId, {
-          msdyn_followupresolution: resolution,
-          msdyn_actualserviceduration: durationMin,
-          msdyn_systemstatus: 690970004,
-        });
-        const woNumber = result.labels?.workOrders?.[woId];
-        onProgress({
-          step: "Close Work Orders",
-          done: i + 1,
-          total: closeTargets.length,
-          detail: woNumber ? `${woNumber} → Posted` : "Posted",
-        });
-      } catch (e) {
-        // Surface so we know if msdyn_followupresolution or
-        // msdyn_actualserviceduration aren't on this org's schema.
+      // Field names vary by FS version. We try the richest payload
+      // first, then fall back to progressively smaller ones, then
+      // finally just the status flip. This way a missing column on
+      // this org doesn't block the close — it just means less rich
+      // form content.
+      const woNumber = result.labels?.workOrders?.[woId];
+      const attempts: Array<{ label: string; payload: Record<string, unknown> }> = [
+        {
+          label: "resolution + actuals + status",
+          payload: {
+            msdyn_resolution: resolution,
+            msdyn_actualserviceduration: durationMin,
+            msdyn_systemstatus: 690970004,
+          },
+        },
+        {
+          label: "resolution + status",
+          payload: {
+            msdyn_resolution: resolution,
+            msdyn_systemstatus: 690970004,
+          },
+        },
+        {
+          label: "status only",
+          payload: { msdyn_systemstatus: 690970004 },
+        },
+      ];
+      let closed = false;
+      let lastErr: unknown = null;
+      for (const a of attempts) {
+        try {
+          await dv.update("msdyn_workorders", woId, a.payload);
+          closed = true;
+          onProgress({
+            step: "Close Work Orders",
+            done: i + 1,
+            total: closeTargets.length,
+            detail: woNumber
+              ? `${woNumber} → Posted (${a.label})`
+              : `Posted (${a.label})`,
+          });
+          break;
+        } catch (e) {
+          lastErr = e;
+          // Try the next, less ambitious payload.
+        }
+      }
+      if (!closed) {
         throw new Error(
-          `Close WO failed (${woId.slice(0, 8)}…): ${(e as Error).message ?? e}`,
+          `Close WO failed (${woId.slice(0, 8)}…): ${(lastErr as Error)?.message ?? lastErr}`,
         );
       }
     }

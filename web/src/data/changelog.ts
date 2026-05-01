@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.21.1";
+export const APP_VERSION = "v1.21.2";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.21.2",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Close Work Orders** now uses `msdyn_resolution` instead of the non-existent `msdyn_followupresolution`, and falls back through progressively smaller payloads (resolution+actuals+status → resolution+status → status only) so a missing column on this org's schema doesn't block the close. The status flip will always succeed even if richer fields are unavailable.",
+    ],
+  },
   {
     version: "v1.21.1",
     date: "April 30, 2026",
