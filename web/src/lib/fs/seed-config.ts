@@ -709,6 +709,34 @@ export async function seedFromPreset(
         }
         return payload;
       },
+      onResolved: async (resourceId, t, isNew) => {
+        // Heal rows from prior runs that were created as Equipment (default
+        // resourcetype = 3) before we started binding the Contact at create.
+        if (isNew) return;
+        const contactId = techContactIdByName[t.name];
+        if (!contactId) return;
+        const rows = await dv.query<{
+          resourcetype: number | null;
+          _contact_value: string | null;
+        }>("bookableresources", {
+          filter: `bookableresourceid eq ${resourceId}`,
+          select: ["resourcetype", "_contact_value"],
+          top: 1,
+        });
+        const cur = rows[0];
+        if (!cur) return;
+        if (cur.resourcetype === 2 && cur._contact_value === contactId) return;
+        try {
+          await dv.update("bookableresources", resourceId, {
+            resourcetype: 2,
+            "Contact@odata.bind": `/contacts(${contactId})`,
+          });
+        } catch (err) {
+          // Most common cause: existing bookings prevent type change. Log and
+          // continue — demo will still mostly work with the existing rows.
+          console.warn(`Could not heal bookable resource ${t.name} to Contact type:`, err);
+        }
+      },
       onCreated: async (resourceId, t) => {
         result.createdResourceIds.push(resourceId);
 

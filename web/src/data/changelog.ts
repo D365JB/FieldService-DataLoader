@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.21.2";
+export const APP_VERSION = "v1.21.3";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.21.3",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Bookable Resources** now heal to `Contact` type on re-runs. Earlier runs created the seeded technicians as `Equipment` (the Dataverse default `resourcetype`); reused rows are now PATCHed to `resourcetype = 2` with the matching Contact bound, so they show up correctly on the *Resources* view instead of as Equipment.",
+    ],
+  },
   {
     version: "v1.21.2",
     date: "April 30, 2026",
