@@ -7,9 +7,19 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.40.0";
+export const APP_VERSION = "v1.40.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.40.1",
+    date: "May 1, 2026",
+    tag: "FIX",
+    fixes: [
+      "**Hardening pass: a single bad row can no longer abort the entire run.** Audited every `dv.create` / `dv.update` in the seed pipeline and converted every remaining unprotected write to the resilient `safeCreate` / `safeUpdate` wrappers. Specifically: technician Contact creates, Incident-Type → Service Task children, Incident-Type → Product link rows (including the FS product-type heal step), Time Entry heal updates, Close-Work-Orders status flips, and IoT Alert creates. Previously any of these throwing a 400 would crash mid-demo with a raw stack trace; now they record a classified skip and the run continues. The Generate success card already groups skips by reason so you'll see e.g. \"3 records already Posted in Dataverse\" instead of an aborted run.",
+      "**Expanded the error classifier.** Added rules for duplicate / alternate-key collisions (`A record with matching key values already exists`, `Cannot insert duplicate key`), missing-required-field validation messages, throttling / 429 / service-busy responses, and generic FS plugin `Cannot create / Cannot modify / inactive record / business unit not active` errors. These are all benign-skip categories — they shouldn't blow up a run that's otherwise succeeding.",
+      "**Close-WO no longer throws when all attempts fail.** If every payload variant the close phase tries (resolution + actuals + status \u2192 resolution + status \u2192 status only) is rejected by the FS plugin, the WO now stays Open with a visible \"left Open\" detail line and the run continues to IoT Alerts. Previously the run aborted on the first such WO, leaving every later phase un-run.",
+    ],
+  },
   {
     version: "v1.40.0",
     date: "May 1, 2026",

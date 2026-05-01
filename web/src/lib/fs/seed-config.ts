@@ -611,11 +611,25 @@ export async function seedFromPreset(
             top: 1,
           });
           if (!existing[0]) {
-            await dv.create("msdyn_incidenttypeservicetasks", {
-              msdyn_name: taskName,
-              msdyn_description: tag(),
-              "msdyn_incidenttype@odata.bind": `/msdyn_incidenttypes(${incidentId})`,
-            });
+            // safeCreate so an org-specific FS validation rule (e.g. some
+            // tenants require msdyn_estimatedduration) records a skip
+            // instead of throwing — one bad service task name should
+            // never abort the whole catalog phase mid-demo.
+            await safeCreate(
+              dv,
+              "msdyn_incidenttypeservicetasks",
+              {
+                msdyn_name: taskName,
+                msdyn_description: tag(),
+                "msdyn_incidenttype@odata.bind": `/msdyn_incidenttypes(${incidentId})`,
+              },
+              makeSafeCtx(
+                result,
+                "incidentTypeServiceTasks",
+                "Incident Types",
+                taskName,
+              ),
+            );
           }
         }
       },
@@ -748,15 +762,35 @@ export async function seedFromPreset(
           // directly so schema mismatches don't masquerade as FS-plugin
           // failures (we wasted a few iterations on that).
           let uomId: string | null = null;
-          const prod = await dv.retrieve<{
+          let prod: {
             name: string;
             _defaultuomid_value: string;
             msdyn_fieldserviceproducttype: number | null;
-          }>("products", productId, [
-            "name",
-            "_defaultuomid_value",
-            "msdyn_fieldserviceproducttype",
-          ]);
+          } | null = null;
+          try {
+            prod = await dv.retrieve<{
+              name: string;
+              _defaultuomid_value: string;
+              msdyn_fieldserviceproducttype: number | null;
+            }>("products", productId, [
+              "name",
+              "_defaultuomid_value",
+              "msdyn_fieldserviceproducttype",
+            ]);
+          } catch {
+            // Product retrieve failure (deleted between phases, perm
+            // denied, etc.) — record a skip and move on instead of
+            // aborting the whole catalog phase.
+            recordSkip(result, "incidentTypeProducts", {
+              reason: "lookup-not-found",
+              message: `Product ${productId} could not be retrieved`,
+              recordLabel: `${incidentId}:${productId}`,
+              step: "Incident Type Products",
+            });
+            done += 1;
+            onProgress({ step: "Incident Type Products", done, total });
+            continue;
+          }
           uomId = prod._defaultuomid_value ?? null;
           // FS plugin requires Inventory (690970000) or Non-Inventory (690970001)
           // before a product can be referenced by msdyn_incidenttypeproduct.
@@ -766,9 +800,18 @@ export async function seedFromPreset(
             prod.msdyn_fieldserviceproducttype !== 690970000 &&
             prod.msdyn_fieldserviceproducttype !== 690970001
           ) {
-            await dv.update("products", productId, {
-              msdyn_fieldserviceproducttype: 690970001,
-            });
+            await safeUpdate(
+              dv,
+              "products",
+              productId,
+              { msdyn_fieldserviceproducttype: 690970001 },
+              makeSafeCtx(
+                result,
+                "incidentTypeProducts",
+                "Incident Type Products",
+                `Heal product type ${prod.name}`,
+              ),
+            );
           }
           const payload: Record<string, unknown> = {
             msdyn_name: prod.name,
@@ -779,7 +822,23 @@ export async function seedFromPreset(
           if (uomId) {
             payload["msdyn_unit@odata.bind"] = `/uoms(${uomId})`;
           }
-          id = await dv.create("msdyn_incidenttypeproducts", payload);
+          const itpRes = await safeCreate(
+            dv,
+            "msdyn_incidenttypeproducts",
+            payload,
+            makeSafeCtx(
+              result,
+              "incidentTypeProducts",
+              "Incident Type Products",
+              `${prod.name} \u2192 ${incidentNameById[incidentId] ?? "Incident"}`,
+            ),
+          );
+          if (!itpRes.ok) {
+            done += 1;
+            onProgress({ step: "Incident Type Products", done, total });
+            continue;
+          }
+          id = itpRes.id;
           trackCreated(result, "incidentTypeProducts", id);
         }
         // Always (re-)label, including for rows reused from a prior run that
@@ -901,7 +960,30 @@ export async function seedFromPreset(
           newContact.address1_latitude = contactCoord.lat;
           newContact.address1_longitude = contactCoord.lng;
         }
-        contactId = await dv.create("contacts", newContact);
+        // safeCreate so a malformed name (rare but possible from AI
+        // presets) or a tenant-specific Contact business rule records
+        // a skip instead of aborting the entire technician phase.
+        const cRes = await safeCreate(
+          dv,
+          "contacts",
+          newContact,
+          makeSafeCtx(
+            result,
+            "technicianContacts",
+            "Technician Contacts",
+            t.name,
+          ),
+        );
+        if (!cRes.ok) {
+          onProgress({
+            step: "Technician Contacts",
+            done: i + 1,
+            total: techList.length,
+            detail: `${t.name} (skipped: ${cRes.skipped.reason})`,
+          });
+          continue;
+        }
+        contactId = cRes.id;
         trackCreated(result, "technicianContacts", contactId);
       } else if (contactCoord) {
         // Existing contact — heal lat/long if missing or zero so the FS
@@ -2571,17 +2653,21 @@ export async function seedFromPreset(
           patch["msdyn_WorkOrder@odata.bind"] = `/msdyn_workorders(${woId})`;
         }
         if (Object.keys(patch).length > 0) {
-          try {
-            await dv.update(
-              "msdyn_timeentries",
-              existing[0].msdyn_timeentryid,
-              patch,
-            );
-          } catch (e) {
-            throw new Error(
-              `Time Entry heal failed for booking ${i + 1}: ${(e as Error).message ?? e}`,
-            );
-          }
+          // safeUpdate so a heal failure (e.g. someone hand-edited the
+          // existing time entry into a Posted state) records a skip
+          // instead of aborting the whole phase mid-demo.
+          await safeUpdate(
+            dv,
+            "msdyn_timeentries",
+            existing[0].msdyn_timeentryid,
+            patch,
+            makeSafeCtx(
+              result,
+              "timeEntries",
+              "Time Entries",
+              `Heal ${entryName}`,
+            ),
+          );
         }
         trackCreated(result, "timeEntries", existing[0].msdyn_timeentryid);
         const woNumber = result.labels?.workOrders?.[woId];
@@ -2714,29 +2800,52 @@ export async function seedFromPreset(
         },
       ];
       let closed = false;
-      let lastErr: unknown = null;
+      let lastSkipReason: string | null = null;
       for (const a of attempts) {
-        try {
-          await dv.update("msdyn_workorders", woId, a.payload);
+        // Use safeUpdate so a target-specific FS validation error
+        // records a skip rather than throwing. We try richest payload
+        // first, then progressively smaller ones — first successful
+        // update wins. If ALL attempts skip (e.g. plugin refuses the
+        // status flip because of bookings drift), the WO simply stays
+        // Open in the demo. Better than a mid-demo abort.
+        const upRes = await safeUpdate(
+          dv,
+          "msdyn_workorders",
+          woId,
+          a.payload,
+          makeSafeCtx(
+            result,
+            "workOrders",
+            "Close Work Orders",
+            woNumber ? `${woNumber} (${a.label})` : `Close ${a.label}`,
+          ),
+        );
+        if (upRes.ok) {
           closed = true;
           onProgress({
             step: "Close Work Orders",
             done: i + 1,
             total: closeTargets.length,
             detail: woNumber
-              ? `${woNumber} → Posted (${a.label})`
+              ? `${woNumber} \u2192 Posted (${a.label})`
               : `Posted (${a.label})`,
           });
           break;
-        } catch (e) {
-          lastErr = e;
-          // Try the next, less ambitious payload.
         }
+        lastSkipReason = upRes.skipped.reason;
       }
       if (!closed) {
-        throw new Error(
-          `Close WO failed (${woId.slice(0, 8)}…): ${(lastErr as Error)?.message ?? lastErr}`,
-        );
+        // All attempts skipped — record visible progress so the user
+        // sees which WOs ended the run still Open.
+        postedWoIds.add(woId);
+        onProgress({
+          step: "Close Work Orders",
+          done: i + 1,
+          total: closeTargets.length,
+          detail: woNumber
+            ? `${woNumber} (left Open: ${lastSkipReason ?? "unknown"})`
+            : `Left Open (${lastSkipReason ?? "unknown"})`,
+        });
       }
     }
   }
@@ -2794,8 +2903,14 @@ export async function seedFromPreset(
           trackCreated(result, "iotAlerts", existing[0].msdyn_iotalertid);
           setLabel(result, "iotAlerts", existing[0].msdyn_iotalertid, labelText);
         } else {
-          try {
-            const alertId = await dv.create("msdyn_iotalerts", {
+          // safeCreate so a tenant-specific FS validation rule (e.g.
+          // some orgs require msdyn_severity even though our $metadata
+          // probe says it's optional) records a skip instead of
+          // aborting the entire IoT Alerts phase.
+          const alertRes = await safeCreate(
+            dv,
+            "msdyn_iotalerts",
+            {
               msdyn_description: description,
               msdyn_alerttoken: alertToken,
               msdyn_alerttime: alertTime.toISOString(),
@@ -2811,15 +2926,12 @@ export async function seedFromPreset(
               // msdyn_iotalert has no Account lookup — relationship is
               // resolved via msdyn_CustomerAsset → msdyn_account. Verified via $metadata.
               "msdyn_CustomerAsset@odata.bind": `/msdyn_customerassets(${assetId})`,
-            });
-            trackCreated(result, "iotAlerts", alertId);
-            setLabel(result, "iotAlerts", alertId, labelText);
-          } catch (e) {
-            // Surface the real error so we can fix schema/permission
-            // problems instead of silently failing every alert.
-            throw new Error(
-              `IoT Alert create failed (asset ${assetId.slice(0, 8)}…): ${(e as Error).message ?? e}`,
-            );
+            },
+            makeSafeCtx(result, "iotAlerts", "IoT Alerts", labelText),
+          );
+          if (alertRes.ok) {
+            trackCreated(result, "iotAlerts", alertRes.id);
+            setLabel(result, "iotAlerts", alertRes.id, labelText);
           }
         }
         done++;

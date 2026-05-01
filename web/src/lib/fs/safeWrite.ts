@@ -157,6 +157,59 @@ export function classifyError(err: unknown): SkipReason | null {
     return "permission";
   }
 
+  // Duplicate / alternate-key collision. v1.40 hardening pass: a re-run
+  // racing against itself, or a leftover row from a prior run that
+  // doesn't match our find-by-name probe (e.g. trailing whitespace),
+  // can produce these. Treat as benign — the row already exists, the
+  // run just couldn't reuse it. Caller continues with the next item.
+  if (
+    msg.includes("duplicate key") ||
+    msg.includes("duplicate alternate key") ||
+    msg.includes("a record with matching key values already exists") ||
+    msg.includes("cannot insert duplicate key")
+  ) {
+    return "validation";
+  }
+
+  // Missing-required-field. Some FS solutions ship optional managed
+  // fields that become required via business rules. We can't know which
+  // up front; surface as a skip with the field name in the message so
+  // the user knows what to add to the next run instead of aborting.
+  if (
+    msg.includes("required field") ||
+    msg.includes("a required field is missing") ||
+    msg.includes("required attribute") ||
+    msg.includes("must contain a value") ||
+    /the '?[a-z0-9_]+'? field is required/.test(msg)
+  ) {
+    return "validation";
+  }
+
+  // Throttling / 429 / service-busy. The DataverseClient retries these
+  // with backoff already; if we still see one bubble up, treat as
+  // skip-and-continue rather than aborting the entire demo run.
+  if (
+    msg.includes("rate limit") ||
+    msg.includes("too many requests") ||
+    msg.includes("service is too busy") ||
+    msg.includes("429")
+  ) {
+    return "validation";
+  }
+
+  // Generic FS plugin "Cannot create/modify" with a business-rule
+  // explanation. Catch-all for the long tail of FS validation messages
+  // that don't match any of the above. Better to record a skip with the
+  // raw message than to crash the run mid-demo.
+  if (
+    msg.includes("cannot create") ||
+    msg.includes("cannot modify") ||
+    msg.includes("business unit") && msg.includes("not active") ||
+    msg.includes("inactive record")
+  ) {
+    return "validation";
+  }
+
   return null;
 }
 
