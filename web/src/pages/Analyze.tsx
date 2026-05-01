@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMsal } from "@azure/msal-react";
-import { Sparkle, Globe, Warning, ArrowRight, FastForward, Package, CircleNotch, CheckCircle } from "@phosphor-icons/react";
+import { Sparkle, Globe, Warning, ArrowRight, FastForward, Package, CircleNotch, CheckCircle, FloppyDisk, Trash, BookmarkSimple } from "@phosphor-icons/react";
 import { AppHeader } from "@/components/AppHeader";
 import { ModelPicker } from "@/components/ModelPicker";
 import { PresetReview } from "@/components/PresetReview";
@@ -12,6 +12,7 @@ import { DEMO_PACKS } from "@/lib/demoPacks";
 import { modelStore } from "@/lib/modelStore";
 import { orgStore } from "@/lib/orgStore";
 import { track } from "@/lib/telemetry";
+import { presetLibrary, type SavedPreset } from "@/lib/presetLibrary";
 
 export function Analyze() {
   const { accounts } = useMsal();
@@ -36,6 +37,13 @@ export function Analyze() {
   // a visible "selected" state on the card. Cleared when the user runs
   // a fresh website Analyze (which produces an AI-derived preset, not a pack).
   const [selectedPackId, setSelectedPackId] = useState<string | null>(null);
+  // v1.42.3 — User-saved presets. The list is read once from
+  // localStorage; mutating helpers re-read after every change so the UI
+  // stays in sync with whatever's persisted.
+  const [savedPresets, setSavedPresets] = useState<SavedPreset[]>(() =>
+    presetLibrary.list(),
+  );
+  const [selectedSavedId, setSelectedSavedId] = useState<string | null>(null);
 
   // Tick the elapsed-time counter while busy so the user can see progress
   // is being made (or, if it stalls way past the typical 10–20s, knows
@@ -120,7 +128,45 @@ export function Analyze() {
     setPreset(pack.preset);
     setError(null);
     setSelectedPackId(packId);
+    setSelectedSavedId(null);
     orgStore.setPreset(JSON.stringify(pack.preset));
+  }
+
+  /**
+   * v1.42.3 — Save the current preset to the in-browser library so it
+   * can be recalled on a future Analyze visit.
+   */
+  function handleSavePreset() {
+    if (!preset) return;
+    const defaultName = preset.companyName || "Untitled preset";
+    const name = window.prompt("Save preset as:", defaultName);
+    if (name === null) return; // user cancelled
+    const entry = presetLibrary.save(name, preset);
+    setSavedPresets(presetLibrary.list());
+    setSelectedSavedId(entry.id);
+    setSelectedPackId(null);
+    track("action", {
+      detail: { name: "preset.saved", presetName: entry.name },
+    });
+  }
+
+  /** v1.42.3 — Load a previously saved preset into review state. */
+  function handlePickSaved(id: string) {
+    const entry = presetLibrary.list().find((e) => e.id === id);
+    if (!entry) return;
+    setPreset(entry.preset);
+    setError(null);
+    setSelectedSavedId(id);
+    setSelectedPackId(null);
+    orgStore.setPreset(JSON.stringify(entry.preset));
+  }
+
+  /** v1.42.3 — Remove a saved preset (with confirm). */
+  function handleDeleteSaved(id: string, name: string) {
+    if (!window.confirm(`Delete saved preset "${name}"?`)) return;
+    presetLibrary.remove(id);
+    setSavedPresets(presetLibrary.list());
+    if (selectedSavedId === id) setSelectedSavedId(null);
   }
 
   return (
@@ -274,6 +320,73 @@ export function Analyze() {
               </button>
             </div>
           </div>
+
+          {savedPresets.length > 0 && (
+            <div className="mt-6 pt-5 border-t border-border">
+              <div className="flex items-center gap-2 mb-3">
+                <BookmarkSimple size={18} className="text-accent" weight="duotone" />
+                <div className="text-xs uppercase tracking-wider text-muted">
+                  Your saved presets
+                </div>
+                <span className="ml-auto text-[10px] uppercase tracking-wider text-slate-500">
+                  Stored in this browser
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {savedPresets.map((sp) => {
+                  const isSelected = selectedSavedId === sp.id;
+                  return (
+                    <div
+                      key={sp.id}
+                      className={
+                        isSelected
+                          ? "relative p-4 rounded-lg border-2 border-accent bg-accent/10 ring-2 ring-accent/40"
+                          : "relative p-4 rounded-lg border border-border bg-bg-elevated hover:border-accent/60 transition-colors"
+                      }
+                    >
+                      <button
+                        onClick={() => handlePickSaved(sp.id)}
+                        aria-pressed={isSelected ? "true" : "false"}
+                        className="block w-full text-left pr-8"
+                      >
+                        {isSelected && (
+                          <CheckCircle
+                            size={18}
+                            weight="fill"
+                            className="absolute top-2 right-2 text-accent"
+                          />
+                        )}
+                        <div
+                          className={
+                            isSelected
+                              ? "text-sm font-semibold text-accent mb-1"
+                              : "text-sm font-semibold text-white mb-1"
+                          }
+                        >
+                          {sp.name}
+                        </div>
+                        <div className="text-[11px] text-slate-400 leading-relaxed">
+                          {sp.preset.companyName}
+                          {sp.preset.vertical ? ` · ${sp.preset.vertical}` : ""}
+                        </div>
+                        <div className="mt-1 text-[10px] text-slate-500">
+                          Saved {new Date(sp.savedAt).toLocaleString()}
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => handleDeleteSaved(sp.id, sp.name)}
+                        title="Delete saved preset"
+                        aria-label={`Delete saved preset ${sp.name}`}
+                        className="absolute bottom-2 right-2 p-1.5 rounded-md text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                      >
+                        <Trash size={14} weight="bold" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {preset && (
@@ -282,13 +395,23 @@ export function Analyze() {
               <div className="text-xs uppercase tracking-wider text-muted">
                 Review &amp; tweak — then continue to generate
               </div>
-              <button
-                onClick={() => navigate("/generate")}
-                className="btn-primary flex items-center gap-2"
-              >
-                Continue to generate
-                <ArrowRight size={18} weight="bold" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleSavePreset}
+                  className="btn-ghost flex items-center gap-2 text-xs"
+                  title="Save the current preset to this browser's library"
+                >
+                  <FloppyDisk size={14} weight="bold" />
+                  Save preset…
+                </button>
+                <button
+                  onClick={() => navigate("/generate")}
+                  className="btn-primary flex items-center gap-2"
+                >
+                  Continue to generate
+                  <ArrowRight size={18} weight="bold" />
+                </button>
+              </div>
             </div>
             <PresetReview preset={preset} onChange={handlePresetChange} />
             <div className="mt-8 flex justify-end">

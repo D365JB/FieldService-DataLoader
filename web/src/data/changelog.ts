@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.42.2";
+export const APP_VERSION = "v1.42.3";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.42.3",
+    date: "May 1, 2026",
+    tag: "FEAT",
+    features: [
+      "**Preset library — save the current preset under a friendly name and recall it on a future visit.** The Analyze page already let you start from a curated demo pack (HVAC, Telecom, Elevator, etc.) or from an AI-derived preset; v1.42.3 closes the loop with a new browser-local preset library so a presenter who's spent ten minutes editing accounts, technicians, work-hour grids, PTO ranges, and skills can persist that exact configuration and reload it instantly next time. The Review-and-tweak header now shows a `Save preset…` button that opens a name prompt (defaulting to the current `companyName`); on confirm the entire preset is deep-cloned into `localStorage[\"fs-presets\"]` along with an id, the user-supplied name, and an ISO save timestamp. Saved entries appear in a new **Your saved presets** card on the Analyze page directly below the curated demo packs — each entry shows the friendly name, the underlying `companyName` + vertical, and a relative-formatted save timestamp; clicking a card loads it back into Review state with the same `selected` highlight treatment as the curated packs, and a small trash icon in the corner deletes the saved entry after a confirm. The list is sorted newest-first so the preset you saved 30 seconds ago is right at the top. Storage is per-browser-profile only (no cross-device sync) which matches how the rest of the app handles state — adequate for the demo workflow and zero new auth surface area. Bad/corrupt entries from a partial write are filtered out defensively on read so a stale localStorage blob never breaks the picker. New module `web/src/lib/presetLibrary.ts` exposes `presetLibrary.list() / save() / remove() / rename()` if other pages want to lean on the same store later.",
+    ],
+  },
   {
     version: "v1.42.2",
     date: "May 1, 2026",
