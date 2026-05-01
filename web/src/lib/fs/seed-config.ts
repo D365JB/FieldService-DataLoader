@@ -1269,7 +1269,26 @@ export async function seedFromPreset(
       start.setDate(start.getDate() + dayOffset);
       start.setHours(9 + slotInDay * slotHours);
       const end = new Date(start.getTime() + slotHours * 60 * 60 * 1000);
-      const bookingName = tag(`Booking for WO #${result.workOrderIds.indexOf(woId) + 1}`);
+      // Use the WO's auto-numbered name (e.g. "WO-01016") as the booking title
+      // so the schedule board shows a meaningful identifier instead of
+      // "Booking for WO #1". msdyn_name is generated server-side, so retrieve
+      // it after the WO has been created.
+      let woNumber: string | null = null;
+      try {
+        const woRow = await dv.query<{ msdyn_name: string }>(
+          "msdyn_workorders",
+          {
+            filter: `msdyn_workorderid eq ${woId}`,
+            select: ["msdyn_name"],
+            top: 1,
+          },
+        );
+        woNumber = woRow[0]?.msdyn_name ?? null;
+      } catch {
+        woNumber = null;
+      }
+      const bookingName =
+        woNumber ?? tag(`Booking for WO #${result.workOrderIds.indexOf(woId) + 1}`);
 
       // Idempotency by tagged name.
       const existing = await dv.query<{ bookableresourcebookingid: string }>(

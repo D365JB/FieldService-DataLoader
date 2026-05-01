@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.20.5";
+export const APP_VERSION = "v1.20.6";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.20.6",
+    date: "April 30, 2026",
+    tag: "POLISH",
+    features: [
+      "**Bookings** are now titled with the work order's auto-numbered name (e.g. *WO-01016*) instead of *Booking for WO #1*, so the schedule board shows the same identifier the field tech sees on the work order.",
+    ],
+  },
   {
     version: "v1.20.5",
     date: "April 30, 2026",
