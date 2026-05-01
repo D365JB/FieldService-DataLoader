@@ -68,6 +68,18 @@ export class DataverseClient {
       ...(await this.authHeader()),
     };
 
+    // Path fragment for diagnostics (drop the org URL noise).
+    const shortPath = path.startsWith("http")
+      ? path.replace(/^https?:\/\/[^/]+\/api\/data\/v9\.\d+/, "")
+      : path;
+    const method = (init.method ?? "GET").toUpperCase();
+    // Approximate body size for diagnostics — helps spot oversized POSTs that
+    // get killed at the network layer.
+    let bodyKb = 0;
+    if (typeof init.body === "string") {
+      bodyKb = Math.round(init.body.length / 1024);
+    }
+
     const maxAttempts = 5;
     let lastErr: Error | null = null;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -90,9 +102,10 @@ export class DataverseClient {
         await new Promise((r) => setTimeout(r, wait));
       }
     }
+    const sizeNote = bodyKb > 100 ? ` (request body ~${bodyKb} KB; oversized payloads can get dropped by the browser before Dataverse sees them)` : "";
     throw new DataverseError(
       0,
-      `Network error after ${maxAttempts} attempts: ${lastErr?.message ?? "unknown"}`,
+      `Network error after ${maxAttempts} attempts on ${method} ${shortPath}${sizeNote}: ${lastErr?.message ?? "unknown"}`,
     );
   }
 

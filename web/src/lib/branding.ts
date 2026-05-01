@@ -57,6 +57,68 @@ export async function fetchImageBytes(url: string): Promise<{
   return res.json();
 }
 
+/**
+ * Downscale a raster logo so its base64 payload comfortably fits inside
+ * Dataverse's webresource `content` size budget. The model-driven app
+ * navbar renders the logo at roughly 24px tall, so 256×256 is plenty.
+ *
+ * Strategy:
+ *   - SVG / ICO: returned unchanged (vector / already tiny).
+ *   - Raster ≤ MAX_BASE64_BYTES (~ 350 KB): returned unchanged.
+ *   - Otherwise: load into <img>, draw onto canvas at max 256px on the
+ *     long edge, re-encode as PNG, return base64 (data-URL prefix
+ *     stripped). Falls back to the original on any failure so the
+ *     apply step still has *something* to upload.
+ *
+ * Why ~350 KB: Dataverse will accept larger but the cross-region POST
+ * latency past ~ 1 MB starts losing CORS preflight races on slow links,
+ * surfacing as `TypeError: Failed to fetch`.
+ */
+const MAX_BASE64_BYTES = 350 * 1024;
+
+export async function downscaleLogo(
+  logo: { contentType: string; base64: string; fileName: string },
+): Promise<{ contentType: string; base64: string; fileName: string }> {
+  const ct = logo.contentType.toLowerCase();
+  if (ct.includes("svg") || ct.includes("icon") || ct.includes("ico")) {
+    return logo;
+  }
+  if (logo.base64.length <= MAX_BASE64_BYTES) {
+    return logo;
+  }
+
+  try {
+    const dataUrl = `data:${logo.contentType};base64,${logo.base64}`;
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("image decode failed"));
+      el.src = dataUrl;
+    });
+    const MAX = 256;
+    const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+    const w = Math.max(1, Math.round(img.width * scale));
+    const h = Math.max(1, Math.round(img.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return logo;
+    ctx.drawImage(img, 0, 0, w, h);
+    const reduced = canvas.toDataURL("image/png");
+    const b64 = reduced.split(",", 2)[1] ?? "";
+    if (!b64) return logo;
+    const baseName = logo.fileName.replace(/\.[a-z0-9]+$/i, "");
+    return {
+      contentType: "image/png",
+      base64: b64,
+      fileName: `${baseName}.png`,
+    };
+  } catch {
+    return logo;
+  }
+}
+
 /** Sensible defaults for a D365 theme given a single primary brand color. */
 export function deriveColors(primary: string, accent?: string): BrandColors {
   const p = normalizeHex(primary);
@@ -137,10 +199,25 @@ export async function applyTheme({
   // 1) Optional: upload logo as web resource.
   let webResourceId: string | undefined;
   if (logo) {
-    onStatus?.("Uploading logo as web resource…");
-    webResourceId = await upsertLogoWebResource(client, themeName, logo);
+    const sizeKb = Math.round(logo.base64.length / 1024);
+    onStatus?.(`Uploading logo as web resource (${sizeKb} KB)…`);
+    try {
+      webResourceId = await upsertLogoWebResource(client, themeName, logo);
+    } catch (err) {
+      const msg = (err as Error).message ?? String(err);
+      const hint = /failed to fetch|network error/i.test(msg)
+        ? ` — this usually means the logo (${sizeKb} KB) was too large for Dataverse to accept in a single request, or your Dataverse session timed out. Try a smaller / different logo, or uncheck "Include logo" and re-apply.`
+        : "";
+      throw new Error(`Logo upload failed: ${msg}${hint}`);
+    }
     onStatus?.("Publishing web resource…");
-    await publishWebResource(client, webResourceId);
+    try {
+      await publishWebResource(client, webResourceId);
+    } catch (err) {
+      throw new Error(
+        `Publishing web resource failed (logo uploaded but not yet visible): ${(err as Error).message ?? err}`,
+      );
+    }
   }
 
   // 2) Find existing theme by name. We deliberately do NOT filter on `type`
@@ -177,7 +254,12 @@ export async function applyTheme({
     selectedlinkeffect: colors.selectedLink,
   };
   if (webResourceId) {
-    body["logoimage@odata.bind"] = `/webresourceset(${webResourceId})`;
+    // The webresource lookup on `theme` is `logoid` (a Lookup column whose
+    // schema name is `LogoId`). The `logoimage` column is a *string URL*,
+    // NOT a navigation property — binding `logoimage@odata.bind` returns
+    // 400 "Invalid web resource Id". The correct nav-property name for
+    // the @odata.bind is the schema-cased `LogoId`.
+    body["LogoId@odata.bind"] = `/webresourceset(${webResourceId})`;
   }
 
   let themeId: string;
@@ -228,6 +310,10 @@ async function upsertLogoWebResource(
   themeName: string,
   logo: { contentType: string; base64: string; fileName: string },
 ): Promise<string> {
+  // Downscale before anything else — large raster logos cause the POST below
+  // to fail at the network layer ("Failed to fetch") because Dataverse drops
+  // oversized webresource content connections.
+  const small = await downscaleLogo(logo);
   // Web resource type codes:
   //   1 = HTML, 2 = CSS, 3 = JScript, 4 = XML, 5 = PNG, 6 = JPG, 7 = GIF,
   //   8 = XAP/Silverlight, 9 = XSL, 10 = ICO, 11 = SVG, 12 = RESX
@@ -240,9 +326,9 @@ async function upsertLogoWebResource(
     "image/vnd.microsoft.icon": 10,
     "image/svg+xml": 11,
   };
-  const wrType = typeMap[logo.contentType.toLowerCase()];
+  const wrType = typeMap[small.contentType.toLowerCase()];
   if (!wrType) {
-    throw new Error(`Unsupported logo content type: ${logo.contentType}`);
+    throw new Error(`Unsupported logo content type: ${small.contentType}`);
   }
 
   const safeBase = themeName
@@ -250,7 +336,7 @@ async function upsertLogoWebResource(
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, 40);
-  const ext = (logo.fileName.match(/\.([a-z0-9]+)$/i)?.[1] ?? "png").toLowerCase();
+  const ext = (small.fileName.match(/\.([a-z0-9]+)$/i)?.[1] ?? "png").toLowerCase();
   const wrName = `fsdemo_/themes/${safeBase}_logo.${ext}`;
 
   const existing = await client.query<{ webresourceid: string }>("webresourceset", {
@@ -263,7 +349,7 @@ async function upsertLogoWebResource(
     name: wrName,
     displayname: `${themeName} Logo`,
     webresourcetype: wrType,
-    content: logo.base64,
+    content: small.base64,
   };
 
   if (existing.length > 0) {
@@ -279,7 +365,25 @@ async function upsertLogoWebResource(
     }
     return id;
   }
-  return client.create("webresourceset", body);
+
+  // Lean POST — deliberately NO `Prefer: return=representation` so Dataverse
+  // doesn't echo the (potentially large) base64 content back. Read the new
+  // id from the OData-EntityId response header instead.
+  const res = await client.request("/webresourceset", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`Create web resource failed: ${res.status} ${detail}`);
+  }
+  const entityIdHeader = res.headers.get("OData-EntityId");
+  const m = entityIdHeader?.match(/\(([0-9a-f-]{36})\)/i);
+  if (!m) {
+    throw new Error("Create web resource: missing OData-EntityId header");
+  }
+  return m[1];
 }
 
 async function publishWebResource(

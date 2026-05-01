@@ -7,9 +7,18 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.39.0";
+export const APP_VERSION = "v1.39.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.39.1",
+    date: "May 1, 2026",
+    tag: "FIX",
+    fixes: [
+      "**Brand apply: logo upload now actually works.** Two bugs were stacked. (1) The web-resource POST sent the entire base64 image back via `Prefer: return=representation`, and large logos (>~ 1 MB) tripped a browser-level `TypeError: Failed to fetch` after retries. We now downscale raster logos to a 256 px PNG client-side before upload and read the new id from the `OData-EntityId` response header instead of asking the server to echo the body. (2) The theme record was binding the logo via `logoimage@odata.bind`, which is wrong — `logoimage` is a URL string column. The lookup is actually `LogoId` (schema-cased), so we now bind `LogoId@odata.bind = /webresourceset({id})`. This fixes the `400 Invalid web resource Id` you'd hit even when the upload succeeded.",
+      "**Better failure messages on the Apply step.** The Brand → Apply screen now tells you which Dataverse call failed, how big the request was, and a likely cause (e.g. \"logo too large\", \"session expired\", \"PublishXml failed — logo uploaded but not yet visible\"). The lower-level Dataverse client also names the method + path + body size when a network retry storm gives up, so debugging from the UI gets you somewhere actionable instead of a bare \"Failed to fetch\".",
+    ],
+  },
   {
     version: "v1.39.0",
     date: "May 1, 2026",

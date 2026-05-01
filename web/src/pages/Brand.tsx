@@ -116,7 +116,16 @@ export function Brand() {
       setStatus("Theme published as default.");
       setStep("done");
     } catch (err) {
-      setError((err as Error).message);
+      // Surface BOTH the last status ("what we were doing") and the error
+      // ("why it failed") to the user. The previous UI showed only the
+      // last status as a tiny secondary line and the error message above
+      // it, which made network errors look mysterious.
+      const raw = (err as Error).message ?? String(err);
+      const friendlier =
+        /failed to fetch/i.test(raw) && !/Logo upload failed/i.test(raw)
+          ? `${raw}\n\nThis is a browser-level network error. Common causes: Dataverse session expired (refresh the page and sign in again), the org URL is wrong, or a corporate proxy/VPN is blocking the call.`
+          : raw;
+      setError(friendlier);
       setStep("error");
     } finally {
       setBusy(false);
