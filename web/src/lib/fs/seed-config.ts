@@ -1658,7 +1658,9 @@ export async function seedFromPreset(
                 severity: template.severity,
                 message: template.message,
               }),
-              msdyn_severity: template.severity,
+              // msdyn_severity does not exist on msdyn_iotalert in
+              // this org's schema (Invalid property error). The
+              // severity is preserved inside msdyn_alertdata JSON.
               msdyn_iotalertstatus: status,
               // msdyn_iotalert has no Account lookup — relationship is
               // resolved via msdyn_CustomerAsset → msdyn_account. Verified via $metadata.

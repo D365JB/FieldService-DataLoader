@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.20.12";
+export const APP_VERSION = "v1.20.13";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.20.13",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**IoT Alerts** no longer write a top-level `msdyn_severity` column. That property does not exist on `msdyn_iotalert` in some orgs (the table only carries severity inside `msdyn_alertdata` JSON). Severity is still preserved in the alert data payload.",
+    ],
+  },
   {
     version: "v1.20.12",
     date: "April 30, 2026",
