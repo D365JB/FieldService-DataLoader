@@ -555,33 +555,81 @@ export function Generate() {
                   />
                 }
               />
-              <AutoLoadRow
+              <EntityRow
                 label="Customer Assets"
                 hint={`Preset has ${preset.customerAssets?.length ?? 0}.`}
                 mode={entityModes.customerAssets}
                 onModeChange={(m) => setMode("customerAssets", m)}
                 warning={warningFor("customerAssets")}
+                picker={
+                  <EntityPicker
+                    label="customer assets"
+                    orgUrl={orgUrl}
+                    entitySet="msdyn_customerassets"
+                    idField="msdyn_customerassetid"
+                    nameField="msdyn_name"
+                    filter="statecode eq 0"
+                    value={entityPicks.customerAssets}
+                    onChange={(v) => setPicks("customerAssets", v)}
+                  />
+                }
               />
-              <AutoLoadRow
+              <EntityRow
                 label="Service Task Types"
                 hint={`Preset has ${preset.serviceTaskTypes?.length ?? 0}. WO Service Tasks pull from this catalog.`}
                 mode={entityModes.serviceTaskTypes}
                 onModeChange={(m) => setMode("serviceTaskTypes", m)}
                 warning={warningFor("serviceTaskTypes")}
+                picker={
+                  <EntityPicker
+                    label="service task types"
+                    orgUrl={orgUrl}
+                    entitySet="msdyn_servicetasktypes"
+                    idField="msdyn_servicetasktypeid"
+                    nameField="msdyn_name"
+                    filter="statecode eq 0"
+                    value={entityPicks.serviceTaskTypes}
+                    onChange={(v) => setPicks("serviceTaskTypes", v)}
+                  />
+                }
               />
-              <AutoLoadRow
+              <EntityRow
                 label="Agreements"
                 hint={`Preset has ${preset.agreements?.length ?? 0}. Booking setups + line items included.`}
                 mode={entityModes.agreements}
                 onModeChange={(m) => setMode("agreements", m)}
                 warning={warningFor("agreements")}
+                picker={
+                  <EntityPicker
+                    label="agreements"
+                    orgUrl={orgUrl}
+                    entitySet="msdyn_agreements"
+                    idField="msdyn_agreementid"
+                    nameField="msdyn_name"
+                    filter="statecode eq 0"
+                    value={entityPicks.agreements}
+                    onChange={(v) => setPicks("agreements", v)}
+                  />
+                }
               />
-              <AutoLoadRow
+              <EntityRow
                 label="Warehouses"
                 hint={`Preset has ${preset.warehouses?.length ?? 0}.`}
                 mode={entityModes.warehouses}
                 onModeChange={(m) => setMode("warehouses", m)}
                 warning={warningFor("warehouses")}
+                picker={
+                  <EntityPicker
+                    label="warehouses"
+                    orgUrl={orgUrl}
+                    entitySet="msdyn_warehouses"
+                    idField="msdyn_warehouseid"
+                    nameField="msdyn_name"
+                    filter="statecode eq 0"
+                    value={entityPicks.warehouses}
+                    onChange={(v) => setPicks("warehouses", v)}
+                  />
+                }
               />
               <AutoLoadRow
                 label="Product Inventory"

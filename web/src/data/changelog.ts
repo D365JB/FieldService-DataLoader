@@ -7,9 +7,18 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.39.4";
+export const APP_VERSION = "v1.39.5";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.39.5",
+    date: "May 1, 2026",
+    tag: "FIX",
+    fixes: [
+      "**Generate page: every catalog row now offers *Use existing*.** Customer Assets, Service Task Types, Agreements, and Warehouses previously only had *Create from preset* / *Skip*, which meant you couldn't reuse a real org's catalog records on a demo run. Each of those rows now has the same *Create / Existing / Skip* selector with a Dataverse picker, matching Accounts / Territories / Products / Functional Locations. The seed pipeline already knew how to consume `EntityChoice.existing` for these — the UI was the only thing missing.",
+      "**Run-output rows kept on auto-load (intentional).** WO Service Tasks, WO Products, Time Entries, IoT Alerts, and Product Inventory still don't offer *Use existing* — they're produced FROM the Work Orders / Bookings / Customer Assets that this run creates, so picking pre-existing ones wouldn't link to anything in the new run. They remain *Create from preset* / *Skip* with a tooltip explaining why.",
+    ],
+  },
   {
     version: "v1.39.4",
     date: "May 1, 2026",
