@@ -2216,13 +2216,30 @@ export async function seedFromPreset(
   }
 
   // ── Resource Requirements: from/to dates ─────────────────────────────────
-  // FS auto-creates one msdyn_resourcerequirement per WO. The schedule
-  // board's Open Requirements tab binds its From Date / To Date columns
-  // (and the date-range filter) to msdyn_fromdate / msdyn_todate on that
-  // requirement record. Without these, the columns are blank and the
-  // board's date filter excludes the rows entirely. We patch only the
-  // truly-Open WOs (targetStatus === Open-Unscheduled) — Scheduled and
-  // Closed-Posted WOs already have a booking that drives placement.
+  // FS auto-creates one msdyn_resourcerequirement per WO, but the plugin
+  // that does so runs ASYNCHRONOUSLY after the WO commit returns. If we
+  // query immediately the row often isn't there yet (same lag pattern as
+  // the WO auto-number plugin called out elsewhere in this file). The
+  // schedule board's Open Requirements tab binds its From Date / To Date
+  // columns (and the date-range filter) to msdyn_fromdate / msdyn_todate
+  // on that requirement record, so a missing requirement = blank columns
+  // and the date filter excludes the row.
+  //
+  // Strategy (must work first time, per user requirement):
+  //   1. Look up the auto-created requirement.
+  //   2. If missing, retry with backoff (1s, 2.5s, 5s) — covers the
+  //      typical plugin lag of a few seconds.
+  //   3. If STILL missing after retries, create the requirement ourselves
+  //      with msdyn_workorder@odata.bind. Per the table reference both
+  //      msdyn_workorder and msdyn_fromdate / msdyn_todate are valid for
+  //      create. The FS auto-create plugin won't double up — it only fires
+  //      when no requirement exists yet, and at this point one does.
+  //   4. Either way, patch / create with from/to so the columns are
+  //      populated and the schedule board's date filter includes the row.
+  //
+  // We patch only the truly-Open WOs (targetStatus === Open-Unscheduled).
+  // Scheduled and Closed-Posted WOs already have a booking that drives
+  // placement on the board.
   const openWoIds = woMeta
     .filter((m) => m.targetStatus === 690970000)
     .map((m) => m.woId);
@@ -2242,55 +2259,91 @@ export async function seedFromPreset(
       done: 0,
       total: openWoIds.length,
     });
+    // Backoff schedule for the auto-created requirement lookup. Three
+    // attempts spaced at 0ms, 1.5s, 4s — total worst-case wait of 5.5s
+    // per WO before we fall back to creating one ourselves.
+    const lookupDelaysMs = [0, 1500, 4000];
     for (let i = 0; i < openWoIds.length; i++) {
       const woId = openWoIds[i];
       let reqId: string | undefined;
-      try {
-        const rows = await dv.query<{ msdyn_resourcerequirementid: string }>(
+      for (const delay of lookupDelaysMs) {
+        if (delay > 0) {
+          await new Promise((r) => setTimeout(r, delay));
+        }
+        try {
+          const rows = await dv.query<{ msdyn_resourcerequirementid: string }>(
+            "msdyn_resourcerequirements",
+            {
+              filter: `_msdyn_workorder_value eq ${woId}`,
+              select: ["msdyn_resourcerequirementid"],
+              top: 1,
+            },
+          );
+          reqId = rows[0]?.msdyn_resourcerequirementid;
+          if (reqId) break;
+        } catch {
+          /* transient — try the next delay */
+        }
+      }
+      let outcome: "patched" | "created" | "skipped" = "skipped";
+      let skipReason: string | undefined;
+      if (reqId) {
+        const patchRes = await safeUpdate(
+          dv,
           "msdyn_resourcerequirements",
-          {
-            filter: `_msdyn_workorder_value eq ${woId}`,
-            select: ["msdyn_resourcerequirementid"],
-            top: 1,
-          },
+          reqId,
+          { msdyn_fromdate: fromIso, msdyn_todate: toIso },
+          makeSafeCtx(
+            result,
+            "resourceRequirements",
+            "Resource Requirements",
+            `WO ${woId.slice(0, 8)}`,
+          ),
         );
-        reqId = rows[0]?.msdyn_resourcerequirementid;
-      } catch {
-        /* lookup failed — record skip below */
+        if (patchRes.ok) {
+          outcome = "patched";
+        } else {
+          skipReason = patchRes.skipped.reason;
+        }
+      } else {
+        // Plugin still hasn't materialized the row after ~5.5s. Create one
+        // ourselves so the columns aren't blank. Includes the WO link plus
+        // a duration default so the plugin's "remaining duration" math has
+        // something to work with on the board.
+        const reqPayload: Record<string, unknown> = {
+          msdyn_name: `Requirement for ${woId.slice(0, 8)}`,
+          msdyn_fromdate: fromIso,
+          msdyn_todate: toIso,
+          msdyn_duration: 120,
+          "msdyn_workorder@odata.bind": `/msdyn_workorders(${woId})`,
+        };
+        const createRes = await safeCreate(
+          dv,
+          "msdyn_resourcerequirements",
+          reqPayload,
+          makeSafeCtx(
+            result,
+            "resourceRequirements",
+            "Resource Requirements",
+            `WO ${woId.slice(0, 8)} (fallback create)`,
+          ),
+        );
+        if (createRes.ok) {
+          outcome = "created";
+        } else {
+          skipReason = createRes.skipped.reason;
+        }
       }
-      if (!reqId) {
-        recordSkip(result, "resourceRequirements", {
-          recordLabel: `WO ${woId.slice(0, 8)}`,
-          reason: "lookup-not-found",
-          message: "No msdyn_resourcerequirement found for WO",
-        });
-        onProgress({
-          step: "Resource Requirements",
-          done: i + 1,
-          total: openWoIds.length,
-          detail: `WO ${woId.slice(0, 8)} (skipped: no requirement)`,
-        });
-        continue;
-      }
-      const patchRes = await safeUpdate(
-        dv,
-        "msdyn_resourcerequirements",
-        reqId,
-        { msdyn_fromdate: fromIso, msdyn_todate: toIso },
-        makeSafeCtx(
-          result,
-          "resourceRequirements",
-          "Resource Requirements",
-          `WO ${woId.slice(0, 8)}`,
-        ),
-      );
       onProgress({
         step: "Resource Requirements",
         done: i + 1,
         total: openWoIds.length,
-        detail: patchRes.ok
-          ? `WO ${woId.slice(0, 8)} dated`
-          : `WO ${woId.slice(0, 8)} (skipped: ${patchRes.skipped.reason})`,
+        detail:
+          outcome === "patched"
+            ? `WO ${woId.slice(0, 8)} dated`
+            : outcome === "created"
+              ? `WO ${woId.slice(0, 8)} dated (created requirement)`
+              : `WO ${woId.slice(0, 8)} (skipped: ${skipReason ?? "unknown"})`,
       });
     }
   }

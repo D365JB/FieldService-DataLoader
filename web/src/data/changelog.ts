@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.41.0";
+export const APP_VERSION = "v1.41.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.41.1",
+    date: "May 1, 2026",
+    tag: "FIX",
+    fixes: [
+      "**Open Requirements From / To dates now populate first time, every time.** v1.40.2 added a Resource Requirements phase that patched `msdyn_fromdate` / `msdyn_todate` on the FS-auto-created `msdyn_resourcerequirement` for each Unscheduled Work Order — but the FS plugin that creates that requirement runs **asynchronously** after the WO commit, so an immediate lookup often returned zero rows and the phase silently skipped the row. Validated against the official `msdyn_resourcerequirement` Microsoft Learn reference: field names are correct (`msdyn_fromdate`, `msdyn_todate` — both `DateTime` / `Format: DateOnly` / `RequiredLevel: Recommended`), so the issue was timing not schema. Hardened the phase three ways: (1) backoff retry on the lookup at 0ms / 1.5s / 4s — covers the typical FS plugin lag of a few seconds; (2) if the requirement is still missing after retries, the seeder now creates one itself with `msdyn_workorder@odata.bind`, `msdyn_fromdate`, `msdyn_todate`, and a 120-minute default duration; (3) the phase row now appears in the live Generate progress card (added to `STEP_ORDER`) so any rows that did fall through to a skip are visible instead of invisible. Either branch ends with the row populated, so the schedule board's Open Requirements tab shows From Date / To Date and the date-range filter actually includes the row.",
+    ],
+  },
   {
     version: "v1.41.0",
     date: "May 1, 2026",

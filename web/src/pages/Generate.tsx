@@ -50,6 +50,7 @@ const STEP_ORDER = [
   "Warehouses",
   "Product Inventory",
   "Work Orders",
+  "Resource Requirements",
   "WO Service Tasks",
   "Bookings",
   "WO Products",
