@@ -7,9 +7,20 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.23.0";
+export const APP_VERSION = "v1.24.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.24.0",
+    date: "April 30, 2026",
+    tag: "FEATURE",
+    features: [
+      "**Generation knobs.** New panel on the Generate page tunes the next run's volume and shape: total work-order count (2–60), status mix (Open-Unscheduled / Scheduled / Closed-Posted), priority mix (Low / Medium / High / Critical), forward and backward scheduling windows, and the workday-start hour. Settings persist per-org.",
+      "**Status mix** replaces the old fixed `[3 × Open, 2 × Scheduled, 1 × Closed]` round-robin. Closed-Posted entries still go through the create-as-Open then post-at-end flow, so child rows attach cleanly.",
+      "**Priority mix** resolves to `msdyn_priority` records by name (Low/Medium/High/Critical) and binds them on each WO. Orgs missing a given priority record skip the field for that WO instead of failing.",
+      "**Scheduling window** drives booking dates: future bookings spread across 1..*daysForward* days, Closed-Posted backdated bookings spread across 1..*daysBackward* days. Bookings still occupy four 2-hour slots starting at the configured workday hour.",
+    ],
+  },
   {
     version: "v1.23.0",
     date: "April 30, 2026",

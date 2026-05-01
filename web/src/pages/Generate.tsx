@@ -17,6 +17,8 @@ import type { FsPreset } from "@/lib/preset";
 import { orgStore } from "@/lib/orgStore";
 import { runHistory } from "@/lib/runHistory";
 import { EntityPicker, type PickedEntity } from "@/components/EntityPicker";
+import { GenerationKnobsPanel } from "@/components/GenerationKnobsPanel";
+import { generationKnobs, type GenerationKnobs } from "@/lib/generationKnobs";
 
 interface StepState {
   name: string;
@@ -178,6 +180,9 @@ export function Generate() {
     timeEntries: [],
     iotAlerts: [],
   });
+  const [knobs, setKnobs] = useState<GenerationKnobs>(() =>
+    orgUrl ? generationKnobs.load(orgUrl) : generationKnobs.load(""),
+  );
   function setMode(k: EntityKey, m: Mode) {
     setEntityModes((s) => ({ ...s, [k]: m }));
   }
@@ -240,6 +245,7 @@ export function Generate() {
         },
       });
       const seedOptions: SeedOptions = {};
+      seedOptions.knobs = knobs;
       const keys: EntityKey[] = [
         "territories",
         "workOrderTypes",
@@ -309,6 +315,10 @@ export function Generate() {
           <strong className="text-white">{preset.companyName}</strong> into{" "}
           <code className="text-accent">{new URL(orgUrl).host}</code>.
         </p>
+
+        {!result && !running && (
+          <GenerationKnobsPanel orgUrl={orgUrl} value={knobs} onChange={setKnobs} />
+        )}
 
         {!result && !running && (
           <div className="card p-6 mb-6">

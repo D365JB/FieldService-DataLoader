@@ -1,5 +1,12 @@
 import { DataverseClient, oencode } from "@/lib/dataverse";
 import type { FsPreset } from "@/lib/preset";
+import {
+  DEFAULT_KNOBS,
+  buildStatusBag,
+  buildPriorityBag,
+  deterministicShuffle,
+  type GenerationKnobs,
+} from "@/lib/generationKnobs";
 
 /**
  * Seeds the configuration tier (territories, WO types, incident types + service tasks,
@@ -145,6 +152,11 @@ export interface SeedOptions {
   timeEntries?: EntityChoice;
   iotAlerts?: EntityChoice;
   incidentTypeProducts?: EntityChoice;
+  /**
+   * Generation tuning knobs (volume, status mix, priority mix, scheduling
+   * window). When omitted, `DEFAULT_KNOBS` are used.
+   */
+  knobs?: GenerationKnobs;
 }
 
 export interface EntityChoice {
@@ -1257,14 +1269,7 @@ export async function seedFromPreset(
   // The FS plugin rejects child rows (tasks, products, bookings, time
   // entries) on Posted WOs, so we attach all children while the WO is
   // still Open and flip the status last.
-  const woStatusMix = [
-    690970000, // Open-Unscheduled (weighted heavier — most common on a fresh demo)
-    690970000,
-    690970000,
-    690970001, // Scheduled
-    690970001,
-    690970004, // Closed-Posted (historical) — created as Open, posted at end
-  ];
+  const knobs: GenerationKnobs = options.knobs ?? DEFAULT_KNOBS;
   // Friendly account-instruction snippets so the WO form has a non-empty
   // "Account instructions" field (rotates per WO for variety).
   const accountInstructionTemplates = [
@@ -1284,8 +1289,40 @@ export async function seedFromPreset(
     accountIdList.length > 0 &&
     incidentIdList.length > 0 &&
     woTypeIdList.length > 0
-      ? Math.min(accountIdList.length * 2, 24)
+      ? Math.max(1, Math.min(60, knobs.woCount))
       : 0;
+  // Status + priority bags built up-front from the knob percentages.
+  // We shuffle them with seeds derived from the org so re-runs are stable
+  // but two different orgs see different distributions.
+  const statusBag = deterministicShuffle(
+    buildStatusBag(targetWoCount, knobs.statusMix),
+    targetWoCount * 31 + 17,
+  );
+  const priorityBag = deterministicShuffle(
+    buildPriorityBag(targetWoCount, knobs.priorityMix),
+    targetWoCount * 53 + 11,
+  );
+
+  // Resolve `msdyn_priority` records (Low/Medium/High/Critical) once. Orgs
+  // missing one of these names just skip that WO's priority field.
+  const priorityIdByName: Record<string, string> = {};
+  if (targetWoCount > 0) {
+    try {
+      const rows = await dv.query<{ msdyn_priorityid: string; msdyn_name: string }>(
+        "msdyn_priorities",
+        {
+          filter: "statecode eq 0",
+          select: ["msdyn_priorityid", "msdyn_name"],
+          top: 50,
+        },
+      );
+      for (const r of rows) {
+        if (r.msdyn_name) priorityIdByName[r.msdyn_name] = r.msdyn_priorityid;
+      }
+    } catch {
+      /* no priorities — skip the field */
+    }
+  }
   // Work orders also require msdyn_pricelist in most FS configs. Resolve
   // (and auto-create if needed) BEFORE the loop so we don't silently fail
   // 16 times in a row.
@@ -1308,7 +1345,7 @@ export async function seedFromPreset(
     const accountId = accountIdList[i % accountIdList.length];
     const incidentId = incidentIdList[i % incidentIdList.length];
     const woTypeId = woTypeIdList[i % woTypeIdList.length];
-    const targetStatus = woStatusMix[i % woStatusMix.length];
+    const targetStatus = statusBag[i] ?? 690970000;
     // Closed-Posted target → start as Open-Unscheduled so the FS plugin
     // lets us attach tasks/products/bookings/time entries. The final
     // "Close Work Orders" phase flips status back to Posted.
@@ -1371,6 +1408,13 @@ export async function seedFromPreset(
       };
       if (woPriceListId) {
         woPayload["msdyn_pricelist@odata.bind"] = `/pricelevels(${woPriceListId})`;
+      }
+      // Priority: bag is shuffled per-run so the WOs land with a realistic
+      // mix. Skip when the org's priority record for that name is missing.
+      const priorityName = priorityBag[i];
+      const priorityId = priorityName ? priorityIdByName[priorityName] : undefined;
+      if (priorityId) {
+        woPayload["msdyn_priority@odata.bind"] = `/msdyn_priorities(${priorityId})`;
       }
       // Phase 2: attach a customer asset for this account if we have one.
       // Round-robin through the account's assets so multiple WOs against
@@ -1511,12 +1555,16 @@ export async function seedFromPreset(
   }
 
   if (bookingTarget > 0 && scheduledStatusId) {
-    // Spread bookings across business days starting tomorrow at 9am local.
+    // Spread bookings across business days starting tomorrow at the
+    // configured workday-start hour (knob default = 9am local).
     const baseStart = new Date();
     baseStart.setDate(baseStart.getDate() + 1);
-    baseStart.setHours(9, 0, 0, 0);
+    baseStart.setHours(knobs.workdayStartHour, 0, 0, 0);
     const slotHours = 2;
-    const slotsPerDay = 4; // 9am, 11am, 1pm, 3pm
+    const slotsPerDay = 4; // workdayStart, +2h, +4h, +6h
+    // Total span (in days) for forward and backward booking spread.
+    const forwardSpan = Math.max(1, knobs.daysForward);
+    const backwardSpan = Math.max(1, knobs.daysBackward);
 
     // Batch-fetch EVERY WO's auto-numbered name (e.g. "WO-01016") in a single
     // query — needed both as the booking title and as the dashboard chip
@@ -1560,12 +1608,15 @@ export async function seedFromPreset(
       const slotInDay = i % slotsPerDay;
       const start = new Date(baseStart);
       if (targetIsClosed) {
-        // Closed/historical: 7–28 days in the past.
-        start.setDate(start.getDate() - 7 - dayOffset * 3);
+        // Closed/historical: spread evenly across the backward window.
+        // 1..backwardSpan days back, wrapping if more closed WOs than days.
+        const back = 1 + (dayOffset % backwardSpan);
+        start.setDate(start.getDate() - back);
       } else {
-        start.setDate(start.getDate() + dayOffset);
+        // Forward: spread across the forward window.
+        start.setDate(start.getDate() + (dayOffset % forwardSpan));
       }
-      start.setHours(9 + slotInDay * slotHours);
+      start.setHours(knobs.workdayStartHour + slotInDay * slotHours);
       const end = new Date(start.getTime() + slotHours * 60 * 60 * 1000);
       const bookingStatusId =
         targetIsClosed && completedStatusId ? completedStatusId : scheduledStatusId;
