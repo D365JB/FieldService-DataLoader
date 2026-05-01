@@ -1750,9 +1750,16 @@ export async function seedFromPreset(
     // {productId → productName} so each WO product line can be labelled with
     // the product's name instead of "WO #1 part 1".
     const productNameById: Record<string, string> = {};
+    // {productId → listPrice} so closed WOs get realistic financials.
+    const productPriceById: Record<string, number> = {};
     for (const p of preset.products ?? []) {
       const id = result.productIds[p.productNumber];
-      if (id) productNameById[id] = p.name;
+      if (id) {
+        productNameById[id] = p.name;
+        if (typeof p.listPrice === "number" && p.listPrice > 0) {
+          productPriceById[id] = p.listPrice;
+        }
+      }
     }
     // Target-Closed WOs are currently Open while we attach children, so
     // every WO accepts product lines. The line status (Estimated vs Used)
@@ -1800,16 +1807,31 @@ export async function seedFromPreset(
         );
         if (existing[0]) continue;
 
-        const lineId = await dv.create("msdyn_workorderproducts", {
+        const estQty = 1 + (j % 2);
+        const usedQty = lineStatus === 690970001 ? estQty : 0;
+        const unitPrice = productPriceById[productId] ?? 0;
+        const isClosed = lineStatus === 690970001;
+        const payload: Record<string, unknown> = {
           msdyn_name: lineName,
           msdyn_description: tag(),
           msdyn_linestatus: lineStatus,
-          msdyn_estimatequantity: 1 + (j % 2),
-          msdyn_quantity: lineStatus === 690970001 ? 1 + (j % 2) : 0,
+          msdyn_estimatequantity: estQty,
+          msdyn_quantity: usedQty,
           msdyn_lineorder: nextLineOrder,
           "msdyn_workorder@odata.bind": `/msdyn_workorders(${woId})`,
           "msdyn_product@odata.bind": `/products(${productId})`,
-        });
+        };
+        if (unitPrice > 0) {
+          payload.msdyn_estimateunitamount = unitPrice;
+          payload.msdyn_estimatesubtotal = unitPrice * estQty;
+          if (isClosed) {
+            payload.msdyn_unitamount = unitPrice;
+            payload.msdyn_subtotal = unitPrice * usedQty;
+            payload.msdyn_totalamount = unitPrice * usedQty;
+          }
+        }
+
+        const lineId = await dv.create("msdyn_workorderproducts", payload);
         nextLineOrder++;
         trackCreated(result, "workOrderProducts", lineId);
         setLabel(result, "workOrderProducts", lineId, lineName);

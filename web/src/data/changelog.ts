@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.25.0";
+export const APP_VERSION = "v1.26.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.26.0",
+    date: "April 30, 2026",
+    tag: "FEATURE",
+    features: [
+      "**Closed-Posted financials.** WO product lines now carry pricing pulled from each product's `listPrice` in the preset. Estimated lines populate `msdyn_estimateunitamount` + `msdyn_estimatesubtotal`; Closed-Posted (Used) lines additionally set `msdyn_unitamount`, `msdyn_subtotal`, and `msdyn_totalamount` so closed WOs render real revenue numbers in dashboards and KPIs.",
+    ],
+  },
   {
     version: "v1.25.0",
     date: "April 30, 2026",
