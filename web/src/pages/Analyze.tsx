@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMsal } from "@azure/msal-react";
-import { Sparkle, Globe, Warning, ArrowRight, FastForward, Package, CircleNotch } from "@phosphor-icons/react";
+import { Sparkle, Globe, Warning, ArrowRight, FastForward, Package, CircleNotch, CheckCircle } from "@phosphor-icons/react";
 import { AppHeader } from "@/components/AppHeader";
 import { ModelPicker } from "@/components/ModelPicker";
 import { PresetReview } from "@/components/PresetReview";
@@ -32,6 +32,10 @@ export function Analyze() {
     const raw = orgStore.getPreset();
     return raw ? (JSON.parse(raw) as FsPreset) : null;
   });
+  // Track which curated demo pack the user just clicked so we can render
+  // a visible "selected" state on the card. Cleared when the user runs
+  // a fresh website Analyze (which produces an AI-derived preset, not a pack).
+  const [selectedPackId, setSelectedPackId] = useState<string | null>(null);
 
   // Tick the elapsed-time counter while busy so the user can see progress
   // is being made (or, if it stalls way past the typical 10–20s, knows
@@ -62,6 +66,7 @@ export function Analyze() {
     setPreset(null);
     setStatus("Starting…");
     setBusy(true);
+    setSelectedPackId(null);
     const startedAt = Date.now();
     track("action", { detail: { name: "analyze.start", url: companyUrl, model: selectedModel } });
     try {
@@ -94,6 +99,9 @@ export function Analyze() {
   function handlePresetChange(next: FsPreset) {
     setPreset(next);
     orgStore.setPreset(JSON.stringify(next));
+    // The user edited the preset by hand, so it no longer matches the
+    // pristine pack — drop the "selected pack" highlight.
+    setSelectedPackId(null);
   }
 
   function handleSkip() {
@@ -111,6 +119,7 @@ export function Analyze() {
     if (!pack) return;
     setPreset(pack.preset);
     setError(null);
+    setSelectedPackId(packId);
     orgStore.setPreset(JSON.stringify(pack.preset));
   }
 
@@ -214,20 +223,46 @@ export function Analyze() {
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {DEMO_PACKS.map((pack) => (
-                <button
-                  key={pack.id}
-                  onClick={() => handlePickPack(pack.id)}
-                  className="text-left p-4 rounded-lg border border-border bg-bg-elevated hover:border-accent hover:bg-bg-elevated/80 transition-colors"
-                >
-                  <div className="text-sm font-semibold text-white mb-1">
-                    {pack.label}
-                  </div>
-                  <div className="text-xs text-slate-400 leading-relaxed">
-                    {pack.blurb}
-                  </div>
-                </button>
-              ))}
+              {DEMO_PACKS.map((pack) => {
+                const isSelected = selectedPackId === pack.id;
+                return (
+                  <button
+                    key={pack.id}
+                    onClick={() => handlePickPack(pack.id)}
+                    aria-pressed={isSelected ? "true" : "false"}
+                    className={
+                      isSelected
+                        ? "relative text-left p-4 rounded-lg border-2 border-accent bg-accent/10 ring-2 ring-accent/40 transition-colors"
+                        : "relative text-left p-4 rounded-lg border border-border bg-bg-elevated hover:border-accent hover:bg-bg-elevated/80 transition-colors"
+                    }
+                  >
+                    {isSelected && (
+                      <CheckCircle
+                        size={18}
+                        weight="fill"
+                        className="absolute top-2 right-2 text-accent"
+                      />
+                    )}
+                    <div
+                      className={
+                        isSelected
+                          ? "text-sm font-semibold text-accent mb-1 pr-6"
+                          : "text-sm font-semibold text-white mb-1"
+                      }
+                    >
+                      {pack.label}
+                    </div>
+                    <div className="text-xs text-slate-400 leading-relaxed">
+                      {pack.blurb}
+                    </div>
+                    {isSelected && (
+                      <div className="mt-2 text-[10px] uppercase tracking-wider font-semibold text-accent">
+                        Selected
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
             </div>
             <div className="mt-4 flex items-center justify-end">
               <button

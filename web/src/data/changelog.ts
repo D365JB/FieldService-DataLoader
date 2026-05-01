@@ -7,9 +7,28 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.39.2";
+export const APP_VERSION = "v1.39.4";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.39.4",
+    date: "May 1, 2026",
+    tag: "FIX",
+    fixes: [
+      "**Analyze page: selected curated demo pack now shows a clear \"Selected\" highlight.** Previously, clicking *HVAC* / *Telecom* / *Pest Control* / etc only updated the preset below — the pack tile itself didn't change, so users couldn't tell which pack they'd just picked. The selected tile now gets an accent border + ring, an accent-colored title, a *Selected* badge, and a filled checkmark in the corner. Editing the preset by hand or running a fresh website Analyze clears the highlight.",
+      "**Generate page: number-of-Work-Orders input no longer fights you while you type.** Typing *100* used to clamp to *2* the moment the *1* keystroke landed (because *1* was below the min of *2*) — leaving you unable to ever land on 100. The same problem hit anything that started below the field's min. The Work Orders / Days forward / Days backward / Workday-start fields now keep a local string buffer while you type and only clamp when the field loses focus or you press Enter, so you can type any value freely.",
+      "**Generate page: Functional Locations now has a *Use existing* option.** Previously the Functional Locations row only offered *Create from preset* / *Skip*, even though the underlying seeder already accepted picked existing FL records. The row now has the same *Create / Existing / Skip* selector as Accounts and Territories, with a Dataverse picker that lets you reuse your real Functional Locations on a run.",
+    ],
+  },
+  {
+    version: "v1.39.3",
+    date: "May 1, 2026",
+    tag: "FIX",
+    fixes: [
+      "**Generate page: spinner no longer keeps spinning after a failure.** When a step blew up mid-run, the row stayed stuck on the blue spinning arc, which made it look like the seeder was still working. The in-flight step now flips to a red ✕ with a red progress bar the moment the run errors out, so it's obvious which step actually failed.",
+      "**Generate page: friendlier failure messages.** The error panel now leads with a one-line plain-English explanation of what went wrong (e.g. \"A Work Order from a previous run already has Scheduled / In Progress / Completed bookings, so Field Service refused to re-open it for editing\") plus a *What to try* line with concrete next steps. The raw Dataverse response is still available under a *Show technical details* expander for debugging.",
+    ],
+  },
   {
     version: "v1.39.2",
     date: "May 1, 2026",

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Sliders } from "@phosphor-icons/react";
 import {
   generationKnobs,
@@ -186,6 +187,28 @@ function NumberInput(props: {
   max: number;
   onChange: (n: number) => void;
 }) {
+  // Use a local string buffer so the user can type intermediate values
+  // (clearing the field, typing "1" before "100", etc) without us
+  // clamping every keystroke. The numeric clamp only runs on blur.
+  // Without this, typing "100" gets eaten because "1" instantly clamps
+  // to the min (e.g. 2).
+  const [draft, setDraft] = useState<string>(String(props.value));
+  // Keep the buffer in sync when the parent updates the value externally.
+  useEffect(() => {
+    setDraft(String(props.value));
+  }, [props.value]);
+
+  function commit() {
+    const n = Number(draft);
+    if (!Number.isFinite(n)) {
+      setDraft(String(props.value));
+      return;
+    }
+    const clamped = Math.max(props.min, Math.min(props.max, Math.round(n)));
+    setDraft(String(clamped));
+    if (clamped !== props.value) props.onChange(clamped);
+  }
+
   return (
     <label className="block">
       <div className="text-xs text-muted mb-1">{props.label}</div>
@@ -193,12 +216,14 @@ function NumberInput(props: {
         type="number"
         min={props.min}
         max={props.max}
-        value={props.value}
-        onChange={(e) => {
-          const n = Number(e.target.value);
-          if (!Number.isFinite(n)) return;
-          const clamped = Math.max(props.min, Math.min(props.max, Math.round(n)));
-          props.onChange(clamped);
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commit();
+          }
         }}
         className="w-full bg-bg-elevated border border-border rounded-md px-2 py-1.5 text-sm text-white focus:outline-none focus:border-accent"
       />

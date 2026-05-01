@@ -21,7 +21,7 @@ export interface ActiveStep {
   done: number;
   total: number;
   detail?: string;
-  status: "pending" | "running" | "complete";
+  status: "pending" | "running" | "complete" | "failed";
 }
 
 export interface ActiveRunSnapshot {
@@ -137,11 +137,17 @@ export const activeRunStore = {
 
   /** Mark the run as errored. `partial` is whatever was created up to the failure. */
   fail(error: string, partial?: SeedResult | null): void {
+    // Stop the spinner on whichever step was in-flight when the failure
+    // happened — without this the row keeps spinning forever.
+    const failedSteps = state.steps.map((s) =>
+      s.status === "running" ? { ...s, status: "failed" as const } : s,
+    );
     update({
       running: false,
       error,
       result: partial ?? null,
       retryNotice: null,
+      steps: failedSteps,
     });
   },
 

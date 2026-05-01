@@ -6,6 +6,7 @@ import {
   Warning,
   CheckCircle,
   CircleNotch,
+  XCircle,
   ArrowRight,
   Info,
 } from "@phosphor-icons/react";
@@ -29,7 +30,7 @@ interface StepState {
   done: number;
   total: number;
   detail?: string;
-  status: "pending" | "running" | "complete";
+  status: "pending" | "running" | "complete" | "failed";
 }
 
 const STEP_ORDER = [
@@ -357,6 +358,13 @@ export function Generate() {
       }
       const message = (err as Error).message;
       setError(message);
+      // Stop the in-flight spinner: mark whichever step was running as
+      // failed so the row stops animating and shows a red X.
+      setSteps((prev) =>
+        prev.map((s) =>
+          s.status === "running" ? { ...s, status: "failed" } : s,
+        ),
+      );
       activeRunStore.fail(message, partial ?? null);
       track("error", {
         detail: {
@@ -528,12 +536,24 @@ export function Generate() {
                   />
                 }
               />
-              <AutoLoadRow
+              <EntityRow
                 label="Functional Locations"
                 hint={`Preset has ${preset.functionalLocations?.length ?? 0}.`}
                 mode={entityModes.functionalLocations}
                 onModeChange={(m) => setMode("functionalLocations", m)}
                 warning={warningFor("functionalLocations")}
+                picker={
+                  <EntityPicker
+                    label="functional locations"
+                    orgUrl={orgUrl}
+                    entitySet="msdyn_functionallocations"
+                    idField="msdyn_functionallocationid"
+                    nameField="msdyn_name"
+                    filter="statecode eq 0"
+                    value={entityPicks.functionalLocations}
+                    onChange={(v) => setPicks("functionalLocations", v)}
+                  />
+                }
               />
               <AutoLoadRow
                 label="Customer Assets"
@@ -635,9 +655,34 @@ export function Generate() {
           {error && (
             <div className="mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-sm flex items-start gap-2">
               <Warning size={18} className="flex-shrink-0 mt-0.5" />
-              <div>
-                <strong>Generation failed.</strong>
-                <div className="mt-1 font-mono text-xs">{error}</div>
+              <div className="flex-1">
+                <strong>
+                  Generation stopped on{" "}
+                  {steps.find((s) => s.status === "failed")?.name ??
+                    "an unknown step"}
+                  .
+                </strong>
+                {(() => {
+                  const h = humanizeGenerateError(error);
+                  return (
+                    <>
+                      <div className="mt-1 text-red-200">{h.summary}</div>
+                      {h.advice && (
+                        <div className="mt-1 text-red-200/80">
+                          <strong>What to try:</strong> {h.advice}
+                        </div>
+                      )}
+                      <details className="mt-2">
+                        <summary className="cursor-pointer text-xs text-red-200/70 hover:text-red-200">
+                          Show technical details
+                        </summary>
+                        <div className="mt-1 font-mono text-xs whitespace-pre-wrap break-all text-red-200/70">
+                          {error}
+                        </div>
+                      </details>
+                    </>
+                  );
+                })()}
               </div>
             </div>
           )}
@@ -681,22 +726,19 @@ export function Generate() {
 
 function StepRow({ step }: { step: StepState }) {
   const pct = step.total > 0 ? Math.round((step.done / step.total) * 100) : 0;
-  const Icon =
-    step.status === "complete"
-      ? CheckCircle
-      : step.status === "running"
-        ? CircleNotch
-        : null;
   return (
     <div className="flex items-start gap-3">
       <div className="w-6 mt-0.5 flex-shrink-0">
-        {Icon &&
-          (step.status === "running" ? (
-            <Icon size={20} className="text-accent animate-spin" />
-          ) : (
-            <Icon size={20} className="text-emerald-400" weight="fill" />
-          ))}
-        {!Icon && (
+        {step.status === "running" && (
+          <CircleNotch size={20} className="text-accent animate-spin" />
+        )}
+        {step.status === "complete" && (
+          <CheckCircle size={20} className="text-emerald-400" weight="fill" />
+        )}
+        {step.status === "failed" && (
+          <XCircle size={20} className="text-red-400" weight="fill" />
+        )}
+        {step.status === "pending" && (
           <div className="w-5 h-5 rounded-full border border-border bg-bg-elevated" />
         )}
       </div>
@@ -706,7 +748,9 @@ function StepRow({ step }: { step: StepState }) {
             className={
               step.status === "pending"
                 ? "text-slate-500"
-                : "text-white font-medium"
+                : step.status === "failed"
+                  ? "text-red-300 font-medium"
+                  : "text-white font-medium"
             }
           >
             {step.name}
@@ -715,15 +759,22 @@ function StepRow({ step }: { step: StepState }) {
             {step.total > 0 ? `${step.done}/${step.total}` : ""}
           </span>
         </div>
-        {step.detail && step.status === "running" && (
-          <div className="text-xs text-slate-400 mt-0.5 truncate">
-            → {step.detail}
-          </div>
-        )}
+        {step.detail &&
+          (step.status === "running" || step.status === "failed") && (
+            <div
+              className={`text-xs mt-0.5 truncate ${
+                step.status === "failed" ? "text-red-300" : "text-slate-400"
+              }`}
+            >
+              → {step.detail}
+            </div>
+          )}
         {step.total > 0 && (
           <div className="mt-2 h-1 bg-bg-elevated rounded-full overflow-hidden">
             <div
-              className="h-full bg-accent transition-all"
+              className={`h-full transition-all ${
+                step.status === "failed" ? "bg-red-500/60" : "bg-accent"
+              }`}
               style={{ width: `${pct}%` }}
             />
           </div>
@@ -731,6 +782,93 @@ function StepRow({ step }: { step: StepState }) {
       </div>
     </div>
   );
+}
+
+/**
+ * Translate a low-level Dataverse / seeder error message into a one-line
+ * human summary plus actionable advice. We pattern-match the common ones
+ * we know about; everything else falls through to a generic message and
+ * the raw error stays available under "Show technical details".
+ */
+function humanizeGenerateError(message: string): {
+  summary: string;
+  advice?: string;
+} {
+  const m = message.toLowerCase();
+
+  if (
+    m.includes("can't change the status to 'unscheduled'") ||
+    m.includes("can't change the status to \"unscheduled\"") ||
+    (m.includes("msdyn_workorders") && m.includes("bookings that have"))
+  ) {
+    return {
+      summary:
+        "A Work Order from a previous run already has Scheduled / In Progress / Completed bookings, so Field Service refused to re-open it for editing.",
+      advice:
+        "Either delete that previous run's Work Orders + Bookings via the Cleanup page, or pick a fresh org. The seeder cannot heal Posted-with-bookings WOs in place because the FS plugin blocks the status flip.",
+    };
+  }
+  if (m.includes("0x80040217") || m.includes("does not exist")) {
+    return {
+      summary:
+        "Dataverse rejected a record reference \u2014 something the seeder expected to find isn't there.",
+      advice:
+        "Open Show technical details below; the entity name in the message tells you which table is missing. Common cause: an existing-record pick was deleted between selection and Apply.",
+    };
+  }
+  if (m.includes("0x8004f01c") || m.includes("dependent component")) {
+    return {
+      summary:
+        "Field Service plugin blocked the write because of a missing or inactive dependent record (skill, territory, status mapping, etc).",
+      advice:
+        "Check the row that failed in the technical details, then verify the dependency in the org (e.g. the Bookable Resource has a primary territory and at least one characteristic).",
+    };
+  }
+  if (m.includes("401") || m.includes("unauthorized") || m.includes("token")) {
+    return {
+      summary:
+        "Your Dataverse access token expired or was rejected mid-run.",
+      advice:
+        "Refresh this page, sign in again, then re-run. Picked existing records will need to be selected again.",
+    };
+  }
+  if (m.includes("429") || m.includes("rate") || m.includes("throttl")) {
+    return {
+      summary: "Dataverse throttled the run after too many requests.",
+      advice:
+        "Wait a minute and re-run. If it keeps happening, lower the Work Order count on the Generate page or split the run into smaller batches.",
+    };
+  }
+  if (
+    m.includes("failed to fetch") ||
+    m.includes("network error") ||
+    m.includes("timed out")
+  ) {
+    return {
+      summary: "The browser couldn't reach Dataverse to finish the call.",
+      advice:
+        "Check your VPN / proxy / network, then retry. If you're on a corporate proxy, the request body may have been too large \u2014 lower the Work Order count and try again.",
+    };
+  }
+  if (
+    m.includes("400") &&
+    (m.includes("incident") || m.includes("workorder")) &&
+    m.includes("territory")
+  ) {
+    return {
+      summary:
+        "A Work Order or Incident Type can't be saved because its territory link is missing or invalid.",
+      advice:
+        "Re-pick existing Territories on the Generate page and re-run, or set Territories back to Create.",
+    };
+  }
+
+  return {
+    summary:
+      "The seeder hit an error it doesn't have a friendly explanation for yet.",
+    advice:
+      "See Show technical details below for the raw Dataverse response. Partial records up to this point have been kept and can be cleaned up from the Dashboard.",
+  };
 }
 
 function EntityRow({
