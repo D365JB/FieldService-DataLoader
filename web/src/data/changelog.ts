@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.41.4";
+export const APP_VERSION = "v1.41.5";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.41.5",
+    date: "May 1, 2026",
+    tag: "PERF",
+    features: [
+      "**Smaller, faster first paint via vendor chunk-splitting.** Up through v1.41.4 the production build emitted a single 936 kB / 258 kB-gzipped JS chunk that contained the app code, React, MSAL, and the entire `@phosphor-icons/react` icon set in one file — every shipped fix forced every visitor to re-download all of it. v1.41.5 adds explicit `build.rollupOptions.output.manualChunks` rules to `vite.config.ts` that split `react` + `react-dom` + `react-router-dom` into a `react` chunk, `@azure/msal-browser` into an `msal` chunk, and the icon set into an `icons` chunk. The index chunk now contains only first-party app code, which is what actually changes between releases — so a routine FEAT/FIX deploy invalidates ~150 kB of cache instead of ~250 kB, and parallel downloads of the four chunks shorten time-to-interactive on slow networks. No runtime behavior changes; the only visible difference is that DevTools' Network tab now shows four `assets/*.js` files instead of one. The 500 kB chunk-size warning is also raised to 700 kB so the legitimate-but-still-chunky icons bundle stops emitting noise on every build.",
+    ],
+  },
   {
     version: "v1.41.4",
     date: "May 1, 2026",
