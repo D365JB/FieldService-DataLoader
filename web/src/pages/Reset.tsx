@@ -13,11 +13,12 @@ import {
   UploadSimple,
 } from "@phosphor-icons/react";
 import { AppHeader } from "@/components/AppHeader";
-import { DataverseClient } from "@/lib/dataverse";
+import { DataverseClient, deepLink } from "@/lib/dataverse";
 import {
   deleteRun,
   type SeedProgress,
 } from "@/lib/fs/seed-config";
+import { buildResultSections } from "@/lib/fs/resultSections";
 import { orgStore } from "@/lib/orgStore";
 import { runHistory, type RunRecord } from "@/lib/runHistory";
 
@@ -277,6 +278,7 @@ export function Reset() {
                 const isActive = activeRunId === r.id && running;
                 const isExpanded = expandedRunId === r.id;
                 const breakdown = summarizeRun(r);
+                const sections = buildResultSections(r.result);
                 return (
                   <li
                     key={r.id}
@@ -322,23 +324,50 @@ export function Reset() {
                       </button>
                     </div>
                     {isExpanded && (
-                      <div className="border-t border-border px-3 py-3 bg-bg-base/60">
+                      <div className="border-t border-border px-3 py-3 bg-bg-base/60 space-y-3">
                         {breakdown.length === 0 ? (
                           <p className="text-xs text-muted">
                             This run created no records.
                           </p>
                         ) : (
-                          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-xs">
-                            {breakdown.map((b) => (
-                              <li
-                                key={b.label}
-                                className="flex justify-between gap-2 font-mono text-slate-300"
-                              >
-                                <span className="text-slate-400">{b.label}</span>
-                                <span className="text-white">{b.count}</span>
-                              </li>
-                            ))}
-                          </ul>
+                          <>
+                            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-xs">
+                              {breakdown.map((b) => (
+                                <li
+                                  key={b.label}
+                                  className="flex justify-between gap-2 font-mono text-slate-300"
+                                >
+                                  <span className="text-slate-400">{b.label}</span>
+                                  <span className="text-white">{b.count}</span>
+                                </li>
+                              ))}
+                            </ul>
+                            <div className="pt-3 border-t border-border space-y-3">
+                              <p className="text-[11px] text-muted">
+                                Click any record to open it in Dynamics.
+                              </p>
+                              {sections.map((s) => (
+                                <div key={s.title}>
+                                  <h4 className="text-[10px] uppercase tracking-wider text-muted mb-1.5">
+                                    {s.title} ({Object.keys(s.ids).length})
+                                  </h4>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {Object.entries(s.ids).map(([key, id]) => (
+                                      <a
+                                        key={id}
+                                        href={deepLink(orgUrl, s.entitySet, id)}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-[11px] px-2 py-0.5 rounded bg-bg-elevated border border-border hover:border-accent text-slate-300 hover:text-white transition-colors"
+                                      >
+                                        {key}
+                                      </a>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </>
                         )}
                       </div>
                     )}

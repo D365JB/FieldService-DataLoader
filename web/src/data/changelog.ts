@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.21.4";
+export const APP_VERSION = "v1.22.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.22.0",
+    date: "April 30, 2026",
+    tag: "FEATURE",
+    features: [
+      "**Reset → Recent loads** rows now expand into the same rich detail you see right after a Generate run: per-entity counts plus named, clickable chips for every record (Accounts, WOs, Bookings, Time Entries, IoT Alerts, etc.) that deep-link straight into Dynamics. Click a row's title to expand. The shared section builder is extracted to `resultSections.ts` so Generate and Reset stay in sync going forward.",
+    ],
+  },
   {
     version: "v1.21.4",
     date: "April 30, 2026",

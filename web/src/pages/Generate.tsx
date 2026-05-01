@@ -12,6 +12,7 @@ import {
 import { AppHeader } from "@/components/AppHeader";
 import { DataverseClient, deepLink } from "@/lib/dataverse";
 import { seedFromPreset, type SeedProgress, type SeedResult, type SeedOptions, type EntityChoice } from "@/lib/fs/seed-config";
+import { buildResultSections } from "@/lib/fs/resultSections";
 import type { FsPreset } from "@/lib/preset";
 import { orgStore } from "@/lib/orgStore";
 import { runHistory } from "@/lib/runHistory";
@@ -762,66 +763,7 @@ function ResultSummary({
   preset: FsPreset;
   orgUrl: string;
 }) {
-  const idMaps = result.idMaps ?? {};
-  const createdIds = result.createdIds ?? {};
-  const labels = result.labels ?? {};
-  // Phase 2+ entities go through the generic idMaps registry. Some only have
-  // createdIds (no human-readable mapKey) — synthesize numbered labels for those.
-  const fromIdMap = (key: string) => {
-    const map = idMaps[key] ?? {};
-    const lbl = labels[key];
-    if (!lbl) return map;
-    // Re-key by friendly label when we recorded one for the id.
-    const out: Record<string, string> = {};
-    for (const [k, id] of Object.entries(map)) {
-      out[lbl[id] ?? k] = id;
-    }
-    return out;
-  };
-  const fromCreatedIds = (key: string, label: string) => {
-    const ids = createdIds[key] ?? [];
-    const lbl = labels[key] ?? {};
-    return Object.fromEntries(
-      ids.map((id, i) => [lbl[id] ?? `${label} #${i + 1}`, id]),
-    );
-  };
-  const namedIdList = (ids: string[], key: string, label: string) => {
-    const lbl = labels[key] ?? {};
-    return Object.fromEntries(
-      ids.map((id, i) => [lbl[id] ?? `${label} #${i + 1}`, id]),
-    );
-  };
-  const sections: Array<{ title: string; entitySet: string; ids: Record<string, string> }> = [
-    { title: "Territories", entitySet: "territories", ids: result.territoryIds },
-    { title: "Work Order Types", entitySet: "msdyn_workordertypes", ids: result.workOrderTypeIds },
-    { title: "Incident Types", entitySet: "msdyn_incidenttypes", ids: result.incidentTypeIds },
-    { title: "Characteristics", entitySet: "characteristics", ids: result.characteristicIds },
-    { title: "Products", entitySet: "products", ids: result.productIds },
-    { title: "Incident Type Products", entitySet: "msdyn_incidenttypeproducts", ids: fromIdMap("incidentTypeProducts") },
-    { title: "Accounts", entitySet: "accounts", ids: result.accountIds },
-    { title: "Technician Contacts", entitySet: "contacts", ids: fromIdMap("technicianContacts") },
-    { title: "Bookable Resources", entitySet: "bookableresources", ids: result.resourceIds },
-    { title: "Functional Locations", entitySet: "msdyn_functionallocations", ids: fromIdMap("functionalLocations") },
-    { title: "Customer Assets", entitySet: "msdyn_customerassets", ids: fromIdMap("customerAssets") },
-    { title: "Service Task Types", entitySet: "msdyn_servicetasktypes", ids: fromIdMap("serviceTaskTypes") },
-    { title: "Agreements", entitySet: "msdyn_agreements", ids: fromIdMap("agreements") },
-    { title: "Warehouses", entitySet: "msdyn_warehouses", ids: fromIdMap("warehouses") },
-    { title: "Product Inventory", entitySet: "msdyn_productinventories", ids: fromCreatedIds("productInventory", "Inventory") },
-    {
-      title: "Work Orders",
-      entitySet: "msdyn_workorders",
-      ids: namedIdList(result.workOrderIds, "workOrders", "WO"),
-    },
-    { title: "WO Service Tasks", entitySet: "msdyn_workorderservicetasks", ids: fromCreatedIds("workOrderServiceTasks", "Task") },
-    {
-      title: "Bookings",
-      entitySet: "bookableresourcebookings",
-      ids: namedIdList(result.bookingIds, "bookings", "Booking"),
-    },
-    { title: "WO Products", entitySet: "msdyn_workorderproducts", ids: fromCreatedIds("workOrderProducts", "Line") },
-    { title: "Time Entries", entitySet: "msdyn_timeentries", ids: fromCreatedIds("timeEntries", "Entry") },
-    { title: "IoT Alerts", entitySet: "msdyn_iotalerts", ids: fromCreatedIds("iotAlerts", "Alert") },
-  ].filter((s) => Object.keys(s.ids).length > 0);
+  const sections = buildResultSections(result);
   const total = sections.reduce((n, s) => n + Object.keys(s.ids).length, 0);
 
   return (
