@@ -61,6 +61,18 @@ export function Landing() {
             <Wrench size={16} weight="bold" />
             Built for Dynamics 365 Field Service
           </div>
+          <div className="text-xs text-slate-400 mb-3 flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+            <span>Built by James Bowen</span>
+            <span aria-hidden="true">•</span>
+            <a
+              href="mailto:jamesbowen@microsoft.com"
+              className="hover:text-accent transition-colors"
+            >
+              jamesbowen@microsoft.com
+            </a>
+            <span aria-hidden="true">•</span>
+            <span>Principal Solution Specialist | Manufacturing &amp; Mobility</span>
+          </div>
           <div className="mb-6">
             <button
               onClick={() => setChangelogOpen(true)}
