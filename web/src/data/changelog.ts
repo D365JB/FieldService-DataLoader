@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.22.0";
+export const APP_VERSION = "v1.22.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.22.1",
+    date: "April 30, 2026",
+    tag: "FIX",
+    features: [
+      "**Bookable Resources** create/heal now bind via `ContactId@odata.bind` (PascalCase nav property matching the `contactid` lookup column). The previous `Contact@odata.bind` was undeclared on this org and produced *\"An undeclared property 'Contact' which only has property annotations\"*. New runs will now create resources as Contact-type cleanly, and existing Equipment-typed rows will be healed on subsequent runs.",
+    ],
+  },
   {
     version: "v1.22.0",
     date: "April 30, 2026",

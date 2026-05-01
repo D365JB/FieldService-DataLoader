@@ -705,7 +705,9 @@ export async function seedFromPreset(
           timezone: 4,
         };
         if (contactId) {
-          payload["Contact@odata.bind"] = `/contacts(${contactId})`;
+          // Nav property name on bookableresource is `ContactId` (PascalCase
+          // matching the `contactid` lookup column). `Contact` is undeclared.
+          payload["ContactId@odata.bind"] = `/contacts(${contactId})`;
         }
         return payload;
       },
@@ -729,7 +731,7 @@ export async function seedFromPreset(
         try {
           await dv.update("bookableresources", resourceId, {
             resourcetype: 2,
-            "Contact@odata.bind": `/contacts(${contactId})`,
+            "ContactId@odata.bind": `/contacts(${contactId})`,
           });
         } catch (err) {
           // Most common cause: existing bookings prevent type change. Log and
