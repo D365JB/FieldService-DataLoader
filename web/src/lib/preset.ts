@@ -53,6 +53,23 @@ export interface FsPreset {
     state?: string;
     /** Free-form site description — surfaces on the WO. */
     siteDescription?: string;
+    /**
+     * v1.42.2 — Optional street address. Written to `address1_line1` so
+     * the FS map view (which renders pins from address columns) shows
+     * a recognisable street. When not supplied the seeder still writes
+     * city/state and stamps `address1_latitude/longitude` so the pin
+     * appears in the right metro.
+     */
+    addressLine1?: string;
+    postalCode?: string;
+    /**
+     * Optional explicit lat/long. When omitted the seeder geocodes from
+     * city/state via the same metro-centre lookup table used for
+     * technicians, jittered ±0.05° per-account so accounts in the same
+     * city don't all stack on a single pin.
+     */
+    latitude?: number;
+    longitude?: number;
   }>;
   /** Sample technicians (created as Equipment-type bookable resources to avoid needing admin). */
   sampleTechnicians: Array<{
@@ -242,7 +259,7 @@ Generate a Field Service preset for this company as JSON matching exactly this s
   "incidentTypes": [{ "name": "<string>", "description": "<string>", "estimatedDurationMinutes": <int>, "serviceTasks": ["<string>", ...] }],
   "characteristics": [{ "name": "<string>", "description": "<optional>" }],
   "products": [{ "name": "<string>", "productNumber": "<SKU>", "description": "<optional>", "listPrice": <number> }],
-  "sampleAccounts": [{ "name": "<string>", "city": "<string>", "state": "<2-letter>", "siteDescription": "<optional>" }],
+  "sampleAccounts": [{ "name": "<string>", "city": "<string>", "state": "<2-letter>", "siteDescription": "<optional>", "addressLine1": "<optional realistic street address>", "postalCode": "<optional 5-digit ZIP>" }],
   "sampleTechnicians": [{ "name": "<First Last>", "primarySkill": "<must match a characteristics[].name>", "primaryTerritoryCode": "<must match a territories[].code>" }],
   "functionalLocations": [{ "name": "<string>", "accountName": "<must match a sampleAccounts[].name>", "parentName": "<optional, must match another functionalLocations[].name>", "description": "<optional>" }],
   "customerAssets": [{ "name": "<string>", "accountName": "<must match a sampleAccounts[].name>", "functionalLocationName": "<optional>", "productNumber": "<optional, must match a products[].productNumber>", "parentAssetName": "<optional>", "serialNumber": "<string>", "description": "<optional>" }],

@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.42.1";
+export const APP_VERSION = "v1.42.2";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.42.2",
+    date: "May 1, 2026",
+    tag: "FEAT",
+    features: [
+      "**Geocoded customer accounts — every account now plots as a real pin on the Field Service map view.** Previously sample accounts were written with `address1_city` / `address1_stateorprovince` / `address1_country` only; FS's map widget couldn't resolve a coordinate from city alone in many tenants and rendered the accounts grid empty. v1.42.2 adds three optional fields to `FsAccount` — `addressLine1`, `postalCode`, and an explicit `latitude`/`longitude` pair — and stamps `address1_latitude` / `address1_longitude` on every account at create time so the map view never has to call out to a geocoding service. When the preset supplies explicit coords those win; otherwise the seeder hashes `name|city|state` through the same djb2 jitter used for technicians and pulls a metro centroid out of a new `CITY_CENTRES` table covering ~30 US cities (Seattle, Portland, San Francisco, San Jose, LA, San Diego, Phoenix, Denver, Salt Lake City, Las Vegas, Austin, Dallas, Houston, San Antonio, New Orleans, Miami, Tampa, Orlando, Atlanta, Charlotte, Raleigh, Nashville, NYC, Newark, Philadelphia, DC, Baltimore, Boston, Pittsburgh, Cleveland, Cincinnati, Detroit, Chicago, Indianapolis, St. Louis, Minneapolis, Kansas City, Oklahoma City). Per-account ±0.05° (~3 mi) jitter means multiple accounts in the same city plot as distinct pins instead of stacking on a single dot. Unrecognised city names fall back to the geographic centre of the contiguous US so the row still creates cleanly. The AI prompt schema is updated to expose `addressLine1` / `postalCode` as optional fields the model can fill with realistic street addresses; older presets and history entries lacking these fields keep working since the seeder geocodes from city alone when needed. Net result: a freshly-seeded org's Accounts → Map view shows every customer at the right metro on first paint with zero manual address entry.",
+    ],
+  },
   {
     version: "v1.42.1",
     date: "May 1, 2026",

@@ -73,6 +73,75 @@ function geocodeTech(
 }
 
 /**
+ * v1.42.2 — Major-city centroids keyed by upper-case city name. Used by
+ * `geocodeAccount` to plant each customer account on the FS map without
+ * relying on Bing/Azure Maps lookups at seed time. List intentionally
+ * matches the metros referenced in TERRITORY_CENTRES so the same
+ * presets work for both. Unrecognised cities fall back to US_CENTRE.
+ */
+const CITY_CENTRES: Record<string, { lat: number; lng: number }> = {
+  SEATTLE: { lat: 47.6062, lng: -122.3321 },
+  PORTLAND: { lat: 45.5152, lng: -122.6784 },
+  "SAN FRANCISCO": { lat: 37.7749, lng: -122.4194 },
+  "SAN JOSE": { lat: 37.3382, lng: -121.8863 },
+  "LOS ANGELES": { lat: 34.0522, lng: -118.2437 },
+  "SAN DIEGO": { lat: 32.7157, lng: -117.1611 },
+  PHOENIX: { lat: 33.4484, lng: -112.074 },
+  DENVER: { lat: 39.7392, lng: -104.9903 },
+  "SALT LAKE CITY": { lat: 40.7608, lng: -111.891 },
+  "LAS VEGAS": { lat: 36.1699, lng: -115.1398 },
+  AUSTIN: { lat: 30.2672, lng: -97.7431 },
+  DALLAS: { lat: 32.7767, lng: -96.797 },
+  HOUSTON: { lat: 29.7604, lng: -95.3698 },
+  "SAN ANTONIO": { lat: 29.4241, lng: -98.4936 },
+  "NEW ORLEANS": { lat: 29.9511, lng: -90.0715 },
+  MIAMI: { lat: 25.7617, lng: -80.1918 },
+  TAMPA: { lat: 27.9506, lng: -82.4572 },
+  ORLANDO: { lat: 28.5384, lng: -81.3789 },
+  ATLANTA: { lat: 33.749, lng: -84.388 },
+  CHARLOTTE: { lat: 35.2271, lng: -80.8431 },
+  RALEIGH: { lat: 35.7796, lng: -78.6382 },
+  NASHVILLE: { lat: 36.1627, lng: -86.7816 },
+  "NEW YORK": { lat: 40.7128, lng: -74.006 },
+  "NEW YORK CITY": { lat: 40.7128, lng: -74.006 },
+  NEWARK: { lat: 40.7357, lng: -74.1724 },
+  PHILADELPHIA: { lat: 39.9526, lng: -75.1652 },
+  WASHINGTON: { lat: 38.9072, lng: -77.0369 },
+  BALTIMORE: { lat: 39.2904, lng: -76.6122 },
+  BOSTON: { lat: 42.3601, lng: -71.0589 },
+  PITTSBURGH: { lat: 40.4406, lng: -79.9959 },
+  CLEVELAND: { lat: 41.4993, lng: -81.6944 },
+  CINCINNATI: { lat: 39.1031, lng: -84.512 },
+  DETROIT: { lat: 42.3314, lng: -83.0458 },
+  CHICAGO: { lat: 41.8781, lng: -87.6298 },
+  INDIANAPOLIS: { lat: 39.7684, lng: -86.1581 },
+  "ST. LOUIS": { lat: 38.627, lng: -90.1994 },
+  "ST LOUIS": { lat: 38.627, lng: -90.1994 },
+  MINNEAPOLIS: { lat: 44.9778, lng: -93.265 },
+  "KANSAS CITY": { lat: 39.0997, lng: -94.5786 },
+  "OKLAHOMA CITY": { lat: 35.4676, lng: -97.5164 },
+};
+
+function geocodeAccount(
+  accountName: string,
+  city: string | undefined,
+  state: string | undefined,
+): { lat: number; lng: number } {
+  const cityKey = (city ?? "").trim().toUpperCase();
+  const base = CITY_CENTRES[cityKey] || US_CENTRE;
+  // djb2 hash on name + city + state → ±0.05° (~3 mi) jitter so multiple
+  // accounts in the same city plot as distinct pins.
+  let h = 5381;
+  const seed = `${accountName ?? ""}|${cityKey}|${(state ?? "").toUpperCase()}`;
+  for (let i = 0; i < seed.length; i++) {
+    h = ((h << 5) + h + seed.charCodeAt(i)) | 0;
+  }
+  const a = ((h & 0xffff) / 0xffff) * 2 - 1;
+  const b = (((h >>> 16) & 0xffff) / 0xffff) * 2 - 1;
+  return { lat: base.lat + a * 0.05, lng: base.lng + b * 0.05 };
+}
+
+/**
  * Seeds the configuration tier (territories, WO types, incident types + service tasks,
  * characteristics, products) from a generated FsPreset.
  *
@@ -937,13 +1006,38 @@ export async function seedFromPreset(
       findField: "name",
       findValue: (a) => a.name,
       mapKey: (a) => a.name,
-      build: (a) => ({
-        name: a.name,
-        description: tag(a.siteDescription),
-        address1_city: a.city,
-        address1_stateorprovince: a.state,
-        address1_country: "United States",
-      }),
+      build: (a) => {
+        const payload: Record<string, unknown> = {
+          name: a.name,
+          description: tag(a.siteDescription),
+          address1_city: a.city,
+          address1_stateorprovince: a.state,
+          address1_country: "United States",
+        };
+        if (a.addressLine1) payload.address1_line1 = a.addressLine1;
+        if (a.postalCode) payload.address1_postalcode = a.postalCode;
+        // v1.42.2 — Always stamp lat/long. Use explicit coords when the
+        // preset supplies them; otherwise compute a city-centre + jitter
+        // so the FS map view shows a recognisable pin per account.
+        // Wrapped in try/catch so a geocoding hiccup never aborts the
+        // account create.
+        try {
+          if (typeof a.latitude === "number" && typeof a.longitude === "number") {
+            payload.address1_latitude = a.latitude;
+            payload.address1_longitude = a.longitude;
+          } else if (a.city) {
+            const coord = geocodeAccount(a.name, a.city, a.state);
+            payload.address1_latitude = coord.lat;
+            payload.address1_longitude = coord.lng;
+          }
+        } catch (err) {
+          console.warn(
+            `[seed] geocodeAccount failed for ${a.name}; skipping coords:`,
+            err,
+          );
+        }
+        return payload;
+      },
     },
     onProgress,
   );
