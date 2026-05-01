@@ -19,9 +19,11 @@ import {
   ClipboardText,
   FileText,
   Warehouse,
+  Trash,
 } from "@phosphor-icons/react";
 import type { FsPreset } from "@/lib/preset";
 import { editPreset } from "@/lib/presetEditor";
+import { removePresetItem, type RemoveKind } from "@/lib/presetRemove";
 
 interface Props {
   preset: FsPreset;
@@ -56,6 +58,15 @@ export function PresetReview({ preset, onChange }: Props) {
     const [prev, ...rest] = history;
     onChange(prev);
     setHistory(rest);
+  }
+
+  /** Locally remove a single row, with referential cleanup. Pushes onto the
+   *  same Undo stack as AI edits so users can revert with one click. */
+  function handleRemove(kind: RemoveKind, index: number) {
+    const next = removePresetItem(preset, kind, index);
+    if (next === preset) return; // no-op (out-of-range)
+    setHistory((h) => [preset, ...h].slice(0, 10));
+    onChange(next);
   }
 
   return (
@@ -107,6 +118,11 @@ export function PresetReview({ preset, onChange }: Props) {
           “Add 3 territories in Texas”, “Rename the company to Northwind HVAC”,
           “Make all incidents 30 minutes longer”, or “Remove products under
           $100 and add a high-end emergency kit”.
+          <span className="block mt-1 text-slate-400">
+            Tip: to drop a single row, hover any entry below and click the
+            trash icon — it's instant and runs the same cascade cleanup
+            locally (no AI call).
+          </span>
         </p>
         <div className="flex gap-2">
           <input
@@ -161,6 +177,7 @@ export function PresetReview({ preset, onChange }: Props) {
       >
         <Table
           headers={["Name", "Code", "Description"]}
+          onRemove={(i) => handleRemove("territory", i)}
           rows={preset.territories.map((t) => [
             <span className="font-semibold text-white">{t.name}</span>,
             <code className="text-accent text-xs">{t.code}</code>,
@@ -178,6 +195,7 @@ export function PresetReview({ preset, onChange }: Props) {
       >
         <Table
           headers={["Name", "Code", "Description"]}
+          onRemove={(i) => handleRemove("workOrderType", i)}
           rows={preset.workOrderTypes.map((t) => [
             <span className="font-semibold text-white">{t.name}</span>,
             <code className="text-accent text-xs">{t.code}</code>,
@@ -195,13 +213,16 @@ export function PresetReview({ preset, onChange }: Props) {
       >
         <div className="divide-y divide-border">
           {preset.incidentTypes.map((it, i) => (
-            <div key={i} className="py-3">
+            <div key={i} className="py-3 group">
               <div className="flex items-baseline justify-between gap-3">
                 <div className="font-semibold text-white">{it.name}</div>
-                <span className="inline-flex items-center gap-1 text-xs text-muted whitespace-nowrap">
-                  <Clock size={12} />
-                  {it.estimatedDurationMinutes} min
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1 text-xs text-muted whitespace-nowrap">
+                    <Clock size={12} />
+                    {it.estimatedDurationMinutes} min
+                  </span>
+                  <RemoveBtn onClick={() => handleRemove("incidentType", i)} />
+                </div>
               </div>
               <div className="text-sm text-slate-400 mt-1">
                 {it.description}
@@ -231,12 +252,15 @@ export function PresetReview({ preset, onChange }: Props) {
           {preset.characteristics.map((c, i) => (
             <div
               key={i}
-              className="bg-bg-base border border-border rounded-lg px-3 py-2"
+              className="bg-bg-base border border-border rounded-lg px-3 py-2 group flex items-start gap-2"
             >
-              <div className="text-sm font-semibold text-white">{c.name}</div>
-              {c.description && (
-                <div className="text-xs text-muted">{c.description}</div>
-              )}
+              <div>
+                <div className="text-sm font-semibold text-white">{c.name}</div>
+                {c.description && (
+                  <div className="text-xs text-muted">{c.description}</div>
+                )}
+              </div>
+              <RemoveBtn onClick={() => handleRemove("characteristic", i)} />
             </div>
           ))}
         </div>
@@ -249,6 +273,7 @@ export function PresetReview({ preset, onChange }: Props) {
       >
         <Table
           headers={["Name", "SKU", "Description", "List price"]}
+          onRemove={(i) => handleRemove("product", i)}
           rows={preset.products.map((p) => [
             <span className="font-semibold text-white">{p.name}</span>,
             <code className="text-accent text-xs">{p.productNumber}</code>,
@@ -273,6 +298,7 @@ export function PresetReview({ preset, onChange }: Props) {
       >
         <Table
           headers={["Name", "Location", "Site description"]}
+          onRemove={(i) => handleRemove("sampleAccount", i)}
           rows={preset.sampleAccounts.map((a) => [
             <span className="font-semibold text-white">{a.name}</span>,
             <span className="text-slate-300 text-sm">
@@ -292,6 +318,7 @@ export function PresetReview({ preset, onChange }: Props) {
       >
         <Table
           headers={["Name", "Primary skill", "Territory"]}
+          onRemove={(i) => handleRemove("sampleTechnician", i)}
           rows={preset.sampleTechnicians.map((t) => [
             <span className="font-semibold text-white">{t.name}</span>,
             <span className="text-slate-300 text-sm">{t.primarySkill}</span>,
@@ -310,6 +337,7 @@ export function PresetReview({ preset, onChange }: Props) {
         >
           <Table
             headers={["Name", "Account", "Parent", "Description"]}
+            onRemove={(i) => handleRemove("functionalLocation", i)}
             rows={preset.functionalLocations.map((fl) => [
               <span className="font-semibold text-white">{fl.name}</span>,
               <span className="text-slate-300 text-sm">{fl.accountName}</span>,
@@ -328,6 +356,7 @@ export function PresetReview({ preset, onChange }: Props) {
         >
           <Table
             headers={["Name", "Account", "Location", "Product", "Serial"]}
+            onRemove={(i) => handleRemove("customerAsset", i)}
             rows={preset.customerAssets.map((a) => [
               <span className="font-semibold text-white">{a.name}</span>,
               <span className="text-slate-300 text-sm">{a.accountName}</span>,
@@ -347,6 +376,7 @@ export function PresetReview({ preset, onChange }: Props) {
         >
           <Table
             headers={["Name", "Description", "Est. duration"]}
+            onRemove={(i) => handleRemove("serviceTaskType", i)}
             rows={preset.serviceTaskTypes.map((s) => [
               <span className="font-semibold text-white">{s.name}</span>,
               <span className="text-slate-400 text-sm">{s.description ?? "—"}</span>,
@@ -367,13 +397,16 @@ export function PresetReview({ preset, onChange }: Props) {
         >
           <div className="divide-y divide-border">
             {preset.agreements.map((a, i) => (
-              <div key={i} className="py-3">
+              <div key={i} className="py-3 group">
                 <div className="flex items-baseline justify-between gap-3">
                   <div className="font-semibold text-white">{a.name}</div>
-                  <span className="inline-flex items-center gap-1 text-xs text-muted whitespace-nowrap">
-                    <Clock size={12} />
-                    {a.recurrencePattern} · {a.estimatedDurationMinutes ?? "—"} min
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1 text-xs text-muted whitespace-nowrap">
+                      <Clock size={12} />
+                      {a.recurrencePattern} · {a.estimatedDurationMinutes ?? "—"} min
+                    </span>
+                    <RemoveBtn onClick={() => handleRemove("agreement", i)} />
+                  </div>
                 </div>
                 <div className="text-sm text-slate-400 mt-1">
                   {a.accountName} · {a.startOn} → {a.endOn}
@@ -418,6 +451,7 @@ export function PresetReview({ preset, onChange }: Props) {
         >
           <Table
             headers={["Name", "Location", "Description"]}
+            onRemove={(i) => handleRemove("warehouse", i)}
             rows={preset.warehouses.map((w) => [
               <span className="font-semibold text-white">{w.name}</span>,
               <span className="text-slate-300 text-sm">
@@ -513,9 +547,12 @@ function Section({
 function Table({
   headers,
   rows,
+  onRemove,
 }: {
   headers: string[];
   rows: React.ReactNode[][];
+  /** When provided, renders an extra trailing column with a per-row × button. */
+  onRemove?: (rowIndex: number) => void;
 }) {
   return (
     <div className="overflow-x-auto -mx-1">
@@ -530,21 +567,46 @@ function Table({
                 {h}
               </th>
             ))}
+            {onRemove && <th className="w-8" aria-label="Remove" />}
           </tr>
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} className="border-b border-border/40 last:border-0">
+            <tr key={i} className="border-b border-border/40 last:border-0 group">
               {row.map((cell, j) => (
                 <td key={j} className="py-2 px-2 align-top">
                   {cell}
                 </td>
               ))}
+              {onRemove && (
+                <td className="py-2 px-1 align-top w-8">
+                  <RemoveBtn onClick={() => onRemove(i)} />
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
       </table>
     </div>
+  );
+}
+
+function RemoveBtn({
+  onClick,
+  title = "Remove this entry (cleans up references locally — instant, no AI call)",
+}: {
+  onClick: () => void;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className="opacity-30 group-hover:opacity-100 hover:text-red-300 hover:bg-red-500/10 text-muted rounded p-1 transition-colors"
+    >
+      <Trash size={14} />
+    </button>
   );
 }
 

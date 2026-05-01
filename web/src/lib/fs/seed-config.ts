@@ -796,16 +796,25 @@ export async function seedFromPreset(
         if (knobs.geocodeResources) {
           // Auto-geocode: territory metro centre + per-name jitter. Sets
           // start/end location to "Resource Address" (690970000) so RSO
-          // routes from this lat/long.
-          const coord = geocodeTech(
-            t.name,
-            t.primaryTerritoryCode,
-            territoryNameByCode[t.primaryTerritoryCode],
-          );
-          payload.msdyn_startlocation = 690970000; // Resource Address
-          payload.msdyn_endlocation = 690970000;
-          payload.msdyn_latitude = coord.lat;
-          payload.msdyn_longitude = coord.lng;
+          // routes from this lat/long. Wrapped defensively so any failure
+          // resolving a coord (or any unexpected runtime issue) skips the
+          // geocoding step instead of crashing the entire seed.
+          try {
+            const coord = geocodeTech(
+              t.name,
+              t.primaryTerritoryCode,
+              territoryNameByCode[t.primaryTerritoryCode],
+            );
+            payload.msdyn_startlocation = 690970000; // Resource Address
+            payload.msdyn_endlocation = 690970000;
+            payload.msdyn_latitude = coord.lat;
+            payload.msdyn_longitude = coord.lng;
+          } catch (err) {
+            console.warn(
+              `[seed] geocodeTech failed for ${t.name}; skipping coords:`,
+              err,
+            );
+          }
         }
         return payload;
       },
@@ -847,27 +856,36 @@ export async function seedFromPreset(
         }
         // Heal geocoding when the user has the toggle on and this resource
         // has no coords yet (or coords are 0,0 which RSO treats as null).
-        if (
-          knobs.geocodeResources &&
-          (cur.msdyn_latitude == null ||
-            cur.msdyn_longitude == null ||
-            (cur.msdyn_latitude === 0 && cur.msdyn_longitude === 0))
-        ) {
-          const coord = geocodeTech(
-            t.name,
-            t.primaryTerritoryCode,
-            territoryNameByCode[t.primaryTerritoryCode],
-          );
-          try {
-            await dv.update("bookableresources", resourceId, {
-              msdyn_startlocation: 690970000,
-              msdyn_endlocation: 690970000,
-              msdyn_latitude: coord.lat,
-              msdyn_longitude: coord.lng,
-            });
-          } catch {
-            /* geocoding columns may not exist on all orgs — non-fatal */
+        // Whole block is defensive — a geocoding hiccup must never abort
+        // the seed.
+        try {
+          if (
+            knobs.geocodeResources &&
+            (cur.msdyn_latitude == null ||
+              cur.msdyn_longitude == null ||
+              (cur.msdyn_latitude === 0 && cur.msdyn_longitude === 0))
+          ) {
+            const coord = geocodeTech(
+              t.name,
+              t.primaryTerritoryCode,
+              territoryNameByCode[t.primaryTerritoryCode],
+            );
+            try {
+              await dv.update("bookableresources", resourceId, {
+                msdyn_startlocation: 690970000,
+                msdyn_endlocation: 690970000,
+                msdyn_latitude: coord.lat,
+                msdyn_longitude: coord.lng,
+              });
+            } catch {
+              /* geocoding columns may not exist on all orgs — non-fatal */
+            }
           }
+        } catch (err) {
+          console.warn(
+            `[seed] geocode heal failed for ${t.name}; skipping coords:`,
+            err,
+          );
         }
       },
       onCreated: async (resourceId, t) => {

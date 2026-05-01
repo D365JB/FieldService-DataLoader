@@ -7,9 +7,22 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.30.1";
+export const APP_VERSION = "v1.31.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.31.0",
+    date: "May 1, 2026",
+    tag: "FEATURE",
+    features: [
+      "**Instant row removal on Review & Tweak.** Every entry — territory, work-order type, incident, skill, product, account, technician, functional location, customer asset, service task, agreement, warehouse — now has a hover-to-reveal trash icon. Click it and the row is gone in milliseconds. No AI round-trip, no waiting.",
+      "**Same referential cleanup as the AI editor**, applied locally: removing a territory repoints every technician that pointed to it; removing a characteristic repoints `primarySkill`; removing an incident drops it from agreement coverage; removing a product clears `customerAssets.productNumber` and agreement `coveredProductNumbers`; removing an account cascades to its assets, locations, and agreements; removing a functional location clears asset references and child locations.",
+      "**One Undo stack** for both AI edits and manual removals — Undo reverts whichever was the most recent change.",
+    ],
+    fixes: [
+      "**Belt-and-suspenders around the geocode step.** Wrapped both call sites of `geocodeTech` in try/catch so any unexpected runtime issue (TDZ, undefined coord, anything else) is logged and the seeder continues — instead of failing the whole run before contacts are written.",
+    ],
+  },
   {
     version: "v1.30.1",
     date: "May 1, 2026",
