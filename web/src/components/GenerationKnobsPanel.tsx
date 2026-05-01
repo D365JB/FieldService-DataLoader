@@ -108,6 +108,12 @@ export function GenerationKnobsPanel({ orgUrl, value, onChange }: Props) {
           value={value.skillMatch}
           onChange={(b) => update({ skillMatch: b })}
         />
+        <ToggleRow
+          label="Geocode techs to territory"
+          hint="Auto-set lat/long + start/end location on each resource so RSO can compute travel time."
+          value={value.geocodeResources}
+          onChange={(b) => update({ geocodeResources: b })}
+        />
       </div>
 
       {/* Status mix */}

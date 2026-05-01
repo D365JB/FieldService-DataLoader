@@ -52,6 +52,15 @@ export interface GenerationKnobs {
    * all techs when no match exists, so demos still work.
    */
   skillMatch: boolean;
+  /**
+   * When true, every bookable resource is auto-geocoded to its primary
+   * territory's metro centre (with a small per-name jitter). Sets
+   * `msdyn_startlocation`/`msdyn_endlocation` to *Resource Address* and
+   * writes `msdyn_latitude`/`msdyn_longitude` so RSO can compute travel
+   * time on bookings. Off by default — demos without Bing Maps still work
+   * fine without it.
+   */
+  geocodeResources: boolean;
 }
 
 export const DEFAULT_KNOBS: GenerationKnobs = {
@@ -64,6 +73,7 @@ export const DEFAULT_KNOBS: GenerationKnobs = {
   workdayStartHour: 9,
   weightedTechs: true,
   skillMatch: false,
+  geocodeResources: false,
 };
 
 const KEY_PREFIX = "fsdl:knobs:";

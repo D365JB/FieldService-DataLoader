@@ -7,9 +7,19 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.28.0";
+export const APP_VERSION = "v1.29.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.29.0",
+    date: "April 30, 2026",
+    tag: "FEATURE",
+    features: [
+      "**Geocode techs to territory.** New toggle on the Generation knobs panel auto-positions every bookable resource at its primary territory's metro centre (with a small per-name jitter so techs don't stack on the same pin). Sets `msdyn_startlocation` + `msdyn_endlocation` to *Resource Address* (690970000) and writes `msdyn_latitude` / `msdyn_longitude` so RSO can compute travel time on bookings. Off by default. Re-runs heal existing techs that have no coords without disturbing ones that already do.",
+      "Built-in metro lookup covers PNW, BAY/SFO/SV, LA/SD, PHX, DEN, SLC, LV, CTX/ATX, DFW, HOU, SATX, NOLA, MIA, TPA, ORL, ATL, CLT, RDU, NSH, NYC, NJ, PHL, DC, BAL, NE/BOS, PIT, CLE, CIN, DET, MW/CHI, IND, STL, MSP, KC, OKC. Unrecognised codes fall back to the contiguous-US centroid so geocoding never crashes a run.",
+      "Note: a Bing Maps key configured in Field Service is still required for *real* route distance/time. Without it the coords sit on the records but RSO won't render minutes — the toggle preps the data either way.",
+    ],
+  },
   {
     version: "v1.28.0",
     date: "April 30, 2026",

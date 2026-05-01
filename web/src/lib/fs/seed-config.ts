@@ -10,6 +10,7 @@ import {
   weightFromName,
   type GenerationKnobs,
 } from "@/lib/generationKnobs";
+import { geocodeTech } from "@/lib/fs/geo";
 
 /**
  * Seeds the configuration tier (territories, WO types, incident types + service tasks,
@@ -759,6 +760,12 @@ export async function seedFromPreset(
   // We need post-create side-effects (track createdResourceIds, link primary
   // skill + territory) that only fire when we actually inserted the row, so we
   // use onCreated rather than onResolved.
+  // Build a code → name lookup so geocoding can fall back from code to name
+  // when the territory code isn't in our built-in metro table.
+  const territoryNameByCode: Record<string, string> = {};
+  for (const t of preset.territories ?? []) {
+    territoryNameByCode[t.code] = t.name;
+  }
   await runEntityStep(
     dv,
     {
@@ -786,6 +793,20 @@ export async function seedFromPreset(
           // matching the `contactid` lookup column). `Contact` is undeclared.
           payload["ContactId@odata.bind"] = `/contacts(${contactId})`;
         }
+        if (knobs.geocodeResources) {
+          // Auto-geocode: territory metro centre + per-name jitter. Sets
+          // start/end location to "Resource Address" (690970000) so RSO
+          // routes from this lat/long.
+          const coord = geocodeTech(
+            t.name,
+            t.primaryTerritoryCode,
+            territoryNameByCode[t.primaryTerritoryCode],
+          );
+          payload.msdyn_startlocation = 690970000; // Resource Address
+          payload.msdyn_endlocation = 690970000;
+          payload.msdyn_latitude = coord.lat;
+          payload.msdyn_longitude = coord.lng;
+        }
         return payload;
       },
       onResolved: async (resourceId, t, isNew) => {
@@ -797,23 +818,56 @@ export async function seedFromPreset(
         const rows = await dv.query<{
           resourcetype: number | null;
           _contactid_value: string | null;
+          msdyn_latitude?: number | null;
+          msdyn_longitude?: number | null;
         }>("bookableresources", {
           filter: `bookableresourceid eq ${resourceId}`,
-          select: ["resourcetype", "_contactid_value"],
+          select: [
+            "resourcetype",
+            "_contactid_value",
+            "msdyn_latitude",
+            "msdyn_longitude",
+          ],
           top: 1,
         });
         const cur = rows[0];
         if (!cur) return;
-        if (cur.resourcetype === 2 && cur._contactid_value === contactId) return;
-        try {
-          await dv.update("bookableresources", resourceId, {
-            resourcetype: 2,
-            "ContactId@odata.bind": `/contacts(${contactId})`,
-          });
-        } catch (err) {
-          // Most common cause: existing bookings prevent type change. Log and
-          // continue — demo will still mostly work with the existing rows.
-          console.warn(`Could not heal bookable resource ${t.name} to Contact type:`, err);
+        // Heal contact/type if needed.
+        if (!(cur.resourcetype === 2 && cur._contactid_value === contactId)) {
+          try {
+            await dv.update("bookableresources", resourceId, {
+              resourcetype: 2,
+              "ContactId@odata.bind": `/contacts(${contactId})`,
+            });
+          } catch (err) {
+            // Most common cause: existing bookings prevent type change. Log and
+            // continue — demo will still mostly work with the existing rows.
+            console.warn(`Could not heal bookable resource ${t.name} to Contact type:`, err);
+          }
+        }
+        // Heal geocoding when the user has the toggle on and this resource
+        // has no coords yet (or coords are 0,0 which RSO treats as null).
+        if (
+          knobs.geocodeResources &&
+          (cur.msdyn_latitude == null ||
+            cur.msdyn_longitude == null ||
+            (cur.msdyn_latitude === 0 && cur.msdyn_longitude === 0))
+        ) {
+          const coord = geocodeTech(
+            t.name,
+            t.primaryTerritoryCode,
+            territoryNameByCode[t.primaryTerritoryCode],
+          );
+          try {
+            await dv.update("bookableresources", resourceId, {
+              msdyn_startlocation: 690970000,
+              msdyn_endlocation: 690970000,
+              msdyn_latitude: coord.lat,
+              msdyn_longitude: coord.lng,
+            });
+          } catch {
+            /* geocoding columns may not exist on all orgs — non-fatal */
+          }
         }
       },
       onCreated: async (resourceId, t) => {
