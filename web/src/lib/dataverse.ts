@@ -288,6 +288,42 @@ export class DataverseClient {
     }
   }
 
+  /**
+   * Associate two records via an N:N (collection-valued) navigation property.
+   * POSTs to `/{parentSet}({parentId})/{navProperty}/$ref` with a body
+   * pointing at the target record. Idempotent: 412/409 (already associated)
+   * is swallowed.
+   *
+   * Example — link FL to Account via msdyn_msdyn_functionallocation_account:
+   *   await dv.associate(
+   *     "msdyn_functionallocations", flId,
+   *     "msdyn_msdyn_functionallocation_account",
+   *     "accounts", accountId,
+   *   );
+   */
+  async associate(
+    parentSet: string,
+    parentId: string,
+    navProperty: string,
+    targetSet: string,
+    targetId: string,
+  ): Promise<void> {
+    const res = await this.request(
+      `/${parentSet}(${parentId})/${navProperty}/$ref`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          "@odata.id": `${this.baseUrl}/${targetSet}(${targetId})`,
+        }),
+      },
+    );
+    // 204 success, 412/409 already-associated → both fine.
+    if (!res.ok && res.status !== 412 && res.status !== 409) {
+      await this.json(res, `associate ${parentSet}->${navProperty}`);
+    }
+  }
+
   /** WhoAmI — sanity check. */
   async whoAmI(): Promise<{
     UserId: string;

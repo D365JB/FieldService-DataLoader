@@ -7,9 +7,20 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.38.0";
+export const APP_VERSION = "v1.39.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.39.0",
+    date: "May 1, 2026",
+    tag: "FIX",
+    fixes: [
+      "**Existing-account Functional Locations.** When you picked existing Accounts in the Generate flow, the AI-produced preset's `functionalLocations[].accountName` only referenced AI-generated accounts, so your real accounts ended up with zero FLs. The seed pipeline now augments after the FL step: every account in the run (created or existing-picked) is guaranteed at least one Functional Location, synthesised as `\"<Account> - Main Site\"` when missing.",
+      "**FL ↔ Account N:N now actually associated.** Even for AI-generated FLs, the link to Account is a many-to-many (`msdyn_msdyn_functionallocation_account`) and was never being written, so FLs sat orphaned. Added `DataverseClient.associate()` and an `onResolved` hook on the FL step that POSTs to the `$ref` collection (idempotent — 412/409 swallowed).",
+      "**Existing-account Customer Assets.** Same fix as FLs: every account in `result.accountIds` is guaranteed at least one Customer Asset, attached to that account's first FL when one is available, named `\"<Account> - Primary Asset\"`.",
+      "**Bookable Resource skills/territories for existing picks.** Skill (`bookableresourcecharacteristic`) and territory (`msdyn_resourceterritory`) linkage was wired in `runEntityStep`'s `onCreated` hook, which only fires for fresh inserts — so resources you picked in 'use existing' mode were left with no skills. Added a post-step augmentation that probes each resource for existing links and creates a default characteristic + territory pair when missing (matched to the preset technician's `primarySkill` / `primaryTerritoryCode` when known, random otherwise).",
+    ],
+  },
   {
     version: "v1.38.0",
     date: "May 1, 2026",

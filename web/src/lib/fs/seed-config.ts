@@ -1084,12 +1084,111 @@ export async function seedFromPreset(
     onProgress,
   );
 
+  // ── BR Augmentation: characteristics + territory for existing picks ─────
+  // runEntityStep's onCreated only fires for fresh inserts. When the user
+  // picks existing Bookable Resources, none of the skill-link or territory
+  // wiring runs — leaving picked resources with no characteristics. Walk
+  // every resource in the map and ensure it has at least one characteristic
+  // and one territory linkage.
+  if (shouldCreate(options.resources)) {
+    const resourceEntries = Object.entries(result.resourceIds);
+    const techByName = new Map(
+      (preset.sampleTechnicians ?? []).map((t) => [t.name, t]),
+    );
+    const allCharIds = Object.values(result.characteristicIds);
+    const allTerrEntries = Object.entries(result.territoryIds);
+    let augDone = 0;
+    onProgress({
+      step: "Bookable Resources",
+      done: 0,
+      total: resourceEntries.length,
+      detail: "augment skills/territories",
+    });
+    for (const [resourceName, resourceId] of resourceEntries) {
+      // Probe existing skill links — skip if any present.
+      let hasChar = false;
+      try {
+        const existingChars = await dv.query<{
+          bookableresourcecharacteristicid: string;
+        }>("bookableresourcecharacteristics", {
+          filter: `_resource_value eq ${resourceId}`,
+          select: ["bookableresourcecharacteristicid"],
+          top: 1,
+        });
+        hasChar = existingChars.length > 0;
+      } catch {
+        hasChar = false;
+      }
+      if (!hasChar && allCharIds.length > 0) {
+        const tech = techByName.get(resourceName);
+        const charId =
+          (tech && result.characteristicIds[tech.primarySkill]) ||
+          allCharIds[Math.floor(Math.random() * allCharIds.length)];
+        if (charId) {
+          try {
+            await dv.create("bookableresourcecharacteristics", {
+              "Resource@odata.bind": `/bookableresources(${resourceId})`,
+              "Characteristic@odata.bind": `/characteristics(${charId})`,
+            });
+          } catch {
+            /* non-critical */
+          }
+        }
+      }
+
+      // Probe existing territory links — skip if any present.
+      let hasTerr = false;
+      try {
+        const existingTerrs = await dv.query<{
+          msdyn_resourceterritoryid: string;
+        }>("msdyn_resourceterritories", {
+          filter: `_msdyn_resource_value eq ${resourceId}`,
+          select: ["msdyn_resourceterritoryid"],
+          top: 1,
+        });
+        hasTerr = existingTerrs.length > 0;
+      } catch {
+        hasTerr = false;
+      }
+      if (!hasTerr && allTerrEntries.length > 0) {
+        const tech = techByName.get(resourceName);
+        const terrId =
+          (tech && result.territoryIds[tech.primaryTerritoryCode]) ||
+          allTerrEntries[Math.floor(Math.random() * allTerrEntries.length)][1];
+        if (terrId) {
+          try {
+            await dv.create("msdyn_resourceterritories", {
+              "msdyn_resource@odata.bind": `/bookableresources(${resourceId})`,
+              "msdyn_territory@odata.bind": `/territories(${terrId})`,
+              msdyn_description: tag(),
+            });
+          } catch {
+            /* non-critical */
+          }
+        }
+      }
+
+      augDone += 1;
+      onProgress({
+        step: "Bookable Resources",
+        done: augDone,
+        total: resourceEntries.length,
+        detail: resourceName,
+      });
+    }
+  }
+
   // ── Functional Locations (Phase 2) ───────────────────────────────────────
-  // Hierarchical: each node may reference a parent node by name within the
+  // hierarchical: each node may reference a parent node by name within the
   // same preset list. We rely on the AI / preset producer to list parents
   // before children. Cross-account references aren't allowed.
   const functionalLocations = preset.functionalLocations ?? [];
   const flMap = getIdMap(result, "functionalLocations");
+  // Tracks which accounts already have at least one FL (via N:N). Populated
+  // by the FL onResolved hook below; consulted by the FL augmentation pass
+  // to avoid creating a redundant "Main Site" for accounts that already
+  // have FLs from the preset.
+  const flsByAccount: Record<string, string[]> = {};
   await runEntityStep(
     dv,
     result,
@@ -1121,9 +1220,108 @@ export async function seedFromPreset(
       onCreated: (id) => {
         trackCreated(result, "functionalLocations", id);
       },
+      onResolved: async (id, fl) => {
+        // FL ↔ Account is N:N — must be associated post-create. Idempotent.
+        const accountId = result.accountIds[fl.accountName];
+        if (accountId) {
+          try {
+            await dv.associate(
+              "msdyn_functionallocations",
+              id,
+              "msdyn_msdyn_functionallocation_account",
+              "accounts",
+              accountId,
+            );
+            (flsByAccount[accountId] ??= []).push(id);
+          } catch {
+            /* non-critical for the demo */
+          }
+        }
+      },
     },
     onProgress,
   );
+
+  // ── FL Augmentation: ensure every Account has at least one FL ───────────
+  // Existing-mode accounts (picked by the user) aren't referenced in the
+  // preset's functionalLocations[].accountName, so they'd otherwise have no
+  // FLs. Synthesize a "{accountName} - Main Site" FL for any account that
+  // lacks one, and N:N-associate it. We track flsByAccount in memory rather
+  // than re-querying because the expand-from-account path uses an N:N nav
+  // name that varies between orgs/installs.
+  if (shouldCreate(options.functionalLocations)) {
+    const accountEntries = Object.entries(result.accountIds);
+    let augDone = 0;
+    onProgress({
+      step: "Functional Locations",
+      done: 0,
+      total: accountEntries.length,
+      detail: "augment for accounts without FLs",
+    });
+    for (const [accountName, accountId] of accountEntries) {
+      if ((flsByAccount[accountId]?.length ?? 0) > 0) {
+        augDone += 1;
+        onProgress({
+          step: "Functional Locations",
+          done: augDone,
+          total: accountEntries.length,
+          detail: `${accountName} (already has FL)`,
+        });
+        continue;
+      }
+
+      const flName = `${accountName} - Main Site`;
+      let flId = flMap[flName] ?? (await findByField(
+        dv,
+        "msdyn_functionallocations",
+        "msdyn_name",
+        flName,
+        "msdyn_functionallocationid",
+      ));
+      if (!flId) {
+        const ctx = makeSafeCtx(
+          result,
+          "Functional Locations",
+          "Functional Locations",
+          flName,
+        );
+        const res = await safeCreate(
+          dv,
+          "msdyn_functionallocations",
+          { msdyn_name: flName },
+          ctx,
+        );
+        if (res.ok) {
+          flId = res.id;
+          flMap[flName] = flId;
+          trackCreated(result, "functionalLocations", flId);
+        }
+      } else {
+        flMap[flName] = flId;
+      }
+      if (flId) {
+        try {
+          await dv.associate(
+            "msdyn_functionallocations",
+            flId,
+            "msdyn_msdyn_functionallocation_account",
+            "accounts",
+            accountId,
+          );
+          (flsByAccount[accountId] ??= []).push(flId);
+        } catch {
+          /* non-critical */
+        }
+      }
+      augDone += 1;
+      onProgress({
+        step: "Functional Locations",
+        done: augDone,
+        total: accountEntries.length,
+        detail: flName,
+      });
+    }
+  }
 
   // ── Customer Assets (Phase 2) ───────────────────────────────────────────
   // Linked to account + optional functional location + optional product. Also
@@ -1218,6 +1416,79 @@ export async function seedFromPreset(
     },
     onProgress,
   );
+
+  // ── Customer Asset Augmentation: ensure every Account has at least one ──
+  // Mirrors the FL augmentation: when accounts come from existing-mode
+  // picks, the preset's customerAssets[] doesn't reference them so they
+  // end up with zero assets. Create one default asset per account that has
+  // none, attached to that account's first FL when available. Only runs
+  // when customerAssets mode is "create".
+  if (shouldCreate(options.customerAssets)) {
+    const accountEntries = Object.entries(result.accountIds);
+    let augDone = 0;
+    onProgress({
+      step: "Customer Assets",
+      done: 0,
+      total: accountEntries.length,
+      detail: "augment for accounts without assets",
+    });
+    for (const [accountName, accountId] of accountEntries) {
+      if ((assetsByAccount[accountId]?.length ?? 0) > 0) {
+        augDone += 1;
+        onProgress({
+          step: "Customer Assets",
+          done: augDone,
+          total: accountEntries.length,
+          detail: `${accountName} (already has asset)`,
+        });
+        continue;
+      }
+      const assetName = `${accountName} - Primary Asset`;
+      let assetId = assetMap[assetName] ?? (await findByField(
+        dv,
+        "msdyn_customerassets",
+        "msdyn_name",
+        assetName,
+        "msdyn_customerassetid",
+      ));
+      if (!assetId) {
+        const flId = flsByAccount[accountId]?.[0];
+        const payload: Record<string, unknown> = {
+          msdyn_name: assetName,
+          msdyn_assettag: `${accountName.replace(/\s+/g, "-").toUpperCase()}-001`,
+          "msdyn_account@odata.bind": `/accounts(${accountId})`,
+        };
+        if (flId) {
+          payload["msdyn_FunctionalLocation@odata.bind"] =
+            `/msdyn_functionallocations(${flId})`;
+        }
+        const ctx = makeSafeCtx(
+          result,
+          "Customer Assets",
+          "Customer Assets",
+          assetName,
+        );
+        const res = await safeCreate(dv, "msdyn_customerassets", payload, ctx);
+        if (res.ok) {
+          assetId = res.id;
+          assetMap[assetName] = assetId;
+          trackCreated(result, "customerAssets", assetId);
+        }
+      } else {
+        assetMap[assetName] = assetId;
+      }
+      if (assetId) {
+        (assetsByAccount[accountId] ??= []).push(assetId);
+      }
+      augDone += 1;
+      onProgress({
+        step: "Customer Assets",
+        done: augDone,
+        total: accountEntries.length,
+        detail: assetName,
+      });
+    }
+  }
 
   // ── Service Task Types (Phase 2) ────────────────────────────────────────
   // Reusable task catalog. WOs created later will randomly attach 2–4 of
