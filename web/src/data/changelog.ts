@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.36.0";
+export const APP_VERSION = "v1.36.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.36.1",
+    date: "May 1, 2026",
+    tag: "POLISH",
+    features: [
+      "**\"Use existing\" pickers now load the whole org.** The Account / Territory / Product / etc. lookups were capped at 250 rows. They now page through Dataverse with `Prefer: odata.maxpagesize=5000` and follow `@odata.nextLink` until everything is loaded (hard cap 10 000 records as a safety net). Results stream into the list as each page arrives, with a `· loading more…` hint while paging is in flight, so big orgs are usable without scrolling-into-the-void surprises.",
+    ],
+  },
   {
     version: "v1.36.0",
     date: "May 1, 2026",

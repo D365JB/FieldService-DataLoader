@@ -24,8 +24,8 @@ interface Props {
   filter?: string;
   value: PickedEntity[];
   onChange: (next: PickedEntity[]) => void;
-  /** Max records to fetch (default 250). */
-  top?: number;
+  /** Hard cap on records pulled. Default 10 000 (paged with maxpagesize=5000). */
+  maxRecords?: number;
 }
 
 /**
@@ -43,7 +43,7 @@ export function EntityPicker({
   filter,
   value,
   onChange,
-  top = 250,
+  maxRecords = 10_000,
 }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,13 +54,19 @@ export function EntityPicker({
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setRows([]);
     const dv = new DataverseClient({ orgUrl });
     dv
-      .query<Record<string, string>>(entitySet, {
+      .queryAll<Record<string, string>>(entitySet, {
         filter,
         select: [idField, nameField],
         orderby: `${nameField} asc`,
-        top,
+        maxRecords,
+        onPage: (cumulative) => {
+          // Stream pages into the UI so users see results building up
+          // instead of staring at a spinner for several seconds on big orgs.
+          if (!cancelled) setRows([...cumulative]);
+        },
       })
       .then((data) => {
         if (!cancelled) setRows(data);
@@ -74,7 +80,7 @@ export function EntityPicker({
     return () => {
       cancelled = true;
     };
-  }, [orgUrl, entitySet, idField, nameField, filter, top]);
+  }, [orgUrl, entitySet, idField, nameField, filter, maxRecords]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -103,6 +109,9 @@ export function EntityPicker({
       <div className="flex items-center justify-between gap-3 mb-2">
         <div className="text-xs text-muted">
           {value.length} selected · {rows.length} available
+          {loading && rows.length > 0 && (
+            <span className="ml-1 text-accent">· loading more…</span>
+          )}
         </div>
         <div className="relative">
           <MagnifyingGlass
@@ -119,7 +128,7 @@ export function EntityPicker({
         </div>
       </div>
 
-      {loading && (
+      {loading && rows.length === 0 && (
         <div className="flex items-center gap-2 text-xs text-muted py-3">
           <CircleNotch size={14} className="animate-spin" />
           Loading {label}…
@@ -139,7 +148,7 @@ export function EntityPicker({
         </div>
       )}
 
-      {!loading && !error && rows.length > 0 && (
+      {!error && rows.length > 0 && (
         <div className="max-h-60 overflow-y-auto border border-border rounded-md divide-y divide-border">
           {filtered.map((r) => {
             const id = r[idField];

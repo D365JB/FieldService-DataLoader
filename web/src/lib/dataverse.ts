@@ -149,6 +149,52 @@ export class DataverseClient {
     return body.value ?? [];
   }
 
+  /**
+   * Like {@link query} but follows `@odata.nextLink` to return ALL matching
+   * rows (up to `maxRecords`, default 10 000). Uses
+   * `Prefer: odata.maxpagesize=5000` so we hit Dataverse's per-page ceiling
+   * and minimize round-trips. `onPage` is called after each page fetch with
+   * the cumulative count, useful for incremental UI updates.
+   */
+  async queryAll<T>(
+    entitySet: string,
+    options: {
+      filter?: string;
+      select?: string[];
+      orderby?: string;
+      maxRecords?: number;
+      pageSize?: number;
+      onPage?: (cumulative: T[]) => void;
+    } = {},
+  ): Promise<T[]> {
+    const maxRecords = options.maxRecords ?? 10_000;
+    const pageSize = Math.min(options.pageSize ?? 5000, 5000);
+    const params: string[] = [];
+    if (options.filter) params.push(`$filter=${options.filter}`);
+    if (options.select?.length) params.push(`$select=${options.select.join(",")}`);
+    if (options.orderby) params.push(`$orderby=${options.orderby}`);
+    const qs = params.length ? `?${params.join("&")}` : "";
+
+    let url: string | undefined = `${this.baseUrl}/${entitySet}${qs}`;
+    const all: T[] = [];
+    while (url && all.length < maxRecords) {
+      const res = await this.request(url, {
+        headers: { Prefer: `odata.maxpagesize=${pageSize}` },
+      });
+      const body = await this.json<{ value: T[]; "@odata.nextLink"?: string }>(
+        res,
+        `query ${entitySet}`,
+      );
+      for (const r of body.value ?? []) {
+        all.push(r);
+        if (all.length >= maxRecords) break;
+      }
+      options.onPage?.(all);
+      url = body["@odata.nextLink"];
+    }
+    return all;
+  }
+
   /** POST a new record. Returns the created id (parsed from OData-EntityId header). */
   async create(entitySet: string, body: Record<string, unknown>): Promise<string> {
     const res = await this.request(`/${entitySet}`, {
