@@ -429,6 +429,10 @@ export async function seedFromPreset(
   onProgress: ProgressFn,
   options: SeedOptions = {},
 ): Promise<SeedResult> {
+  // Must be initialized before any step callbacks read `knobs` (e.g.
+  // Bookable Resources geocoding), otherwise runtime TDZ can occur.
+  const knobs: GenerationKnobs = options.knobs ?? DEFAULT_KNOBS;
+
   const result: SeedResult = {
     territoryIds: {},
     workOrderTypeIds: {},
@@ -1410,7 +1414,6 @@ export async function seedFromPreset(
   // The FS plugin rejects child rows (tasks, products, bookings, time
   // entries) on Posted WOs, so we attach all children while the WO is
   // still Open and flip the status last.
-  const knobs: GenerationKnobs = options.knobs ?? DEFAULT_KNOBS;
   // Friendly account-instruction snippets so the WO form has a non-empty
   // "Account instructions" field (rotates per WO for variety).
   const accountInstructionTemplates = [

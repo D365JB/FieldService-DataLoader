@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.31.1";
+export const APP_VERSION = "v1.31.2";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.31.2",
+    date: "May 1, 2026",
+    tag: "FIX",
+    fixes: [
+      "**Final fix for \"Cannot access 'ut' before initialization\" in Bookable Resources.** Root cause was a temporal-dead-zone inside `seedFromPreset`: `knobs` was first declared later in the function (near Work Orders) but was already being read in the Bookable Resources `build`/`onResolved` callbacks. In production this minified binding appeared as `ut`. Moved `const knobs = options.knobs ?? DEFAULT_KNOBS` to the top of `seedFromPreset` before any step uses it.",
+    ],
+  },
   {
     version: "v1.31.1",
     date: "May 1, 2026",
