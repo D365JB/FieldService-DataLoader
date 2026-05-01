@@ -104,6 +104,13 @@ export interface SeedResult {
    * Keyed the same way as `idMaps`. Optional for backward compat.
    */
   createdIds?: Record<string, string[]>;
+  /**
+   * Human-friendly label per created record id, keyed by logical entity
+   * (e.g. `labels.workOrders[guid] = "WO-01016"`). Used by the run-output
+   * UI so chips show real names instead of synthetic "WO #1" / "Task #1".
+   * Optional for backward compat with old run history.
+   */
+  labels?: Record<string, Record<string, string>>;
 }
 
 type ProgressFn = (p: SeedProgress) => void;
@@ -284,6 +291,18 @@ export function trackCreated(
   (result.createdIds[key] ??= []).push(id);
 }
 
+/** Attach a human-friendly label to a created record id. */
+export function setLabel(
+  result: SeedResult,
+  key: string,
+  id: string,
+  label: string,
+): void {
+  if (!label) return;
+  result.labels ??= {};
+  (result.labels[key] ??= {})[id] = label;
+}
+
 export async function seedFromPreset(
   dv: DataverseClient,
   preset: FsPreset,
@@ -303,6 +322,7 @@ export async function seedFromPreset(
     bookingIds: [],
     idMaps: {},
     createdIds: {},
+    labels: {},
   };
 
   try {
@@ -490,6 +510,11 @@ export async function seedFromPreset(
     incidentIdsForLink.length > 0 &&
     productIdsForLink.length > 0
   ) {
+    // {incidentId → incidentName} so ITP rows can be labelled with real names.
+    const incidentNameById: Record<string, string> = {};
+    for (const [name, id] of Object.entries(result.incidentTypeIds)) {
+      incidentNameById[id] = name;
+    }
     const productsPerIncident = Math.min(3, productIdsForLink.length);
     const total = incidentIdsForLink.length * productsPerIncident;
     onProgress({ step: "Incident Type Products", done: 0, total });
@@ -557,6 +582,14 @@ export async function seedFromPreset(
           }
           id = await dv.create("msdyn_incidenttypeproducts", payload);
           trackCreated(result, "incidentTypeProducts", id);
+          // e.g. "RTU-45T Rooftop Unit → HVAC Maintenance".
+          const incidentName = incidentNameById[incidentId] ?? "Incident";
+          setLabel(
+            result,
+            "incidentTypeProducts",
+            id,
+            `${prod.name} → ${incidentName}`,
+          );
         }
         itpMap[linkKey] = id;
         done += 1;
@@ -1211,6 +1244,7 @@ export async function seedFromPreset(
           "msdyn_tasktype@odata.bind": `/msdyn_servicetasktypes(${taskTypeId})`,
         });
         trackCreated(result, "workOrderServiceTasks", id);
+        setLabel(result, "workOrderServiceTasks", id, taskName);
       }
       onProgress({
         step: "WO Service Tasks",
@@ -1264,14 +1298,16 @@ export async function seedFromPreset(
     const slotHours = 2;
     const slotsPerDay = 4; // 9am, 11am, 1pm, 3pm
 
-    // Batch-fetch every scheduled WO's auto-numbered name (e.g. "WO-01016") in
-    // a single query. Per-WO lookups inside the loop sometimes returned empty
-    // because the FS auto-number plugin can lag right after create — batching
-    // after all WOs are committed gives the plugin time and only costs 1 call.
+    // Batch-fetch EVERY WO's auto-numbered name (e.g. "WO-01016") in a single
+    // query — needed both as the booking title and as the dashboard chip
+    // label for each WO. Per-WO lookups inside the loop sometimes returned
+    // empty because the FS auto-number plugin can lag right after create;
+    // batching after all WOs are committed gives the plugin time and costs
+    // just 1 call.
     const woNumberById: Record<string, string> = {};
-    if (scheduledWoIds.length > 0) {
+    if (result.workOrderIds.length > 0) {
       try {
-        const idFilter = scheduledWoIds
+        const idFilter = result.workOrderIds
           .map((id) => `msdyn_workorderid eq ${id}`)
           .join(" or ");
         const rows = await dv.query<{
@@ -1280,10 +1316,14 @@ export async function seedFromPreset(
         }>("msdyn_workorders", {
           filter: idFilter,
           select: ["msdyn_workorderid", "msdyn_name"],
-          top: scheduledWoIds.length,
+          top: result.workOrderIds.length,
         });
         for (const r of rows) {
-          if (r.msdyn_name) woNumberById[r.msdyn_workorderid] = r.msdyn_name;
+          if (r.msdyn_name) {
+            woNumberById[r.msdyn_workorderid] = r.msdyn_name;
+            // Surface the auto-number in the run-output dashboard.
+            setLabel(result, "workOrders", r.msdyn_workorderid, r.msdyn_name);
+          }
         }
       } catch {
         /* fall back to synthetic name */
@@ -1348,6 +1388,7 @@ export async function seedFromPreset(
       }
       result.bookingIds.push(bookingId);
       bookingMeta.push({ bookingId, woId, resourceId, start, end });
+      setLabel(result, "bookings", bookingId, bookingName);
       onProgress({
         step: "Bookings",
         done: i + 1,
@@ -1410,6 +1451,7 @@ export async function seedFromPreset(
           "msdyn_product@odata.bind": `/products(${productId})`,
         });
         trackCreated(result, "workOrderProducts", lineId);
+        setLabel(result, "workOrderProducts", lineId, lineName);
       }
       onProgress({
         step: "WO Products",

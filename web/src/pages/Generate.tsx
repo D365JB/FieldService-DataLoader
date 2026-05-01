@@ -762,11 +762,33 @@ function ResultSummary({
 }) {
   const idMaps = result.idMaps ?? {};
   const createdIds = result.createdIds ?? {};
+  const labels = result.labels ?? {};
   // Phase 2+ entities go through the generic idMaps registry. Some only have
   // createdIds (no human-readable mapKey) — synthesize numbered labels for those.
-  const fromIdMap = (key: string) => idMaps[key] ?? {};
-  const fromCreatedIds = (key: string, label: string) =>
-    Object.fromEntries((createdIds[key] ?? []).map((id, i) => [`${label} #${i + 1}`, id]));
+  const fromIdMap = (key: string) => {
+    const map = idMaps[key] ?? {};
+    const lbl = labels[key];
+    if (!lbl) return map;
+    // Re-key by friendly label when we recorded one for the id.
+    const out: Record<string, string> = {};
+    for (const [k, id] of Object.entries(map)) {
+      out[lbl[id] ?? k] = id;
+    }
+    return out;
+  };
+  const fromCreatedIds = (key: string, label: string) => {
+    const ids = createdIds[key] ?? [];
+    const lbl = labels[key] ?? {};
+    return Object.fromEntries(
+      ids.map((id, i) => [lbl[id] ?? `${label} #${i + 1}`, id]),
+    );
+  };
+  const namedIdList = (ids: string[], key: string, label: string) => {
+    const lbl = labels[key] ?? {};
+    return Object.fromEntries(
+      ids.map((id, i) => [lbl[id] ?? `${label} #${i + 1}`, id]),
+    );
+  };
   const sections: Array<{ title: string; entitySet: string; ids: Record<string, string> }> = [
     { title: "Territories", entitySet: "territories", ids: result.territoryIds },
     { title: "Work Order Types", entitySet: "msdyn_workordertypes", ids: result.workOrderTypeIds },
@@ -785,13 +807,13 @@ function ResultSummary({
     {
       title: "Work Orders",
       entitySet: "msdyn_workorders",
-      ids: Object.fromEntries(result.workOrderIds.map((id, i) => [`WO #${i + 1}`, id])),
+      ids: namedIdList(result.workOrderIds, "workOrders", "WO"),
     },
     { title: "WO Service Tasks", entitySet: "msdyn_workorderservicetasks", ids: fromCreatedIds("workOrderServiceTasks", "Task") },
     {
       title: "Bookings",
       entitySet: "bookableresourcebookings",
-      ids: Object.fromEntries(result.bookingIds.map((id, i) => [`Booking #${i + 1}`, id])),
+      ids: namedIdList(result.bookingIds, "bookings", "Booking"),
     },
     { title: "WO Products", entitySet: "msdyn_workorderproducts", ids: fromCreatedIds("workOrderProducts", "Line") },
     { title: "Time Entries", entitySet: "msdyn_timeentries", ids: fromCreatedIds("timeEntries", "Entry") },

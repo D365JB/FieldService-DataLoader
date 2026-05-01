@@ -7,9 +7,18 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.20.7";
+export const APP_VERSION = "v1.20.8";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.20.8",
+    date: "April 30, 2026",
+    tag: "POLISH",
+    features: [
+      "**Run output dashboard** now shows real names instead of synthetic labels: Work Order chips show the WO number (e.g. *WO-01016*); WO Service Tasks show the task type; WO Products show the product; Bookings show the WO number; Incident Type Products show *Product → Incident*.",
+      "Backed by a new per-record label registry (`result.labels`) populated during seeding. Old runs in history without labels still render using the previous numbered fallback.",
+    ],
+  },
   {
     version: "v1.20.7",
     date: "April 30, 2026",
