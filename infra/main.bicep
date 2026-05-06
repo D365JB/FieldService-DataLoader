@@ -66,6 +66,9 @@ param openAiFallbackCapacity int = 100
 @secure()
 param appAccessKey string = ''
 
+@description('Email address to notify when the /api/health availability test fails. Leave empty to skip alert provisioning entirely.')
+param alertEmail string = ''
+
 var tags = {
   'azd-env-name': environmentName
 }
@@ -424,6 +427,97 @@ resource functionAuthDisabled 'Microsoft.Web/sites/config@2023-12-01' = {
   dependsOn: [
     linkedBackend
   ]
+}
+
+// ── Availability monitoring (optional, gated on alertEmail) ──────────────
+// Pings GET /api/health every 5 min from 5 regions. If 3+ regions report
+// failure within 5 min, fires the action group and emails alertEmail.
+// This is what would have caught the May-2026 storage-network outage in
+// minutes instead of hours.
+var enableAvailabilityAlert = !empty(alertEmail)
+
+resource alertActionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = if (enableAvailabilityAlert) {
+  name: 'ag-${environmentName}-${nameSuffix}'
+  location: 'global'
+  tags: tags
+  properties: {
+    groupShortName: take(environmentName, 12)
+    enabled: true
+    emailReceivers: [
+      {
+        name: 'primary'
+        emailAddress: alertEmail
+        useCommonAlertSchema: true
+      }
+    ]
+  }
+}
+
+resource healthAvailabilityTest 'Microsoft.Insights/webtests@2022-06-15' = if (enableAvailabilityAlert) {
+  name: 'avt-${environmentName}-${nameSuffix}-health'
+  location: location
+  tags: union(tags, {
+    // Tag pattern required by App Insights to associate the web test with
+    // the AI component (otherwise the test won't show up in the AI blade).
+    'hidden-link:${appInsights.id}': 'Resource'
+  })
+  kind: 'standard'
+  properties: {
+    SyntheticMonitorId: 'avt-${environmentName}-${nameSuffix}-health'
+    Name: '${environmentName} /api/health'
+    Description: 'Pings the Function App health endpoint to detect host outages.'
+    Enabled: true
+    Frequency: 300
+    Timeout: 30
+    Kind: 'standard'
+    RetryEnabled: true
+    Locations: [
+      { Id: 'us-il-ch1-azr' }
+      { Id: 'us-tx-sn1-azr' }
+      { Id: 'us-va-ash-azr' }
+      { Id: 'emea-nl-ams-azr' }
+      { Id: 'apac-jp-kaw-edge' }
+    ]
+    Request: {
+      RequestUrl: 'https://${functionApp.properties.defaultHostName}/api/health'
+      HttpVerb: 'GET'
+      ParseDependentRequests: false
+    }
+    ValidationRules: {
+      ExpectedHttpStatusCode: 200
+      SSLCheck: true
+      SSLCertRemainingLifetimeCheck: 7
+    }
+  }
+}
+
+resource healthAvailabilityAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = if (enableAvailabilityAlert) {
+  name: 'alert-${environmentName}-${nameSuffix}-health'
+  location: 'global'
+  tags: tags
+  properties: {
+    description: 'Function App /api/health is failing from multiple regions.'
+    severity: 1
+    enabled: true
+    scopes: [
+      healthAvailabilityTest.id
+      appInsights.id
+    ]
+    evaluationFrequency: 'PT1M'
+    windowSize: 'PT5M'
+    criteria: {
+      'odata.type': 'Microsoft.Azure.Monitor.WebtestLocationAvailabilityCriteria'
+      webTestId: healthAvailabilityTest.id
+      componentId: appInsights.id
+      // 3 of 5 regions failing in a 5-min window.
+      failedLocationCount: 3
+    }
+    actions: [
+      {
+        actionGroupId: alertActionGroup.id
+      }
+    ]
+  }
 }
 
 // ── Outputs ───────────────────────────────────────────────────────────────

@@ -131,24 +131,36 @@ export async function fetchWebsite(url: string): Promise<{
     ? url.trim()
     : `https://${url.trim()}`;
   const target = `/api/fetchWebsite?url=${encodeURIComponent(normalized)}`;
-  // One retry on transient 502/503/504 (proxy or upstream blip). The proxy
-  // also caches successful fetches per-instance so a retry that hits the
-  // same instance is essentially free.
-  const transient = new Set([502, 503, 504]);
+  // Retry on transient 500/502/503/504. 500 is included because the SWA
+  // managed-API proxy converts a Function App 503 (host cold-start or
+  // outage) into a generic 500 "Backend call failure" before the client
+  // sees it — indistinguishable from a real upstream 500. The proxy also
+  // caches successful fetches per-instance so a retry is essentially free.
+  const transient = new Set([500, 502, 503, 504]);
   let lastDetail = "";
-  for (let attempt = 0; attempt < 2; attempt++) {
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < 3; attempt++) {
     const res = await apiFetch(target);
     if (res.ok) return res.json();
+    lastStatus = res.status;
     lastDetail = await res.text().catch(() => "");
-    if (transient.has(res.status) && attempt === 0) {
-      await sleep(1500 + Math.random() * 1500);
+    if (transient.has(res.status) && attempt < 2) {
+      // Exponential-ish backoff with jitter: ~1.5s, ~3s.
+      await sleep((attempt + 1) * 1500 + Math.random() * 1500);
       continue;
     }
+    break;
+  }
+  // Friendly message for transient backend failures so users see something
+  // actionable instead of "fetchWebsite 500: Backend call failure".
+  if (transient.has(lastStatus)) {
     throw new Error(
-      `fetchWebsite ${res.status}: ${lastDetail || res.statusText}`,
+      "The site analyzer is temporarily unavailable. Please try again in a moment, or pick a curated demo pack below.",
     );
   }
-  throw new Error(`fetchWebsite failed: ${lastDetail}`);
+  throw new Error(
+    `fetchWebsite ${lastStatus}: ${lastDetail || "request failed"}`,
+  );
 }
 
 /** Returns the list of AOAI deployments the client may select. */

@@ -1421,11 +1421,18 @@ export async function seedFromPreset(
 
   // ── BR Augmentation: characteristics + territory for existing picks ─────
   // runEntityStep's onCreated only fires for fresh inserts. When the user
-  // picks existing Bookable Resources, none of the skill-link or territory
-  // wiring runs — leaving picked resources with no characteristics. Walk
-  // every resource in the map and ensure it has at least one characteristic
-  // and one territory linkage.
-  if (shouldCreate(options.resources)) {
+  // picks existing Bookable Resources (mode === "existing"), none of the
+  // skill-link or territory wiring runs — leaving picked resources with no
+  // characteristics. Walk every resource in `result.resourceIds` (which is
+  // populated for both "create" and "existing" modes) and ensure each has
+  // at least one characteristic and one territory linkage. Skip only when
+  // the user explicitly skipped resources entirely (no rows in the map),
+  // or the catalogs we'd link are empty. This mirrors the Work Hours block
+  // below, which has always run regardless of mode.
+  if (
+    options.resources?.mode !== "skip" &&
+    Object.keys(result.resourceIds).length > 0
+  ) {
     const resourceEntries = Object.entries(result.resourceIds);
     const techByName = new Map(
       (preset.sampleTechnicians ?? []).map((t) => [t.name, t]),

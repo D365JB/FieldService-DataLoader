@@ -7,9 +7,18 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.42.3";
+export const APP_VERSION = "v1.42.4";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.42.4",
+    date: "May 6, 2026",
+    fixes: [
+      "**Existing Bookable Resource picks now get characteristics + territories.** When you switched the Bookable Resources row to *use existing*, the seeder skipped the augmentation pass that links skills (`bookableresourcecharacteristic`) and territories (`msdyn_resourceterritory`) — so picked techs landed with none, even though Work Hours were applied. The augmentation gate was checking `shouldCreate(...)` (true only in *create* mode); switched it to mirror the Work Hours block, which runs whenever the resource map has entries and the row isn't explicitly skipped. Picks that already have a characteristic or territory linked are left alone (probe-then-skip).",
+      "**Friendlier transient-failure message on the Analyze page.** When the SWA proxy returned a generic *Backend call failure* (which fronts a Function App 503 cold-start as 500), the page surfaced the raw `fetchWebsite 500: Backend call failure` string. Client now retries up to 3 times across 500/502/503/504 (was 2× across 502/503/504) and renders *“The site analyzer is temporarily unavailable. Please try again in a moment, or pick a curated demo pack below.”* on persistent failure.",
+      "**Function App outage detection.** Added an anonymous `/api/health` probe and provisioned an Application Insights availability test (5 regions, 5-min cadence) plus a multi-location metric alert that emails on 3-of-5 failures. Set `alertEmail` Bicep param to enable; leave empty to skip provisioning. The May 2026 host outage that surfaced as the *fetchWebsite 500* would have paged in <5 min instead of being noticed by users.",
+    ],
+  },
   {
     version: "v1.42.3",
     date: "May 1, 2026",
