@@ -323,6 +323,23 @@ export interface SeedOptions {
   iotAlerts?: EntityChoice;
   incidentTypeProducts?: EntityChoice;
   /**
+   * Per-resource configuration overrides for the Bookable Resources
+   * augmentation + Work Hours phases. Keyed by `bookableresourceid`.
+   * Only applies when the user picks an existing resource via the UI and
+   * configures it explicitly — un-configured resources keep the historical
+   * "match preset by name, else default" behavior.
+   *
+   * - `characteristicNames`: when provided, forcibly link each named
+   *   characteristic to the resource (deduped against any link already
+   *   present). Empty array = "don't add any characteristics".
+   * - `territoryCode`: when provided, forcibly link the resource to the
+   *   matching territory.
+   * - `hoursPreset`: when provided and not "default", apply the named hours
+   *   preset (overrides preset-name matching). "no-schedule" skips the
+   *   SaveCalendar call entirely.
+   */
+  resourceConfigs?: Record<string, ResourceConfig>;
+  /**
    * Generation tuning knobs (volume, status mix, priority mix, scheduling
    * window). When omitted, `DEFAULT_KNOBS` are used.
    */
@@ -374,6 +391,59 @@ export class CancelledError extends Error {
 export interface EntityChoice {
   mode: "create" | "existing" | "skip";
   existing?: Array<{ id: string; name: string }>;
+}
+
+/**
+ * Per-resource configuration override key. See `HOURS_PRESETS` for the
+ * day/start/end/tz each key resolves to. `"default"` means *no override —
+ * fall through to the historical logic* (preset-tech name match, or
+ * Mon–Fri 8a–5p Pacific). `"no-schedule"` is an explicit "skip the
+ * SaveCalendar call".
+ */
+export type HoursPresetKey =
+  | "default"
+  | "weekday-9to5-pt"
+  | "weekday-8to5-pt"
+  | "weekday-7to3-pt"
+  | "weekday-9to6-et"
+  | "weekend-8to4-pt"
+  | "tu-sa-10to7-pt"
+  | "no-schedule";
+
+export interface HoursPreset {
+  /** Display label shown in the UI dropdown. */
+  label: string;
+  /** RFC-5545 BYDAY tokens. Empty = no working hours. */
+  days: string[];
+  startHour: number;
+  endHour: number;
+  /** Standard Windows TimeZoneCode (4 = Pacific, 35 = Eastern). */
+  tz: number;
+}
+
+export const HOURS_PRESETS: Record<HoursPresetKey, HoursPreset> = {
+  default: { label: "Default (preset-driven)", days: [], startHour: 0, endHour: 0, tz: 4 },
+  "weekday-8to5-pt": { label: "Mon–Fri 8a–5p Pacific", days: ["MO", "TU", "WE", "TH", "FR"], startHour: 8, endHour: 17, tz: 4 },
+  "weekday-9to5-pt": { label: "Mon–Fri 9a–5p Pacific", days: ["MO", "TU", "WE", "TH", "FR"], startHour: 9, endHour: 17, tz: 4 },
+  "weekday-7to3-pt": { label: "Mon–Fri 7a–3p Pacific (early shift)", days: ["MO", "TU", "WE", "TH", "FR"], startHour: 7, endHour: 15, tz: 4 },
+  "weekday-9to6-et": { label: "Mon–Fri 9a–6p Eastern", days: ["MO", "TU", "WE", "TH", "FR"], startHour: 9, endHour: 18, tz: 35 },
+  "weekend-8to4-pt": { label: "Sat–Sun 8a–4p Pacific", days: ["SA", "SU"], startHour: 8, endHour: 16, tz: 4 },
+  "tu-sa-10to7-pt": { label: "Tue–Sat 10a–7p Pacific", days: ["TU", "WE", "TH", "FR", "SA"], startHour: 10, endHour: 19, tz: 4 },
+  "no-schedule": { label: "No schedule (unavailable)", days: [], startHour: 0, endHour: 0, tz: 4 },
+};
+
+/**
+ * Per-resource configuration override consumed by the Bookable Resources
+ * augmentation + Work Hours phases. See `SeedOptions.resourceConfigs`
+ * for semantics.
+ */
+export interface ResourceConfig {
+  /** Names from `preset.characteristics[].name`. Empty = link nothing. */
+  characteristicNames?: string[];
+  /** Code from `preset.territories[].code`. */
+  territoryCode?: string;
+  /** Named hours preset key. `"default"` falls through to historical logic. */
+  hoursPreset?: HoursPresetKey;
 }
 
 function tag(description?: string): string {
@@ -1429,6 +1499,14 @@ export async function seedFromPreset(
   // the user explicitly skipped resources entirely (no rows in the map),
   // or the catalogs we'd link are empty. This mirrors the Work Hours block
   // below, which has always run regardless of mode.
+  //
+  // v1.42.5 — `options.resourceConfigs[resourceId]` lets the user pick
+  // specific characteristics + territory per existing resource (Generate
+  // page → "Use existing" → expand resource card). When a config is
+  // provided we treat it as authoritative: characteristicNames is linked
+  // verbatim (deduped against existing links so we don't insert dupes),
+  // and territoryCode is linked verbatim. Empty arrays = "explicitly add
+  // nothing"; missing keys = fall through to the historical default.
   if (
     options.resources?.mode !== "skip" &&
     Object.keys(result.resourceIds).length > 0
@@ -1439,6 +1517,7 @@ export async function seedFromPreset(
     );
     const allCharIds = Object.values(result.characteristicIds);
     const allTerrEntries = Object.entries(result.territoryIds);
+    const resourceConfigs = options.resourceConfigs ?? {};
     let augDone = 0;
     onProgress({
       step: "Bookable Resources",
@@ -1447,85 +1526,160 @@ export async function seedFromPreset(
       detail: "augment skills/territories",
     });
     for (const [resourceName, resourceId] of resourceEntries) {
-      // Probe existing skill links — skip if any present.
-      let hasChar = false;
-      try {
-        const existingChars = await dv.query<{
-          bookableresourcecharacteristicid: string;
-        }>("bookableresourcecharacteristics", {
-          filter: `_resource_value eq ${resourceId}`,
-          select: ["bookableresourcecharacteristicid"],
-          top: 1,
-        });
-        hasChar = existingChars.length > 0;
-      } catch {
-        hasChar = false;
-      }
-      if (!hasChar && allCharIds.length > 0) {
-        const tech = techByName.get(resourceName);
-        // v1.42.0 — when the preset row carries `skills[]`, link them all
-        // (with ratings) instead of a single fallback. Otherwise keep the
-        // original behavior: try primarySkill, fall back to a random char.
-        if (tech) {
-          for (const link of skillLinksFor(tech)) {
-            try {
-              const payload: Record<string, unknown> = {
-                "Resource@odata.bind": `/bookableresources(${resourceId})`,
-                "Characteristic@odata.bind": `/characteristics(${link.charId})`,
-              };
-              if (link.ratingValueId) {
-                payload["RatingValue@odata.bind"] =
-                  `/ratingvalues(${link.ratingValueId})`;
-              }
-              await dv.create("bookableresourcecharacteristics", payload);
-            } catch {
-              /* non-critical */
+      const userConfig = resourceConfigs[resourceId];
+      // ── Characteristics ──
+      const userCharNames = userConfig?.characteristicNames;
+      if (userCharNames !== undefined) {
+        // Explicit user choice: link exactly these (deduped against
+        // existing). Empty array = link nothing (still valid — user said so).
+        if (userCharNames.length > 0) {
+          // Pull the set of characteristic ids already linked so we can
+          // skip duplicates without throwing per-row.
+          const existingCharIds = new Set<string>();
+          try {
+            const rows = await dv.query<{
+              _characteristic_value: string | null;
+            }>("bookableresourcecharacteristics", {
+              filter: `_resource_value eq ${resourceId}`,
+              select: ["_characteristic_value"],
+              top: 200,
+            });
+            for (const r of rows) {
+              if (r._characteristic_value) existingCharIds.add(r._characteristic_value);
             }
+          } catch {
+            /* non-critical — fall through and let create dedupe by error */
           }
-        } else {
-          const charId =
-            allCharIds[Math.floor(Math.random() * allCharIds.length)];
-          if (charId) {
+          for (const name of userCharNames) {
+            const charId = result.characteristicIds[name];
+            if (!charId || existingCharIds.has(charId)) continue;
             try {
               await dv.create("bookableresourcecharacteristics", {
                 "Resource@odata.bind": `/bookableresources(${resourceId})`,
                 "Characteristic@odata.bind": `/characteristics(${charId})`,
+              });
+              existingCharIds.add(charId);
+            } catch {
+              /* non-critical */
+            }
+          }
+        }
+      } else {
+        // Historical default: skip if the resource has any char already,
+        // else match preset tech, else random.
+        let hasChar = false;
+        try {
+          const existingChars = await dv.query<{
+            bookableresourcecharacteristicid: string;
+          }>("bookableresourcecharacteristics", {
+            filter: `_resource_value eq ${resourceId}`,
+            select: ["bookableresourcecharacteristicid"],
+            top: 1,
+          });
+          hasChar = existingChars.length > 0;
+        } catch {
+          hasChar = false;
+        }
+        if (!hasChar && allCharIds.length > 0) {
+          const tech = techByName.get(resourceName);
+          // v1.42.0 — when the preset row carries `skills[]`, link them all
+          // (with ratings) instead of a single fallback. Otherwise keep the
+          // original behavior: try primarySkill, fall back to a random char.
+          if (tech) {
+            for (const link of skillLinksFor(tech)) {
+              try {
+                const payload: Record<string, unknown> = {
+                  "Resource@odata.bind": `/bookableresources(${resourceId})`,
+                  "Characteristic@odata.bind": `/characteristics(${link.charId})`,
+                };
+                if (link.ratingValueId) {
+                  payload["RatingValue@odata.bind"] =
+                    `/ratingvalues(${link.ratingValueId})`;
+                }
+                await dv.create("bookableresourcecharacteristics", payload);
+              } catch {
+                /* non-critical */
+              }
+            }
+          } else {
+            const charId =
+              allCharIds[Math.floor(Math.random() * allCharIds.length)];
+            if (charId) {
+              try {
+                await dv.create("bookableresourcecharacteristics", {
+                  "Resource@odata.bind": `/bookableresources(${resourceId})`,
+                  "Characteristic@odata.bind": `/characteristics(${charId})`,
+                });
+              } catch {
+                /* non-critical */
+              }
+            }
+          }
+        }
+      }
+
+      // ── Territory ──
+      const userTerrCode = userConfig?.territoryCode;
+      if (userTerrCode !== undefined) {
+        // Explicit user choice. Empty string = link nothing.
+        const terrId = userTerrCode ? result.territoryIds[userTerrCode] : undefined;
+        if (terrId) {
+          // Skip if exact link already present.
+          let alreadyLinked = false;
+          try {
+            const existingTerrs = await dv.query<{
+              _msdyn_territory_value: string | null;
+            }>("msdyn_resourceterritories", {
+              filter: `_msdyn_resource_value eq ${resourceId} and _msdyn_territory_value eq ${terrId}`,
+              select: ["_msdyn_territory_value"],
+              top: 1,
+            });
+            alreadyLinked = existingTerrs.length > 0;
+          } catch {
+            alreadyLinked = false;
+          }
+          if (!alreadyLinked) {
+            try {
+              await dv.create("msdyn_resourceterritories", {
+                "msdyn_resource@odata.bind": `/bookableresources(${resourceId})`,
+                "msdyn_territory@odata.bind": `/territories(${terrId})`,
+                msdyn_description: tag(),
               });
             } catch {
               /* non-critical */
             }
           }
         }
-      }
-
-      // Probe existing territory links — skip if any present.
-      let hasTerr = false;
-      try {
-        const existingTerrs = await dv.query<{
-          msdyn_resourceterritoryid: string;
-        }>("msdyn_resourceterritories", {
-          filter: `_msdyn_resource_value eq ${resourceId}`,
-          select: ["msdyn_resourceterritoryid"],
-          top: 1,
-        });
-        hasTerr = existingTerrs.length > 0;
-      } catch {
-        hasTerr = false;
-      }
-      if (!hasTerr && allTerrEntries.length > 0) {
-        const tech = techByName.get(resourceName);
-        const terrId =
-          (tech && result.territoryIds[tech.primaryTerritoryCode]) ||
-          allTerrEntries[Math.floor(Math.random() * allTerrEntries.length)][1];
-        if (terrId) {
-          try {
-            await dv.create("msdyn_resourceterritories", {
-              "msdyn_resource@odata.bind": `/bookableresources(${resourceId})`,
-              "msdyn_territory@odata.bind": `/territories(${terrId})`,
-              msdyn_description: tag(),
-            });
-          } catch {
-            /* non-critical */
+      } else {
+        // Historical default.
+        let hasTerr = false;
+        try {
+          const existingTerrs = await dv.query<{
+            msdyn_resourceterritoryid: string;
+          }>("msdyn_resourceterritories", {
+            filter: `_msdyn_resource_value eq ${resourceId}`,
+            select: ["msdyn_resourceterritoryid"],
+            top: 1,
+          });
+          hasTerr = existingTerrs.length > 0;
+        } catch {
+          hasTerr = false;
+        }
+        if (!hasTerr && allTerrEntries.length > 0) {
+          const tech = techByName.get(resourceName);
+          const terrId =
+            (tech && result.territoryIds[tech.primaryTerritoryCode]) ||
+            allTerrEntries[Math.floor(Math.random() * allTerrEntries.length)][1];
+          if (terrId) {
+            try {
+              await dv.create("msdyn_resourceterritories", {
+                "msdyn_resource@odata.bind": `/bookableresources(${resourceId})`,
+                "msdyn_territory@odata.bind": `/territories(${terrId})`,
+                msdyn_description: tag(),
+              });
+            } catch {
+              /* non-critical */
+            }
           }
         }
       }
@@ -1575,14 +1729,26 @@ export async function seedFromPreset(
     for (let i = 0; i < whEntries.length; i++) {
       const [resourceName, resourceId] = whEntries[i];
       const tech = whTechByName.get(resourceName);
-      const rawDays = tech?.workDays;
+      // v1.42.5 — per-resource hours preset override (Generate page).
+      // When the user picks a non-"default" preset for this resource id,
+      // it wins over preset-tech matching and the historical default.
+      const userHoursKey = options.resourceConfigs?.[resourceId]?.hoursPreset;
+      const userHours =
+        userHoursKey && userHoursKey !== "default"
+          ? HOURS_PRESETS[userHoursKey]
+          : undefined;
+      const rawDays = userHours ? userHours.days : tech?.workDays;
       const days =
         rawDays === undefined
           ? ["MO", "TU", "WE", "TH", "FR"]
           : rawDays.filter((d) => VALID_DAYS.has(d));
-      const startH = clampHour(tech?.workStartHour, 8);
-      const endH = clampHour(tech?.workEndHour, 17);
-      const tzCode = tech?.timeZoneCode ?? 4;
+      const startH = userHours
+        ? clampHour(userHours.startHour, 8)
+        : clampHour(tech?.workStartHour, 8);
+      const endH = userHours
+        ? clampHour(userHours.endHour, 17)
+        : clampHour(tech?.workEndHour, 17);
+      const tzCode = userHours ? userHours.tz : (tech?.timeZoneCode ?? 4);
       let detail = "applied";
       // Empty workDays = explicit "no schedule"; skip the save call.
       if (days.length === 0 || endH <= startH) {

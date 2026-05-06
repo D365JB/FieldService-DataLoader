@@ -7,9 +7,20 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.42.4";
+export const APP_VERSION = "v1.42.5";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.42.5",
+    date: "May 6, 2026",
+    features: [
+      "**Per-resource configuration for *Use existing* Bookable Resources.** When you switch the Bookable Resources row to *use existing*, each picked tech now gets a collapsible card with three controls: a chip multi-select for **characteristics** (drawn from the active preset), a dropdown for **territory** (preset territories), and a dropdown for **working hours** (named presets — Mon–Fri 8a–5p Pacific, Mon–Fri 9a–6p Eastern, Tue–Sat 10a–7p Pacific, weekend 8a–4p Pacific, no-schedule, plus a few more). Resources you don't expand keep the historical defaults (preset-tech name match, else random char + random territory + Mon–Fri 8a–5p Pacific). Persists across the run; cleared automatically when you remove a pick.",
+    ],
+    improvements: [
+      "Augmentation pass now dedupes characteristic links against what's already on the resource (queries `_characteristic_value` once per resource), so re-running the seeder against the same picked techs no longer leaves duplicate `bookableresourcecharacteristic` rows.",
+      "Territory link probe now matches on `(_msdyn_resource_value, _msdyn_territory_value)` instead of just resource — so picking a different territory for an existing resource correctly adds the new link.",
+    ],
+  },
   {
     version: "v1.42.4",
     date: "May 6, 2026",

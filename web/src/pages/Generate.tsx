@@ -12,7 +12,7 @@ import {
 } from "@phosphor-icons/react";
 import { AppHeader } from "@/components/AppHeader";
 import { DataverseClient, deepLink } from "@/lib/dataverse";
-import { seedFromPreset, CancelledError, type SeedProgress, type SeedResult, type SeedOptions, type EntityChoice } from "@/lib/fs/seed-config";
+import { seedFromPreset, CancelledError, type SeedProgress, type SeedResult, type SeedOptions, type EntityChoice, type ResourceConfig } from "@/lib/fs/seed-config";
 import { SKIP_REASON_LABEL, type SkipReason } from "@/lib/fs/safeWrite";
 import { buildResultSections } from "@/lib/fs/resultSections";
 import type { FsPreset } from "@/lib/preset";
@@ -22,6 +22,7 @@ import { runHistory } from "@/lib/runHistory";
 import { activeRunStore } from "@/lib/activeRunStore";
 import { useActiveRun } from "@/lib/useActiveRun";
 import { EntityPicker, type PickedEntity } from "@/components/EntityPicker";
+import { ResourceConfigPanel } from "@/components/ResourceConfigPanel";
 import { GenerationKnobsPanel } from "@/components/GenerationKnobsPanel";
 import { generationKnobs, type GenerationKnobs } from "@/lib/generationKnobs";
 
@@ -231,11 +232,29 @@ export function Generate() {
   const [knobs, setKnobs] = useState<GenerationKnobs>(() =>
     orgUrl ? generationKnobs.load(orgUrl) : generationKnobs.load(""),
   );
+  // v1.42.5 — per-resource configuration overrides for picked-existing
+  // Bookable Resources (characteristics, territory, working hours).
+  // Keyed by `bookableresourceid`. Cleared when the user removes a pick
+  // so stale config doesn't bleed into the seed call.
+  const [resourceConfigs, setResourceConfigs] = useState<
+    Record<string, ResourceConfig>
+  >({});
   function setMode(k: EntityKey, m: Mode) {
     setEntityModes((s) => ({ ...s, [k]: m }));
   }
   function setPicks(k: EntityKey, v: PickedEntity[]) {
     setEntityPicks((s) => ({ ...s, [k]: v }));
+    // Drop config entries for resources no longer picked.
+    if (k === "resources") {
+      const keep = new Set(v.map((x) => x.id));
+      setResourceConfigs((cur) => {
+        const next: Record<string, ResourceConfig> = {};
+        for (const [id, cfg] of Object.entries(cur)) {
+          if (keep.has(id)) next[id] = cfg;
+        }
+        return next;
+      });
+    }
   }
   // If this entity is enabled (create or existing) but any of its upstream
   // dependencies is set to "skip", show an inline warning so the user knows
@@ -311,6 +330,13 @@ export function Generate() {
       seedOptions.knobs = knobs;
       seedOptions.runId = runId;
       seedOptions.signal = controller.signal;
+      // Per-resource overrides (only meaningful when resources mode === 'existing').
+      if (
+        entityModes.resources === "existing" &&
+        Object.keys(resourceConfigs).length > 0
+      ) {
+        seedOptions.resourceConfigs = resourceConfigs;
+      }
       const keys: EntityKey[] = [
         "territories",
         "workOrderTypes",
@@ -582,16 +608,24 @@ export function Generate() {
                 onModeChange={(m) => setMode("resources", m)}
                 warning={warningFor("resources")}
                 picker={
-                  <EntityPicker
-                    label="bookable resources"
-                    orgUrl={orgUrl}
-                    entitySet="bookableresources"
-                    idField="bookableresourceid"
-                    nameField="name"
-                    filter="statecode eq 0 and (resourcetype eq 1 or resourcetype eq 3 or resourcetype eq 4)"
-                    value={entityPicks.resources}
-                    onChange={(v) => setPicks("resources", v)}
-                  />
+                  <>
+                    <EntityPicker
+                      label="bookable resources"
+                      orgUrl={orgUrl}
+                      entitySet="bookableresources"
+                      idField="bookableresourceid"
+                      nameField="name"
+                      filter="statecode eq 0 and (resourcetype eq 1 or resourcetype eq 3 or resourcetype eq 4)"
+                      value={entityPicks.resources}
+                      onChange={(v) => setPicks("resources", v)}
+                    />
+                    <ResourceConfigPanel
+                      picks={entityPicks.resources}
+                      preset={preset}
+                      value={resourceConfigs}
+                      onChange={setResourceConfigs}
+                    />
+                  </>
                 }
               />
               <EntityRow
