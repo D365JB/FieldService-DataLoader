@@ -442,8 +442,26 @@ export interface ResourceConfig {
   characteristicNames?: string[];
   /** Code from `preset.territories[].code`. */
   territoryCode?: string;
-  /** Named hours preset key. `"default"` falls through to historical logic. */
-  hoursPreset?: HoursPresetKey;
+  /**
+   * Working hours selection. v1.42.6 accepts three forms:
+   *  - `"default"` / undefined — historical logic (preset-tech name match,
+   *    else Mon–Fri 8a–5p Pacific).
+   *  - A named `HoursPresetKey` (e.g. `"weekday-9to6-et"`).
+   *  - `"tech:<Name>"` — copy `workDays`/`workStartHour`/`workEndHour`/
+   *    `timeZoneCode` from the matching `preset.sampleTechnicians[]` row.
+   *    Lets a dispatcher reuse a generated technician's exact schedule
+   *    (the same one the seeder applies to brand-new resources).
+   *  - `"custom"` — use `hoursCustom` verbatim.
+   */
+  hoursPreset?: string;
+  /** Required when `hoursPreset === "custom"`. */
+  hoursCustom?: {
+    days: string[];
+    startHour: number;
+    endHour: number;
+    /** Standard Windows TimeZoneCode (4 = Pacific, 35 = Eastern). */
+    tz: number;
+  };
 }
 
 function tag(description?: string): string {
@@ -1729,14 +1747,39 @@ export async function seedFromPreset(
     for (let i = 0; i < whEntries.length; i++) {
       const [resourceName, resourceId] = whEntries[i];
       const tech = whTechByName.get(resourceName);
-      // v1.42.5 — per-resource hours preset override (Generate page).
-      // When the user picks a non-"default" preset for this resource id,
-      // it wins over preset-tech matching and the historical default.
-      const userHoursKey = options.resourceConfigs?.[resourceId]?.hoursPreset;
-      const userHours =
-        userHoursKey && userHoursKey !== "default"
-          ? HOURS_PRESETS[userHoursKey]
-          : undefined;
+      // v1.42.5 — per-resource hours override (Generate page).
+      // v1.42.6 — also resolves `tech:<Name>` (copy a sample technician's
+      // schedule) and `custom` (use ResourceConfig.hoursCustom verbatim).
+      const userCfg = options.resourceConfigs?.[resourceId];
+      const userHoursKey = userCfg?.hoursPreset;
+      let userHours: HoursPreset | undefined;
+      if (userHoursKey && userHoursKey !== "default") {
+        if (userHoursKey === "custom" && userCfg?.hoursCustom) {
+          userHours = {
+            label: "Custom",
+            days: userCfg.hoursCustom.days,
+            startHour: userCfg.hoursCustom.startHour,
+            endHour: userCfg.hoursCustom.endHour,
+            tz: userCfg.hoursCustom.tz,
+          };
+        } else if (userHoursKey.startsWith("tech:")) {
+          const techName = userHoursKey.slice("tech:".length);
+          const srcTech = (preset.sampleTechnicians ?? []).find(
+            (x) => x.name === techName,
+          );
+          if (srcTech) {
+            userHours = {
+              label: `${techName}'s hours`,
+              days: srcTech.workDays ?? ["MO", "TU", "WE", "TH", "FR"],
+              startHour: clampHour(srcTech.workStartHour, 8),
+              endHour: clampHour(srcTech.workEndHour, 17),
+              tz: srcTech.timeZoneCode ?? 4,
+            };
+          }
+        } else if (userHoursKey in HOURS_PRESETS) {
+          userHours = HOURS_PRESETS[userHoursKey as HoursPresetKey];
+        }
+      }
       const rawDays = userHours ? userHours.days : tech?.workDays;
       const days =
         rawDays === undefined

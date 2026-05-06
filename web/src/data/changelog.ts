@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.42.5";
+export const APP_VERSION = "v1.42.6";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.42.6",
+    date: "May 6, 2026",
+    features: [
+      "**Per-resource hours: pick from your preset technicians, or roll a custom schedule.** The *Working hours* dropdown on each existing-resource card (v1.42.5) now has three groups: (1) **Named presets** — the canned schedules from v1.42.5 (Mon–Fri 8a–5p Pacific, Mon–Fri 9a–6p Eastern, etc), (2) **From sample technicians (preset)** — one option per `preset.sampleTechnicians[]` row, labeled with that tech's exact `workDays`/`workStartHour`/`workEndHour` (e.g. *Sara Patel — MO/TU/WE/TH/FR 7–15*), so an existing tech can adopt the schedule that the seeder would otherwise apply only to a brand-new resource, and (3) **Custom…** — picks an inline editor with day chips (Mon–Sun), Start/End numeric inputs (0–24, 24-hour clock), and a 13-option Time-zone dropdown (Pacific, Mountain, Arizona, Central, Eastern, Atlantic, UTC, London, Berlin, Moscow, India, Tokyo, Sydney). The seeder Work Hours phase resolves all three forms: the named preset reads from `HOURS_PRESETS`; `tech:<Name>` copies the matching sample technician's fields; `custom` uses the editor's payload verbatim. Empty days still mean *no schedule* and the `msdyn_SaveCalendar` call is skipped, just like v1.42.5.",
+      "**Territory dropdown surfaces the *generated* territories.** The territory picker on each existing-resource card lists the territories the active preset will generate or sync this run (drawn from `preset.territories[]`), with an inline tip noting that. Linking probes the `(resource, territory)` pair so the choice actually takes effect on a re-run.",
+    ],
+  },
   {
     version: "v1.42.5",
     date: "May 6, 2026",
