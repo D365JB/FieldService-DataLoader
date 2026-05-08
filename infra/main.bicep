@@ -294,6 +294,16 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         }
       }
       scaleAndConcurrency: {
+        // v1.42.7 — keep one instance always warm so the Brand / Analyze
+        // pages don't see cold-start 503s the first time a dispatcher
+        // hits them after an idle period. Costs roughly $8–15/mo for one
+        // FC1 vCPU; eliminates the most-reported transient error.
+        alwaysReady: [
+          {
+            name: 'http'
+            instanceCount: 1
+          }
+        ]
         maximumInstanceCount: 40
         instanceMemoryMB: 2048
       }

@@ -33,14 +33,36 @@ export async function extractBranding(url: string): Promise<BrandingResult> {
   const normalized = /^https?:\/\//i.test(url.trim())
     ? url.trim()
     : `https://${url.trim()}`;
-  const res = await apiFetch(
-    `/api/extractBranding?url=${encodeURIComponent(normalized)}`,
-  );
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(`extractBranding ${res.status}: ${detail || res.statusText}`);
+  const target = `/api/extractBranding?url=${encodeURIComponent(normalized)}`;
+  // v1.42.7 — match the v1.42.4 fetchWebsite retry pattern. The SWA
+  // managed-API proxy converts Function App cold-start 503s into a
+  // generic 500 "Backend call failure"; retrying across transient 5xx
+  // codes covers the cold-start window. Always-ready=1 (also v1.42.7)
+  // makes this rare in practice but the retry is cheap insurance.
+  const transient = new Set([500, 502, 503, 504]);
+  let lastDetail = "";
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await apiFetch(target);
+    if (res.ok) return res.json();
+    lastStatus = res.status;
+    lastDetail = await res.text().catch(() => "");
+    if (transient.has(res.status) && attempt < 2) {
+      await new Promise((r) =>
+        setTimeout(r, (attempt + 1) * 1500 + Math.random() * 1500),
+      );
+      continue;
+    }
+    break;
   }
-  return res.json();
+  if (transient.has(lastStatus)) {
+    throw new Error(
+      "The branding detector is temporarily unavailable. Please try again in a moment, or click Skip & customize manually below.",
+    );
+  }
+  throw new Error(
+    `extractBranding ${lastStatus}: ${lastDetail || "request failed"}`,
+  );
 }
 
 /** Download image bytes via the proxy (for webresource upload). */

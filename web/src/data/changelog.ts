@@ -7,9 +7,19 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.42.6";
+export const APP_VERSION = "v1.42.7";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.42.7",
+    date: "May 7, 2026",
+    tag: "FIX",
+    fixes: [
+      "**Cold-start 503s on the Brand and Analyze pages are gone.** The Function App is Flex Consumption (FC1), which scales to zero after ~20 min of idle and takes 8–15 s to spin a new instance back up — long enough that the SWA managed-API proxy times out and surfaces a generic *Backend call failure*. Promoted one instance to *always-ready* (`scaleAndConcurrency.alwaysReady = [{ name: 'http', instanceCount: 1 }]`) so the HTTP trigger group keeps a warm worker. Costs roughly $8–15/month for a single FC1 vCPU and trades it for a measurably faster first-request after idle. Bicep updated to match so a future `azd up` doesn't undo the change.",
+      "**Storage public-network-access can no longer be silently flipped off underneath us.** Defender for Storage was auto-remediating `stfsdemo…` to `publicNetworkAccess=Disabled`, which broke the Flex Consumption deployment-package fetch and took the entire `/api/*` surface down (every page that hit a Function returned 500 *Backend call failure* until we manually re-enabled it). Added a custom Azure Policy `deny-storage-public-network-disabled-fsdemo` scoped to `rg-fsdemo` that blocks any write where `Microsoft.Storage/storageAccounts/publicNetworkAccess == 'Disabled'`. Defender's remediation now fails loudly instead of taking the app offline; the long-term fix is a private endpoint + storage VNet integration but that's a larger architectural change.",
+      "**Friendlier transient-failure message on the Brand page.** `extractBranding()` now mirrors the v1.42.4 `fetchWebsite` pattern: 3× retry across 500/502/503/504 with jittered backoff (~1.5 s, ~3 s) and a friendly *“The branding detector is temporarily unavailable. Please try again in a moment…”* surface on persistent failure, instead of the raw `extractBranding 500: Backend call failure` string. Now-rare in practice thanks to always-ready=1, but the retry is cheap insurance.",
+    ],
+  },
   {
     version: "v1.42.6",
     date: "May 6, 2026",
