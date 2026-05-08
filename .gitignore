@@ -44,3 +44,5 @@ api/local.settings.json
 .azd-up.log
 
 *-app.zip
+
+api-deploy.zip
