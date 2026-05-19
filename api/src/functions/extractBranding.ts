@@ -270,7 +270,7 @@ export async function extractBranding(
     };
     return { status: 200, headers: cors, jsonBody: result };
   } catch (err) {
-    context.error("extractBranding failed", err);
+    context.error(`extractBranding failed [s=${req.headers.get("x-fsdl-session") ?? "anon"}]`, err);
     return {
       status: 502,
       headers: cors,

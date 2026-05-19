@@ -112,7 +112,7 @@ export async function fetchWebsite(
     siteCache.set(cacheKey, result);
     return { status: 200, headers: cors, jsonBody: result };
   } catch (err) {
-    context.error("fetchWebsite failed", err);
+    context.error(`fetchWebsite failed [s=${req.headers.get("x-fsdl-session") ?? "anon"}]`, err);
     const isAbort = (err as Error)?.name === "AbortError";
     return {
       status: isAbort ? 504 : 502,

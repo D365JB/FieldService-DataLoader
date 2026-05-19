@@ -1,8 +1,11 @@
+import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMsal } from "@azure/msal-react";
-import { Sparkle, Trash, Wrench, Palette } from "@phosphor-icons/react";
+import { Sparkle, Trash, Wrench, Palette, X } from "@phosphor-icons/react";
 import { AppHeader } from "@/components/AppHeader";
 import { orgStore } from "@/lib/orgStore";
+import { DataverseClient } from "@/lib/dataverse";
+import { useBackgroundVerifyRun } from "@/lib/useBackgroundVerifyRun";
 
 const ACTIONS = [
   {
@@ -36,6 +39,16 @@ export function Dashboard() {
   const navigate = useNavigate();
   const orgUrl = orgStore.getOrgUrl() ?? undefined;
 
+  // v1.44.0 — fire a one-shot background verify of the most recent run so
+  // out-of-band Dataverse deletions don't leave the on-device history (and
+  // Reset's per-run delete) pointing at ghost ids. Toast is silent unless
+  // something actually drifted.
+  const dv = useMemo(
+    () => (orgUrl ? new DataverseClient({ orgUrl }) : null),
+    [orgUrl],
+  );
+  const verify = useBackgroundVerifyRun(dv, orgUrl ?? null);
+
   if (!accounts[0]) {
     navigate("/");
     return null;
@@ -56,6 +69,25 @@ export function Dashboard() {
         <p className="text-slate-400 mb-10">
           Connected to <code className="text-accent">{new URL(orgUrl).host}</code>
         </p>
+
+        {verify.pruned > 0 && !verify.dismissed && (
+          <div className="card bg-amber-950/40 border-amber-700/60 px-4 py-3 mb-6 flex items-start gap-3">
+            <div className="flex-1 text-sm text-amber-100">
+              <strong>{verify.pruned}</strong> record
+              {verify.pruned === 1 ? "" : "s"} from your last run
+              {verify.companyName ? ` (${verify.companyName})` : ""} no longer
+              exist in Dataverse and were pruned from this device's history.
+            </div>
+            <button
+              type="button"
+              onClick={verify.dismiss}
+              className="text-amber-300 hover:text-amber-100"
+              aria-label="Dismiss"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
 
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           {ACTIONS.map((a) => (

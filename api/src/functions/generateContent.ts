@@ -5,6 +5,7 @@ import {
   type InvocationContext,
 } from "@azure/functions";
 import { DefaultAzureCredential } from "@azure/identity";
+import { sessionTag } from "../lib/session";
 
 interface GenerateRequest {
   prompt: string;
@@ -46,6 +47,48 @@ let cachedCredential: DefaultAzureCredential | null = null;
 function getCredential(): DefaultAzureCredential {
   if (!cachedCredential) cachedCredential = new DefaultAzureCredential();
   return cachedCredential;
+}
+
+/**
+ * v1.44.0 — per-instance concurrency limiter.
+ *
+ * AOAI deployments have a TPM cap. When a single Function instance processes
+ * many simultaneous requests (e.g. one user clicks Analyze while another
+ * runs Brand extract), the parallel calls all share the same TPM budget and
+ * compete for it via 429s. A tiny in-process semaphore caps how many we
+ * fire at AOAI concurrently and queues the rest with a fair FIFO wait, so
+ * the long tail of latency comes from waiting in our queue (cheap, no AOAI
+ * billing) instead of 429-retry storms (expensive, blows up Retry-After).
+ *
+ * Limit chosen to roughly match the always-ready=1 worker's typical
+ * concurrency. Override with AOAI_MAX_CONCURRENCY env var (no restart
+ * required at the platform level — Flex picks it up on instance recycle).
+ */
+const AOAI_MAX_CONCURRENCY = Math.max(
+  1,
+  parseInt(process.env.AOAI_MAX_CONCURRENCY ?? "4", 10) || 4,
+);
+let aoaiInFlight = 0;
+const aoaiQueue: Array<() => void> = [];
+
+async function withAoaiSlot<T>(fn: () => Promise<T>): Promise<{
+  result: T;
+  queuedMs: number;
+}> {
+  const queuedAt = Date.now();
+  if (aoaiInFlight >= AOAI_MAX_CONCURRENCY) {
+    await new Promise<void>((resolve) => aoaiQueue.push(resolve));
+  }
+  const queuedMs = Date.now() - queuedAt;
+  aoaiInFlight++;
+  try {
+    const result = await fn();
+    return { result, queuedMs };
+  } finally {
+    aoaiInFlight--;
+    const next = aoaiQueue.shift();
+    if (next) next();
+  }
 }
 
 function corsHeaders(origin: string | null): Record<string, string> {
@@ -169,7 +212,7 @@ export async function generateContent(
   try {
     auth = await getAuthHeader();
   } catch (err) {
-    context.error("Auth failed", err);
+    context.error(`Auth failed${sessionTag(req)}`, err);
     return {
       status: 500,
       headers: cors,
@@ -186,6 +229,11 @@ export async function generateContent(
   //     hung connection can't tie up an instance for the full 230s SWA limit.
   //   - Surface `Retry-After` to the client on final failure so the UI can
   //     pause before re-prompting.
+  //   - v1.44.0: gate the whole retry loop behind a per-instance semaphore so
+  //     parallel users queue locally instead of competing for the AOAI TPM
+  //     budget via 429-retry storms.
+  const sTag = sessionTag(req);
+  const slot = await withAoaiSlot(async () => {
   const maxAttempts = 6;
   const perAttemptTimeoutMs = 110_000;
   let lastError = "";
@@ -218,7 +266,7 @@ export async function generateContent(
         context.warn(
           `AOAI ${res.status}, retry ${attempt + 1}/${maxAttempts} in ${wait}ms${
             Number.isFinite(retryAfterSec) ? ` (Retry-After=${retryAfterSec}s)` : ""
-          }`,
+          }${sTag}`,
         );
         await new Promise((r) => setTimeout(r, wait));
         continue;
@@ -255,7 +303,7 @@ export async function generateContent(
       const wait = Math.min(2 ** attempt * 1000, 16_000);
       const jittered = Math.floor(wait / 2 + Math.random() * (wait / 2));
       context.warn(
-        `AOAI fetch error, retry ${attempt + 1}/${maxAttempts} in ${jittered}ms: ${lastError}`,
+        `AOAI fetch error, retry ${attempt + 1}/${maxAttempts} in ${jittered}ms: ${lastError}${sTag}`,
       );
       await new Promise((r) => setTimeout(r, jittered));
     } finally {
@@ -278,6 +326,13 @@ export async function generateContent(
       retryAfterSec: lastRetryAfterSec || undefined,
     },
   };
+  });
+  if (slot.queuedMs > 250) {
+    context.log(
+      `AOAI slot waited ${slot.queuedMs}ms (in-flight cap=${AOAI_MAX_CONCURRENCY})${sTag}`,
+    );
+  }
+  return slot.result;
 }
 
 app.http("generateContent", {

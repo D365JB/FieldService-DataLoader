@@ -93,7 +93,7 @@ export async function fetchImage(
     imageCache.set(cacheKey, result);
     return { status: 200, headers: cors, jsonBody: result };
   } catch (err) {
-    context.error("fetchImage failed", err);
+    context.error(`fetchImage failed [s=${req.headers.get("x-fsdl-session") ?? "anon"}]`, err);
     const e = err as Error & { code?: string; status?: number };
     if (e.code === "UNSUPPORTED_TYPE") {
       return {

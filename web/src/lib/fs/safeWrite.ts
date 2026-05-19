@@ -27,6 +27,7 @@
  */
 
 import type { DataverseClient } from "@/lib/dataverse";
+import { DataverseError } from "@/lib/dataverse";
 
 /**
  * Why a write was skipped. New entries get a string-literal key so callers
@@ -259,6 +260,18 @@ export async function safeCreate(
   maxRetries = 5,
 ): Promise<SafeCreateResult> {
   const working = { ...payload };
+  // v1.44.0 — one-shot retry budgets for transient classes that aren't
+  // schema-shape errors. The 5-attempt fallback loop only knows how to
+  // strip invalid properties; these handle the other two flavors:
+  //   - `lookup-not-found`: Dataverse's eventual consistency. A record we
+  //     just created on the previous step occasionally isn't visible to
+  //     this row's @odata.bind for ~1s. Wait + retry once before skipping.
+  //   - status=0 (network): the browser dropped the connection. The
+  //     5-attempt backoff inside DataverseClient already covered the wire
+  //     layer; a fresh attempt at the safeWrite layer adds one more chance
+  //     in case the whole HTTP exchange was interrupted post-request.
+  let lookupRetryUsed = false;
+  let networkRetryUsed = false;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const id = await dv.create(entitySet, working);
@@ -270,6 +283,22 @@ export async function safeCreate(
         continue;
       }
       const reason = classifyError(err);
+      if (reason === "lookup-not-found" && !lookupRetryUsed) {
+        lookupRetryUsed = true;
+        // Race against Dataverse projecting the parent record. 1.5s is the
+        // sweet spot — long enough to clear most races, short enough that a
+        // truly missing lookup doesn't burn user time before being skipped.
+        await new Promise((r) => setTimeout(r, 1500));
+        continue;
+      }
+      const isNetwork =
+        (err as DataverseError)?.status === 0 ||
+        /network error after/i.test((err as Error)?.message ?? "");
+      if (isNetwork && !networkRetryUsed) {
+        networkRetryUsed = true;
+        await new Promise((r) => setTimeout(r, 2000));
+        continue;
+      }
       if (reason) {
         const info: SkipInfo = {
           reason,

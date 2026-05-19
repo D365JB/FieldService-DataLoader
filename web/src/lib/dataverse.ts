@@ -89,7 +89,16 @@ export class DataverseClient {
           headers: { ...baseHeaders, ...(init.headers as Record<string, string>) },
         });
         if (res.status === 429 || (res.status >= 500 && res.status < 600)) {
-          const wait = Math.min(2 ** attempt * 1000, 16000);
+          // v1.44.0 — honor Retry-After (Dataverse sends it on 429) and add
+          // jitter so parallel record creates don't all retry in lockstep.
+          const retryAfterRaw = res.headers.get("retry-after");
+          const retryAfterSec = retryAfterRaw ? parseInt(retryAfterRaw, 10) : NaN;
+          const base =
+            Number.isFinite(retryAfterSec) && retryAfterSec > 0
+              ? Math.min(retryAfterSec * 1000, 30000)
+              : Math.min(2 ** attempt * 1000, 16000);
+          // Full jitter: wait in [base/2, base].
+          const wait = Math.floor(base / 2 + Math.random() * (base / 2));
           this.onRetry?.(attempt + 1, res.status, wait);
           await new Promise((r) => setTimeout(r, wait));
           continue;
@@ -97,7 +106,8 @@ export class DataverseClient {
         return res;
       } catch (err) {
         lastErr = err as Error;
-        const wait = Math.min(2 ** attempt * 1000, 16000);
+        const base = Math.min(2 ** attempt * 1000, 16000);
+        const wait = Math.floor(base / 2 + Math.random() * (base / 2));
         this.onRetry?.(attempt + 1, 0, wait);
         await new Promise((r) => setTimeout(r, wait));
       }

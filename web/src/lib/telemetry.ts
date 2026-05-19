@@ -33,6 +33,16 @@ function getSessionId(): string {
   }
 }
 
+/**
+ * v1.44.0 — exported so other modules (apiFetch, run history, error boundary)
+ * can include the same per-tab id when posting to `/api/*`. Same value the
+ * telemetry events carry so a single id correlates UI events + API logs +
+ * App Insights traces end-to-end.
+ */
+export function getTelemetrySessionId(): string {
+  return getSessionId();
+}
+
 function getActor(): { user: string; tenant: string } {
   try {
     const acct = msalInstance.getAllAccounts()[0];
