@@ -1,0 +1,122 @@
+# v1.43.0 — Nightly drift detection.
+#
+# Compares the deployed Azure infrastructure against what's in main by running
+# `azd provision --preview`. If the preview shows ANY changes (Create / Update /
+# Delete), the job opens a self-issue tagged `drift` so the next maintainer
+# notices before a manual portal edit gets stomped on the next deploy.
+#
+# No write operations — preview only. Safe to run on schedule.
+#
+# Uses the same OIDC federated credential as azd-deploy.yml. No secret rotation.
+name: Drift detection
+
+on:
+  schedule:
+    # 08:15 UTC daily (~ midnight Pacific). Off-peak so it doesn't race deploys.
+    - cron: "15 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+  issues: write
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      VITE_MSAL_CLIENT_ID: ${{ vars.VITE_MSAL_CLIENT_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install azd
+        uses: Azure/setup-azd@v2
+
+      - name: Log in with Azure (Federated Credential)
+        run: |
+          azd auth login \
+            --client-id "$AZURE_CLIENT_ID" \
+            --federated-credential-provider "github" \
+            --tenant-id "$AZURE_TENANT_ID"
+
+      - name: Run provision preview
+        id: preview
+        run: |
+          set +e
+          azd provision --preview --no-prompt > preview.txt 2>&1
+          rc=$?
+          echo "--- preview output ---"
+          cat preview.txt
+          echo "preview_rc=$rc" >> "$GITHUB_OUTPUT"
+          # azd exits 0 with diffs OR no diffs. We rely on text matching to detect drift.
+          # Look for any of the change verbs in the human-readable preview.
+          if grep -E "(^|[[:space:]])(Create|Update|Delete|Modify)([[:space:]]|$)" preview.txt > /dev/null 2>&1; then
+            echo "drift=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "drift=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload preview artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: provision-preview
+          path: preview.txt
+          retention-days: 14
+
+      - name: Open drift issue
+        if: steps.preview.outputs.drift == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const preview = fs.readFileSync('preview.txt', 'utf8');
+            const truncated = preview.length > 50000
+              ? preview.slice(0, 50000) + '\n\n…(truncated)…'
+              : preview;
+            const title = `Infrastructure drift detected — ${new Date().toISOString().slice(0,10)}`;
+
+            // Avoid spamming: dedupe by title-prefix among open issues with `drift` label.
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'drift',
+              per_page: 50,
+            });
+            if (existing.data.length > 0) {
+              core.info(`Open drift issue already exists (#${existing.data[0].number}); skipping create.`);
+              return;
+            }
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              labels: ['drift'],
+              body: [
+                'The nightly drift-detection workflow found differences between the',
+                'deployed Azure resources and the Bicep/azd configuration in `main`.',
+                '',
+                'Most common causes: someone edited a resource in the portal, a secret',
+                'was rotated outside of azd, or a manual `az` command changed config.',
+                '',
+                'Resolve by either (a) bringing the change into Bicep and re-running',
+                '`azd provision`, or (b) reverting the portal edit. Either way, this',
+                'issue should be closed once the next nightly run sees no diffs.',
+                '',
+                '<details><summary>azd provision --preview output</summary>',
+                '',
+                '```',
+                truncated,
+                '```',
+                '',
+                '</details>',
+              ].join('\n'),
+            });

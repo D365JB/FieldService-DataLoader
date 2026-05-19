@@ -98,6 +98,25 @@ export function Reset() {
     if (orgUrl) setRuns(runHistory.list(orgUrl));
   }, [orgUrl]);
 
+  // v1.43.0 — when arriving from the workflow-lock banner with ?run=<id>,
+  // scroll the matching row into view and auto-expand it so the user lands
+  // exactly on the run they need to deal with. Does NOT auto-delete even
+  // when action=delete is present — that always requires an explicit click.
+  useEffect(() => {
+    if (!runs.length) return;
+    const params = new URLSearchParams(window.location.search);
+    const runId = params.get("run");
+    if (!runId) return;
+    const target = runs.find((r) => r.id === runId);
+    if (!target) return;
+    setExpandedRunId(target.id);
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`run-row-${target.id}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [runs]);
+
   const orgHost = orgUrl ? new URL(orgUrl).host : "";
   const running = mode === "running";
 
@@ -377,6 +396,7 @@ export function Reset() {
                 return (
                   <li
                     key={r.id}
+                    id={`run-row-${r.id}`}
                     className="rounded-lg border border-border bg-bg-base/40"
                   >
                     <div className="flex items-center justify-between gap-3 p-3">

@@ -24,6 +24,8 @@ import { useActiveRun } from "@/lib/useActiveRun";
 import { EntityPicker, type PickedEntity } from "@/components/EntityPicker";
 import { ResourceConfigPanel } from "@/components/ResourceConfigPanel";
 import { GenerationKnobsPanel } from "@/components/GenerationKnobsPanel";
+import { RunPreflight } from "@/components/RunPreflight";
+import { WorkflowLockBanner } from "@/components/WorkflowLockBanner";
 import { generationKnobs, type GenerationKnobs } from "@/lib/generationKnobs";
 
 interface StepState {
@@ -120,6 +122,8 @@ export function Generate() {
   const [error, setError] = useState<string | null>(null);
   const [retryNotice, setRetryNotice] = useState<string | null>(null);
   const [result, setResult] = useState<SeedResult | null>(null);
+  // v1.43.0 — preflight gate. Start button is disabled until checks pass.
+  const [preflightOk, setPreflightOk] = useState(false);
   // Lives across renders so the Cancel button (and an unmount-cleanup
   // effect) can abort the in-flight run. Set on Start, cleared in finally.
   const abortRef = useRef<AbortController | null>(null);
@@ -498,6 +502,8 @@ export function Generate() {
           <GenerationKnobsPanel orgUrl={orgUrl} value={knobs} onChange={setKnobs} />
         )}
 
+        {!result && !running && <WorkflowLockBanner orgUrl={orgUrl} />}
+
         {!result && !running && (
           <div className="card p-6 mb-6">
             <h3 className="font-semibold text-white mb-1">
@@ -795,6 +801,23 @@ export function Generate() {
           </div>
         )}
 
+        {!result && !running && (
+          <RunPreflight
+            orgUrl={orgUrl}
+            picks={{
+              existing: (
+                Object.keys(entityModes) as Array<keyof typeof entityModes>
+              )
+                .filter((k) => entityModes[k] === "existing")
+                .map((k) => ({
+                  label: ENTITY_LABELS[k as string] ?? (k as string),
+                  count: entityPicks[k].length,
+                })),
+            }}
+            onChange={setPreflightOk}
+          />
+        )}
+
         <div className="card p-6 mb-6">
           <div className="space-y-3">
             {steps.map((s) => (
@@ -851,6 +874,7 @@ export function Generate() {
                   onClick={handleStart}
                   disabled={
                     running ||
+                    !preflightOk ||
                     (
                       Object.keys(entityModes) as Array<keyof typeof entityModes>
                     ).some(
@@ -860,6 +884,11 @@ export function Generate() {
                     )
                   }
                   className="btn-primary flex items-center gap-2 disabled:opacity-50"
+                  title={
+                    !preflightOk
+                      ? "Preflight checks must pass before starting a run"
+                      : undefined
+                  }
                 >
                   <Sparkle size={18} weight="bold" />
                   {running ? "Generating…" : "Start generation"}

@@ -6,6 +6,7 @@ import { APP_VERSION } from "@/data/changelog";
 import { ChangelogModal } from "@/components/ChangelogModal";
 import { ActiveRunBadge } from "@/components/ActiveRunBadge";
 import { Attribution } from "@/components/Attribution";
+import { HealthDot } from "@/components/HealthDot";
 
 interface Props {
   orgUrl?: string;
@@ -61,6 +62,7 @@ export function AppHeader({ orgUrl, back }: Props) {
         </div>
         <div className="flex items-center gap-3">
           <ActiveRunBadge />
+          <HealthDot />
           <button
             onClick={() => setChangelogOpen(true)}
             className="px-2 py-0.5 rounded-md bg-accent/15 border border-accent/30 text-accent text-[11px] font-bold tracking-wider hover:bg-accent/25 transition-colors"

@@ -7,9 +7,25 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.42.9";
+export const APP_VERSION = "v1.43.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.43.0",
+    date: "May 19, 2026",
+    tag: "FEAT",
+    features: [
+      "**Run preflight checklist now gates the Start button on the Generate page.** The historical *“8 Bookable Resources skipped / 8 Work Orders skipped”* failure mode almost always traced back to a state problem the user couldn't see: API cold-starting, Dataverse token stale, AOAI deployment renamed, or *use existing* picked on an entity with zero records selected. A new `RunPreflight` card sits above the Start button and runs four checks every time the page mounts (and on demand via *Re-check*): (1) `/api/health` returns 200, (2) Dataverse `WhoAmI` succeeds against the connected org with a fresh MSAL token, (3) `/api/listModels` reports at least one AOAI deployment, and (4) every entity flagged *use existing* has at least one pick. The Start button stays `disabled` with a tooltip until all four are green, so the run can't begin in a state that's destined to skip records. Each check shows a small inline detail line (host, error message, count) so the fix is obvious.",
+      "**Workflow-lock banner warns when the last run on this org left skipped records behind.** New `WorkflowLockBanner` mounts at the top of the Generate page above the knobs panel. It reads the most recent `runHistory` entry for the connected org and, if `result.skipped` has any rows, renders an amber callout with the run id, the company name, how long ago the run was, and the top three skip reasons (e.g. *`lookup-not-found` — 8, `posted-wo` — 2*). Two one-click buttons take the user to `/reset?run=<id>` to either review or wipe that specific run before compounding the mess. Reset accepts the `?run=<id>` query param and auto-expands + scrolls the matching row into view (no auto-delete — that always stays an explicit click). Renders nothing if the previous run had zero skips, so the happy path is unaffected.",
+      "**Recent-orgs picker on the Connect page.** Free-text URL entry is now backed by a dedup'd list of recently-connected environments (max 8, most-recent first). `orgStore` got `getRecent / addRecent / removeRecent` and Connect.tsx adds a successful URL to the list once `WhoAmI` returns 200. The picker renders as filter-pills above the input — clicking a pill populates the input, hovering reveals a × to forget the entry. Solves the *“I keep mistyping orgname.crm.dynamics.com”* problem for users juggling multiple environments. List is per-browser (localStorage), so it doesn't leak across users on a shared machine via the App Reg account.",
+      "**Live health dot in the app header.** A small green/amber/red dot now lives next to the active-run badge in `AppHeader`. It polls `/api/health` every 60 s (anonymous, dependency-free endpoint that doesn't touch AOAI or Dataverse) and flips red when the Functions host is unreachable. Hover for the last-checked timestamp and the underlying error text. Cheap, persistent signal that the backend is actually up so users stop blaming the demo when Defender for Storage flips the network access bit again.",
+      "**Nightly drift detection.** New GitHub Actions workflow `drift-check.yml` runs `azd provision --preview` at 08:15 UTC daily against the deployed environment and opens a self-issue tagged `drift` if the preview reports any Create / Update / Delete. Dedupes against existing open `drift` issues so it doesn't spam. Catches portal edits, manual `az` overrides, and secret rotations before they get overwritten by the next push. Read-only — preview only, never `provision` or `deploy`. Uses the same OIDC federated credential as `azd-deploy.yml`; no extra secrets required.",
+      "**Resource group lock.** Added a subscription-level `CanNotDelete` lock on `rg-fsdemo` (`fsdemo-prod-protect`). Eliminates the *“intended to clean up the demo tenant but typed the wrong resource group name”* class of disasters. To intentionally tear the environment down: `az lock delete --name fsdemo-prod-protect -g rg-fsdemo` then `azd down`. No code change; documented here for the runbook.",
+    ],
+    improvements: [
+      "Deferred for the next session: per-org Run Profiles (item d), server-side run history (e), Entra ID for `/admin/telemetry` instead of `x-app-key` (i), SWA IP-allowlist (j), and Key Vault for AOAI key rotation (k). These touch auth surfaces with real lockout risk and want their own dedicated session + rollback plan rather than being squeezed into a hardening sweep.",
+    ],
+  },
   {
     version: "v1.42.9",
     date: "May 19, 2026",

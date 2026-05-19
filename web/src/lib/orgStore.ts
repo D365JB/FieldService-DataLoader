@@ -8,6 +8,8 @@
  */
 const ORG_KEY = "orgUrl";
 const PRESET_KEY = "preset";
+const RECENT_KEY = "fsdl:recentOrgs";
+const MAX_RECENT = 8;
 
 function read(key: string): string | null {
   try {
@@ -60,5 +62,41 @@ export const orgStore = {
   },
   clearPreset(): void {
     clear(PRESET_KEY);
+  },
+  /**
+   * Recent orgs list (most-recent first, deduped, max 8). Surfaces in the
+   * Connect page picker so users don't have to retype URLs every session.
+   */
+  getRecent(): string[] {
+    try {
+      const raw = localStorage.getItem(RECENT_KEY);
+      if (!raw) return [];
+      const arr = JSON.parse(raw) as unknown;
+      return Array.isArray(arr)
+        ? arr.filter((s): s is string => typeof s === "string")
+        : [];
+    } catch {
+      return [];
+    }
+  },
+  addRecent(value: string): void {
+    const trimmed = value.replace(/\/+$/, "").trim();
+    if (!trimmed) return;
+    const existing = orgStore.getRecent().filter((u) => u !== trimmed);
+    const next = [trimmed, ...existing].slice(0, MAX_RECENT);
+    try {
+      localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  },
+  removeRecent(value: string): void {
+    const trimmed = value.replace(/\/+$/, "").trim();
+    const next = orgStore.getRecent().filter((u) => u !== trimmed);
+    try {
+      localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+    } catch {
+      // ignore
+    }
   },
 };

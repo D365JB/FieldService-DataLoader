@@ -30,6 +30,17 @@ export function Connect() {
     if (stored) setOrgUrl(stored);
   }, []);
 
+  const [recent, setRecent] = useState<string[]>(() => orgStore.getRecent());
+  function pickRecent(url: string) {
+    setOrgUrl(url);
+    setResult(null);
+    setError(null);
+  }
+  function removeRecent(url: string) {
+    orgStore.removeRecent(url);
+    setRecent(orgStore.getRecent());
+  }
+
   async function handleTest() {
     setError(null);
     setResult(null);
@@ -67,6 +78,8 @@ export function Connect() {
 
       sessionStorage.setItem("orgUrl", trimmed);
       orgStore.setOrgUrl(trimmed);
+      orgStore.addRecent(trimmed);
+      setRecent(orgStore.getRecent());
       setResult({
         user: whoami.UserId,
         org: whoami.OrganizationId,
@@ -115,6 +128,50 @@ export function Connect() {
             Find this in your D365 Power Platform admin center, e.g.{" "}
             <code>https://orgname.crm.dynamics.com</code>.
           </p>
+
+          {recent.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs text-muted mb-2">Recent environments</p>
+              <div className="flex flex-wrap gap-2">
+                {recent.map((url) => {
+                  const host = (() => {
+                    try {
+                      return new URL(url).host;
+                    } catch {
+                      return url;
+                    }
+                  })();
+                  return (
+                    <div
+                      key={url}
+                      className={`group flex items-center gap-1 rounded-full border px-3 py-1 text-xs transition-colors ${
+                        url === orgUrl.replace(/\/+$/, "")
+                          ? "border-accent/60 bg-accent/15 text-accent"
+                          : "border-border bg-bg-elevated text-slate-300 hover:border-accent/40 hover:text-white"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => pickRecent(url)}
+                        className="font-mono"
+                        title={url}
+                      >
+                        {host}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeRecent(url)}
+                        className="opacity-0 group-hover:opacity-60 hover:!opacity-100 text-slate-400 hover:text-red-300"
+                        title="Remove from recents"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="flex gap-3 mt-6">
             <button
