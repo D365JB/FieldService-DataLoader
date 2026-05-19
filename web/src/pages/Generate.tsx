@@ -1186,6 +1186,25 @@ function ResultSummary({
  * Each entity is collapsed to a count-by-reason summary plus a
  * disclosure with the first few raw record labels for context.
  */
+/**
+ * v1.42.8 — extract a friendlier one-liner from a Dataverse "does not
+ * exist" error. Typical shape:
+ *   `Entity 'msdyn_workorder' With Id = abc-... Does Not Exist`
+ *   `account With Id = abc-... Does Not Exist`
+ * Returns e.g. "Missing msdyn_workorder (abc12345…)" so users can see
+ * which referenced record went away. Returns null if no recognisable
+ * pattern, letting the caller fall back to the raw truncated message.
+ */
+function extractLookupHint(message: string): string | null {
+  const m = message.match(
+    /(?:Entity\s*['"]?)?([A-Za-z_][A-Za-z0-9_]*)['"]?\s*With\s*Id\s*=\s*([0-9a-f-]{8,36})/i,
+  );
+  if (!m) return null;
+  const entity = m[1];
+  const id = m[2].slice(0, 8);
+  return `Missing ${entity} (${id}…) — the lookup target was likely deleted between runs.`;
+}
+
 function SkippedRecords({ result }: { result: SeedResult }) {
   const skipped = result.skipped ?? {};
   const entities = Object.entries(skipped).filter(([, rows]) => rows.length > 0);
@@ -1234,10 +1253,24 @@ function SkippedRecords({ result }: { result: SeedResult }) {
               <ul className="mt-2 space-y-1 text-xs text-slate-400">
                 {rows.slice(0, 8).map((r, i) => (
                   <li key={i} className="font-mono">
-                    {r.recordLabel ?? "(no label)"} —{" "}
-                    <span className="text-slate-500">
-                      {SKIP_REASON_LABEL[r.reason]}
-                    </span>
+                    <div>
+                      {r.recordLabel ?? "(no label)"} —{" "}
+                      <span className="text-slate-500">
+                        {SKIP_REASON_LABEL[r.reason]}
+                      </span>
+                    </div>
+                    {/* v1.42.8 — surface the raw error tail for
+                     * lookup-not-found and unknown so users can see
+                     * WHICH referenced record went missing (the entity
+                     * name + id is in the Dataverse error string). */}
+                    {(r.reason === "lookup-not-found" ||
+                      r.reason === "unknown") &&
+                      r.message && (
+                        <div className="ml-2 text-slate-600 font-sans normal-case">
+                          {extractLookupHint(r.message) ??
+                            r.message.slice(0, 180)}
+                        </div>
+                      )}
                   </li>
                 ))}
                 {rows.length > 8 && (

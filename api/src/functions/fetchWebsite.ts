@@ -165,13 +165,19 @@ async function fetchAndParse(parsed: URL): Promise<ParsedSite> {
           /<meta\s+name=["']description["']\s+content=["']([^"']+)["']/i,
         )?.[1]
         ?.trim() ?? "";
+    // v1.42.8 — was 3,000. Many marketing/product pages put the
+    // industry-defining text well past the first ~500 words, so the
+    // vertical classifier was making guesses off boilerplate hero
+    // copy and navigation links. 15,000 chars ≈ 4–5K tokens, which
+    // is comfortably inside the generateContent 200K cap and still
+    // small enough for gpt-5-mini to chew through quickly.
     const stripped = html
       .replace(/<script[\s\S]*?<\/script>/gi, "")
       .replace(/<style[\s\S]*?<\/style>/gi, "")
       .replace(/<[^>]+>/g, " ")
       .replace(/\s+/g, " ")
       .trim()
-      .slice(0, 3000);
+      .slice(0, 15000);
 
     return { url: parsed.toString(), title, description, text: stripped };
   } finally {

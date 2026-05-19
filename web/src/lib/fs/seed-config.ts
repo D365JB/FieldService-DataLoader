@@ -814,11 +814,27 @@ export async function seedFromPreset(
       findField: "msdyn_name",
       findValue: (inc) => inc.name,
       mapKey: (inc) => inc.name,
-      build: (inc) => ({
-        msdyn_name: inc.name,
-        msdyn_description: tag(inc.description),
-        msdyn_estimatedduration: inc.estimatedDurationMinutes,
-      }),
+      build: (inc) => {
+        const payload: Record<string, unknown> = {
+          msdyn_name: inc.name,
+          msdyn_description: tag(inc.description),
+          msdyn_estimatedduration: inc.estimatedDurationMinutes,
+        };
+        // v1.42.8 — stamp the first Work Order Type as the incident's
+        // Default Work Order Type, so opening the incident in the FS UI
+        // shows a populated `msdyn_defaultworkordertype` and any flow
+        // that auto-creates a WO from this incident (incident-driven
+        // case → WO conversions, copilot suggestions) picks a sensible
+        // type instead of leaving it blank. WO Types are seeded
+        // earlier in this phase, so `result.workOrderTypeIds` is
+        // guaranteed populated when this build() runs.
+        const firstWoTypeId = Object.values(result.workOrderTypeIds)[0];
+        if (firstWoTypeId) {
+          payload["msdyn_defaultworkordertype@odata.bind"] =
+            `/msdyn_workordertypes(${firstWoTypeId})`;
+        }
+        return payload;
+      },
       onResolved: async (incidentId, inc) => {
         for (const taskName of inc.serviceTasks) {
           const taskFilter = `msdyn_name eq '${oencode(taskName)}' and _msdyn_incidenttype_value eq ${incidentId}`;

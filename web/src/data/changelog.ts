@@ -7,9 +7,19 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.42.7";
+export const APP_VERSION = "v1.42.8";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.42.8",
+    date: "May 16, 2026",
+    tag: "FIX",
+    improvements: [
+      "**Analyze now reads 15,000 chars of the customer's site, up from 3,000.** The vertical classifier was making its inference off the first ~500 words of the page — frequently just the hero copy, nav links, and a marketing tagline — and missing the industry-defining text that lives further down (case studies, product specs, service descriptions). Pages like `nucor.com/data-centers` now feed roughly five times more relevant context into GPT, so the proposed preset matches the customer's real domain instead of guessing from a header. 15K chars is ~4–5K tokens, comfortably inside the AOAI proxy's 200K input cap. The fetcher's per-instance cache + retry behavior is unchanged.",
+      "**Incident Types now stamp a Default Work Order Type.** Previously incident types were created with name, description, duration, products, and service tasks — but `msdyn_defaultworkordertype` was left blank, so opening an incident in the FS UI showed an empty *Default Work Order Type* field and any flow that auto-creates a WO from the incident (incident-driven case → WO conversions, Copilot suggestions) had no sensible default to pick. The seeder now binds the first seeded Work Order Type (created earlier in the Catalog phase) to every Incident Type. No preset change required — the binding happens automatically against `result.workOrderTypeIds[0]`.",
+      "**Skipped-records panel now tells you which lookup was missing.** When a record was skipped with *“Referenced record no longer exists”* the panel showed the count but not which referenced record went away, which made the failure ungrokable without opening dev tools. The expanded view now parses the Dataverse error and shows a one-liner like *“Missing msdyn_workorder (a1b2c3d4…) — the lookup target was likely deleted between runs.”* underneath each affected row. Falls back to the raw error tail when the pattern doesn't match. Helps diagnose the *8 Bookable Resources / 8 Work Orders skipped* pattern that shows up after a partial Reset.",
+    ],
+  },
   {
     version: "v1.42.7",
     date: "May 7, 2026",
