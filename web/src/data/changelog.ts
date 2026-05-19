@@ -7,9 +7,19 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.42.8";
+export const APP_VERSION = "v1.42.9";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.42.9",
+    date: "May 19, 2026",
+    tag: "FIX",
+    improvements: [
+      "**Lookup-not-found classifier now recognises every entity, not just `contact`.** v1.42.8's Skipped-panel hint only surfaced when the Dataverse error was phrased `Entity 'contact' With Id = ...` because the substring check was hardcoded for contact records. Errors for `msdyn_workorder`, `account`, `msdyn_customerasset`, `bookableresource`, etc. silently fell through to the `unknown` bucket and the panel just said *Unclassified error*. The classifier now matches the generic `Entity '<any>' With Id` form via regex plus the `could not find a record with id` variant, so every deleted-parent skip lands in the *Referenced record no longer exists* bucket with the v1.42.8 hint underneath it.",
+      "**Generate telemetry now records skipped/created counts per run.** The `generate.success` event on the admin telemetry page used to carry only company name and duration, so we couldn't tell from production data whether the *8 Bookable Resources / 8 Work Orders skipped* pattern was hitting other users. The event now includes `created` (total ids written across all phases), `skipped` (total skipped writes), and `skippedByReason` (a `{ \"lookup-not-found\": 8, \"posted-wo\": 2, ... }` breakdown). Existing telemetry rows are unaffected; new rows light up the breakdown in `/admin/telemetry`.",
+      "**API dependency vulnerability cleanup.** GitHub Dependabot was flagging the API project for 1 high (`fast-xml-builder` regex-bypass) + 1 moderate (`brace-expansion` ReDoS) advisory transitively pulled in via `@azure/data-tables` / `@azure/identity`. `npm audit fix` resolves both without bumping any direct dependency. No code changes; rebuilt `package-lock.json` only.",
+    ],
+  },
   {
     version: "v1.42.8",
     date: "May 16, 2026",

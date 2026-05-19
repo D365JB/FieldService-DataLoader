@@ -376,11 +376,28 @@ export function Generate() {
       // Mark all steps complete (in case last step had total 0).
       setSteps((prev) => prev.map((s) => ({ ...s, status: "complete" })));
       setRetryNotice(null);
+      // v1.42.9: include created/skipped/error-kind counts so the
+      // /admin/telemetry view can detect the "16 records skipped" pattern
+      // across users without each one having to open dev tools.
+      const createdTotal = Object.values(seedResult.createdIds ?? {}).reduce(
+        (n, arr) => n + (arr?.length ?? 0),
+        0,
+      ) + (seedResult.workOrderIds?.length ?? 0)
+        + (seedResult.bookingIds?.length ?? 0)
+        + (seedResult.createdResourceIds?.length ?? 0);
+      const skippedAll = Object.values(seedResult.skipped ?? {}).flat();
+      const skippedByReason: Record<string, number> = {};
+      for (const s of skippedAll) {
+        skippedByReason[s.reason] = (skippedByReason[s.reason] ?? 0) + 1;
+      }
       track("action", {
         detail: {
           name: "generate.success",
           companyName: preset.companyName,
           durationMs: Date.now() - startedAt,
+          created: createdTotal,
+          skipped: skippedAll.length,
+          skippedByReason,
         },
       });
     } catch (err) {

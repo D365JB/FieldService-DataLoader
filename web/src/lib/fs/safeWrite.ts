@@ -138,10 +138,21 @@ export function classifyError(err: unknown): SkipReason | null {
   }
 
   // Lookup target deleted / not found. Common after Reset.
+  //
+  // Dataverse phrasing varies a bit by entity / SDK version, e.g.
+  //   "msdyn_workorder With Id = a1b2c3... Does Not Exist"
+  //   "Entity 'contact' With Id = ... Does Not Exist"
+  //   "Could not find a record with id ..."
+  // The first two checks below cover both shapes; the regex catches the
+  // generic `Entity '<any>' With Id` form so we don't have to enumerate
+  // every entity name (v1.42.8 only matched 'contact', which let
+  // msdyn_workorder / account / customerasset etc. fall through to
+  // "unknown"). v1.42.9.
   if (
     msg.includes("does not exist") ||
-    msg.includes("with id =") && msg.includes("does not exist") ||
-    msg.includes("entity 'contact' with id")
+    (msg.includes("with id =") && msg.includes("does not exist")) ||
+    /entity '[a-z_][a-z0-9_]*' with id/.test(msg) ||
+    msg.includes("could not find a record with id")
   ) {
     return "lookup-not-found";
   }
