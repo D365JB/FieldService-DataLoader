@@ -1,13 +1,22 @@
 # v1.43.0 — Nightly drift detection.
+# v1.44.1 — Hardened: every step is failure-tolerant and surfaces its error
+#           into a `drift-check-failed` issue instead of just turning the job
+#           red with no actionable info. The original workflow had the
+#           classic CI gotcha where azd-login or azd-preview would exit
+#           non-zero, the workflow showed "failed", but no issue was opened
+#           because the issue step's `if:` guard required `drift==true` which
+#           was never set when an earlier step blew up. Now we capture every
+#           failure mode separately and always end with a summary step that
+#           opens either a drift issue, a workflow-failure issue, or
+#           nothing.
 #
 # Compares the deployed Azure infrastructure against what's in main by running
 # `azd provision --preview`. If the preview shows ANY changes (Create / Update /
-# Delete), the job opens a self-issue tagged `drift` so the next maintainer
-# notices before a manual portal edit gets stomped on the next deploy.
+# Delete), open a self-issue tagged `drift`. If the preview command itself
+# fails, open a self-issue tagged `drift-check-failed` with the captured
+# stderr+stdout so the workflow owner can fix it.
 #
-# No write operations — preview only. Safe to run on schedule.
-#
-# Uses the same OIDC federated credential as azd-deploy.yml. No secret rotation.
+# No write operations against Azure — preview only. Safe to run on schedule.
 name: Drift detection
 
 on:
@@ -39,15 +48,44 @@ jobs:
       - name: Install azd
         uses: Azure/setup-azd@v2
 
+      - name: azd version (debug)
+        run: azd version
+
       - name: Log in with Azure (Federated Credential)
+        id: login
+        continue-on-error: true
         run: |
+          set -o pipefail
           azd auth login \
             --client-id "$AZURE_CLIENT_ID" \
             --federated-credential-provider "github" \
-            --tenant-id "$AZURE_TENANT_ID"
+            --tenant-id "$AZURE_TENANT_ID" 2>&1 | tee login.txt
+
+      # azd on a fresh runner has no env state. `azd provision --preview` may
+      # try to interactively create one if absent. Initialize explicitly and
+      # idempotently — `azd env new` exits non-zero when the env already
+      # exists in remote state, hence `|| true`.
+      - name: Initialize azd environment
+        id: envinit
+        if: steps.login.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          azd env new "$AZURE_ENV_NAME" \
+            --subscription "$AZURE_SUBSCRIPTION_ID" \
+            --location "$AZURE_LOCATION" \
+            --no-prompt 2>&1 | tee envinit.txt || true
+          azd env select "$AZURE_ENV_NAME" 2>&1 | tee -a envinit.txt
+          azd env set AZURE_LOCATION "$AZURE_LOCATION" 2>&1 | tee -a envinit.txt
+          azd env set AZURE_SUBSCRIPTION_ID "$AZURE_SUBSCRIPTION_ID" 2>&1 | tee -a envinit.txt
+          azd env set VITE_MSAL_CLIENT_ID "$VITE_MSAL_CLIENT_ID" 2>&1 | tee -a envinit.txt
 
       - name: Run provision preview
         id: preview
+        if: steps.envinit.outcome == 'success'
+        # Never fail the step. The summary steps below are responsible for
+        # turning workflow state into an issue, so we always exit 0 here and
+        # surface the captured rc + log to the next step.
         run: |
           set +e
           azd provision --preview --no-prompt > preview.txt 2>&1
@@ -55,20 +93,30 @@ jobs:
           echo "--- preview output ---"
           cat preview.txt
           echo "preview_rc=$rc" >> "$GITHUB_OUTPUT"
-          # azd exits 0 with diffs OR no diffs. We rely on text matching to detect drift.
-          # Look for any of the change verbs in the human-readable preview.
+          if [ $rc -ne 0 ]; then
+            echo "drift=unknown" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Detect drift by matching the change-verb table azd prints. The
+          # exact wording varies across azd versions (Create/Modify in older,
+          # Create/Update/Delete in newer), so match a broad set.
           if grep -E "(^|[[:space:]])(Create|Update|Delete|Modify)([[:space:]]|$)" preview.txt > /dev/null 2>&1; then
             echo "drift=true" >> "$GITHUB_OUTPUT"
           else
             echo "drift=false" >> "$GITHUB_OUTPUT"
           fi
+          exit 0
 
       - name: Upload preview artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: provision-preview
-          path: preview.txt
+          path: |
+            preview.txt
+            envinit.txt
+            login.txt
+          if-no-files-found: ignore
           retention-days: 14
 
       - name: Open drift issue
@@ -82,8 +130,6 @@ jobs:
               ? preview.slice(0, 50000) + '\n\n…(truncated)…'
               : preview;
             const title = `Infrastructure drift detected — ${new Date().toISOString().slice(0,10)}`;
-
-            // Avoid spamming: dedupe by title-prefix among open issues with `drift` label.
             const existing = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -115,6 +161,102 @@ jobs:
                 '',
                 '```',
                 truncated,
+                '```',
+                '',
+                '</details>',
+              ].join('\n'),
+            });
+
+      # v1.44.1 — open a separate issue when the workflow itself broke, so the
+      # owner gets an actionable trail instead of a red X with no context.
+      # Dedupes by `drift-check-failed` label so consecutive nightly failures
+      # collapse into one ticket plus comments.
+      - name: Open workflow-failure issue
+        if: |
+          always() && (
+            steps.login.outcome == 'failure' ||
+            steps.envinit.outcome == 'failure' ||
+            steps.preview.outputs.drift == 'unknown'
+          )
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const read = (p) => { try { return fs.readFileSync(p, 'utf8'); } catch { return '(not captured)'; } };
+            const trunc = (s) => s.length > 15000 ? s.slice(0, 15000) + '\n…(truncated)…' : s;
+            const loginLog = trunc(read('login.txt'));
+            const envLog   = trunc(read('envinit.txt'));
+            const prevLog  = trunc(read('preview.txt'));
+            const which = '${{ steps.login.outcome }}' === 'failure'
+              ? 'azd auth login'
+              : '${{ steps.envinit.outcome }}' === 'failure'
+                ? 'azd env init/select'
+                : 'azd provision --preview';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const title = `Drift-check workflow failure — ${which}`;
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'drift-check-failed',
+              per_page: 10,
+            });
+            if (existing.data.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.data[0].number,
+                body: [
+                  `Another nightly run failed at **${which}**.`,
+                  '',
+                  `Run: ${runUrl}`,
+                  '',
+                  '<details><summary>preview.txt</summary>',
+                  '',
+                  '```',
+                  prevLog,
+                  '```',
+                  '',
+                  '</details>',
+                ].join('\n'),
+              });
+              core.info(`Appended comment to existing #${existing.data[0].number}.`);
+              return;
+            }
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              labels: ['drift-check-failed'],
+              body: [
+                `The nightly drift-detection workflow failed at the **${which}** step.`,
+                '',
+                `Workflow run: ${runUrl}`,
+                '',
+                'Captured logs from each step are inlined below. Close this issue',
+                'once the underlying cause (auth, env init, or azd command) is',
+                'fixed and a subsequent nightly run passes.',
+                '',
+                '<details><summary>login.txt (azd auth)</summary>',
+                '',
+                '```',
+                loginLog,
+                '```',
+                '',
+                '</details>',
+                '',
+                '<details><summary>envinit.txt (azd env new/select)</summary>',
+                '',
+                '```',
+                envLog,
+                '```',
+                '',
+                '</details>',
+                '',
+                '<details><summary>preview.txt (azd provision --preview)</summary>',
+                '',
+                '```',
+                prevLog,
                 '```',
                 '',
                 '</details>',
