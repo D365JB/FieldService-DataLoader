@@ -6,7 +6,7 @@
  *
  *  1. API health         — `/api/health` returns 200
  *  2. Dataverse access   — WhoAmI against the connected org succeeds
- *  3. AOAI reachable     — `/api/listModels` returns ≥1 deployment
+ *  3. AOAI reachable     — `/api/models` returns ≥1 deployment
  *  4. Pick consistency   — every entity marked "use existing" has ≥1 pick
  *
  * Until all four are green, the parent should gate the Start button. The
@@ -167,7 +167,11 @@ export function RunPreflight({ orgUrl, picks, onChange }: Props) {
       state: "running",
     });
     try {
-      const res = await timedFetch("/api/listModels");
+      // v1.44.3 — call `/api/models` (the route registered on the Function
+      // App via `route: "models"` in listModels.ts), not `/api/listModels`.
+      // The old path returned 404 in production, causing every preflight to
+      // fail the AOAI check even when the deployment was healthy.
+      const res = await timedFetch("/api/models");
       if (!res.ok) {
         setAoai({
           key: "aoai",

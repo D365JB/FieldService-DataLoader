@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.44.2";
+export const APP_VERSION = "v1.44.3";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.44.3",
+    date: "May 21, 2026",
+    tag: "FIX",
+    fixes: [
+      "**Run preflight no longer reports a phantom *Azure OpenAI deployment reachable — HTTP 404*.** The check was calling `/api/listModels`, but the Function App registers that handler under the explicit route `/api/models` (set via `route: \"models\"` in `listModels.ts`), so every preflight saw a 404 and forced the Start button to stay disabled even when AOAI was perfectly healthy. The whole rest of the app (Analyze model picker, AppKeyGate probe, ModelPicker) already used the correct `/api/models` path — only the preflight was on the wrong URL, dating to its v1.43.0 introduction. The preflight now matches the registered route, so the check passes whenever `/api/models` returns ≥1 deployment, and Start lights up as soon as the other three boxes are green.",
+    ],
+  },
   {
     version: "v1.44.2",
     date: "May 21, 2026",
