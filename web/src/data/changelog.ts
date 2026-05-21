@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.44.0";
+export const APP_VERSION = "v1.44.2";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.44.2",
+    date: "May 21, 2026",
+    tag: "FIX",
+    fixes: [
+      "**Brand → Apply now succeeds on Dataverse orgs where the `theme` lookup nav property is lowercase.** Creating or updating the theme failed with *“An undeclared property 'LogoId' which only has property annotations in the payload but no property value was found in the payload”* because we were binding the logo webresource via `LogoId@odata.bind` (schema-cased). Some Dataverse orgs surface the navigation property as the lowercase logical name `logoid` and reject `LogoId` as an unknown property; other orgs are the reverse. Rather than depend on tenant-specific metadata, the create + update calls now try `logoid@odata.bind` first and, if Dataverse returns the same *undeclared property 'logoid'* OData error, automatically retry with `LogoId@odata.bind`. The fallback is gated on the specific OData error string so genuine validation failures (bad hex colour, missing required column) still surface immediately instead of being masked by a blind retry.",
+    ],
+  },
   {
     version: "v1.44.0",
     date: "May 19, 2026",

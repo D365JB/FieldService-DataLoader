@@ -276,12 +276,20 @@ export async function applyTheme({
     selectedlinkeffect: colors.selectedLink,
   };
   if (webResourceId) {
-    // The webresource lookup on `theme` is `logoid` (a Lookup column whose
-    // schema name is `LogoId`). The `logoimage` column is a *string URL*,
-    // NOT a navigation property — binding `logoimage@odata.bind` returns
-    // 400 "Invalid web resource Id". The correct nav-property name for
-    // the @odata.bind is the schema-cased `LogoId`.
-    body["LogoId@odata.bind"] = `/webresourceset(${webResourceId})`;
+    // v1.44.2 — The `theme` entity's nav property casing for the logo lookup
+    // differs across Dataverse orgs / versions. Older orgs surface the nav
+    // property as the schema-cased `LogoId` (matching the column's schema
+    // name); newer ones surface the lowercase `logoid` (matching the logical
+    // name). Either way, the OTHER casing returns the cryptic
+    //   "undeclared property '<X>' which only has property annotations …"
+    // 400 because OData treats it as a totally unknown property.
+    //
+    // We try `logoid@odata.bind` first (current default in tenant metadata)
+    // and fall back to `LogoId@odata.bind` if the create fails with the
+    // matching undeclared-property message. This makes the Brand flow
+    // metadata-agnostic without round-tripping $metadata. `logoimage`
+    // remains the wrong target — it's a string URL column, not a lookup.
+    body["logoid@odata.bind"] = `/webresourceset(${webResourceId})`;
   }
 
   let themeId: string;
@@ -295,11 +303,50 @@ export async function applyTheme({
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
-      throw new Error(`Update theme failed: ${res.status} ${detail}`);
+      // v1.44.2 — Same logoid/LogoId casing fallback as the create branch.
+      if (
+        webResourceId &&
+        detail.includes("undeclared property 'logoid'")
+      ) {
+        const retryBody = { ...body };
+        delete retryBody["logoid@odata.bind"];
+        retryBody["LogoId@odata.bind"] = `/webresourceset(${webResourceId})`;
+        const retry = await client.request(`/themes(${themeId})`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(retryBody),
+        });
+        if (!retry.ok) {
+          const retryDetail = await retry.text().catch(() => "");
+          throw new Error(`Update theme failed: ${retry.status} ${retryDetail}`);
+        }
+      } else {
+        throw new Error(`Update theme failed: ${res.status} ${detail}`);
+      }
     }
   } else {
     onStatus?.("Creating theme…");
-    themeId = await client.create("themes", body);
+    try {
+      themeId = await client.create("themes", body);
+    } catch (err) {
+      // v1.44.2 — Retry with `LogoId@odata.bind` when the tenant's metadata
+      // surfaces the schema-cased nav property instead of the lowercase one.
+      // We detect the specific OData error rather than blind-retrying any
+      // 400, so genuine validation failures (missing required cols, bad
+      // colour hex, etc.) still surface immediately.
+      const msg = (err as Error)?.message ?? "";
+      if (
+        webResourceId &&
+        msg.includes("undeclared property 'logoid'")
+      ) {
+        const retryBody = { ...body };
+        delete retryBody["logoid@odata.bind"];
+        retryBody["LogoId@odata.bind"] = `/webresourceset(${webResourceId})`;
+        themeId = await client.create("themes", retryBody);
+      } else {
+        throw err;
+      }
+    }
   }
 
   // 3) Publish the theme as default. The correct call is the BOUND action
