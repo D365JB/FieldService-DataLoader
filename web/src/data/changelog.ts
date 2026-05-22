@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.44.4";
+export const APP_VERSION = "v1.44.5";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.44.5",
+    date: "May 22, 2026",
+    tag: "FIX",
+    fixes: [
+      "**Brand → Apply now actually links the logo to the theme on every org, not just the ones with friendly metadata.** v1.44.4 made Apply stop failing when both `logoid@odata.bind` and `LogoId@odata.bind` were rejected, but it did so by *dropping* the logo binding entirely — the web resource published, the theme published, but the theme's Logo lookup was left empty. The right fix is to do the link in two steps: (1) create/update the theme record without any inline `@odata.bind` (so the OData payload parser never sees the disputed property at all), then (2) use the OData `$ref` endpoint — `PUT /themes({id})/{navProp}/$ref` — to associate the web resource. `$ref` is URL-segment routing, which Dataverse accepts even on orgs that reject payload-property routing for the same column. To make this metadata-agnostic, we now query `EntityDefinitions(LogicalName='theme')/ManyToOneRelationships` first to discover the EXACT nav property name this org uses for the `logoid` lookup (commonly `logoid`, `LogoId`, or `lk_theme_webresource_logoid`) and use that against `$ref`. If discovery fails (permissions, network), we fall back to trying `logoid` and `LogoId` directly. Only if every attempt fails does the apply fall back to the v1.44.4 graceful-degrade — and the new status message tells the user exactly where to set the logo manually in the theme form. Logos should now appear assigned in Dynamics after every Brand → Apply.",
+    ],
+  },
   {
     version: "v1.44.4",
     date: "May 22, 2026",

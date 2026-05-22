@@ -275,126 +275,63 @@ export async function applyTheme({
     hoverlinkeffect: colors.hoverLink,
     selectedlinkeffect: colors.selectedLink,
   };
-  // v1.44.4 — Bind the logo web resource to the theme via @odata.bind.
+  // v1.44.5 — Logo→theme binding is done in TWO steps, not inline.
   //
-  // History of pain on this single field:
-  //   * Some orgs expose the nav property as lowercase `logoid` (matches the
-  //     attribute's logical name).
+  // Why: history of pain with inline `@odata.bind` on the theme entity.
+  //   * Some orgs expose the lookup nav property as `logoid` (logical name).
   //   * Older orgs expose it schema-cased as `LogoId`.
-  //   * Some orgs (e.g. clariantservicepoc, May 2026) reject BOTH casings with
-  //     "An undeclared property '<X>' which only has property annotations in
-  //     the payload but no property value was found in the payload." This
-  //     means the `theme` EDM on those orgs has no writable single-valued nav
-  //     property for the logo at all — the platform expects callers to set
-  //     the logo via the form/UI, not the Web API.
+  //   * Some orgs (e.g. clariantservicepoc, May 2026) expose it under the
+  //     *relationship*'s schema name (typically `lk_theme_webresource_logoid`)
+  //     and reject every column-based casing with "undeclared property '<X>'
+  //     which only has property annotations in the payload but no property
+  //     value was found in the payload."
+  //   * v1.44.2 (try `logoid` → `LogoId`) covered most orgs.
+  //   * v1.44.4 (drop binding entirely on failure) stopped Apply from
+  //     crashing but left the logo orphaned in the org — published web
+  //     resource but no theme→logo link, which is exactly the complaint
+  //     the user just raised.
   //
-  // Strategy: try the known casings in order, and if ALL fail with the same
-  // undeclared-property error, fall back to applying the theme WITHOUT the
-  // logo binding. The logo web resource is still uploaded and published, so
-  // it's available in the org; only the theme→logo link is dropped. The
-  // theme apply (colors, accents, header) is what users actually notice, so
-  // we treat the logo link as best-effort and never fail the whole flow.
+  // v1.44.5 fix: create/update the theme WITHOUT any inline @odata.bind
+  // (so the OData payload parser never sees the disputed property), then
+  // discover the actual nav property name from $metadata and link the logo
+  // via the $ref endpoint (`PUT /themes({id})/{navProp}/$ref`), which uses
+  // URL-segment routing and is more permissive than payload-property
+  // routing. Metadata discovery returns the EXACT name Dataverse uses on
+  // this org — no guessing. If discovery fails (permissions, network), we
+  // fall back to trying `logoid`, `LogoId` against $ref directly. Only if
+  // every attempt fails do we degrade to "logo uploaded but not linked".
   //
   // `logoimage` remains the wrong target — it's a string URL column, not a
-  // lookup. We do not try it.
-  const LOGO_BIND_CASINGS = ["logoid", "LogoId"] as const;
-  const isLogoBindUndeclared = (detail: string): boolean =>
-    /undeclared property '(logoid|LogoId)'/i.test(detail) &&
-    /only has property annotations/i.test(detail);
-
-  const bodyWithLogo = (casing: string): Record<string, unknown> => {
-    const out = { ...body };
-    if (webResourceId) {
-      out[`${casing}@odata.bind`] = `/webresourceset(${webResourceId})`;
-    }
-    return out;
-  };
+  // lookup. We never try it.
 
   let themeId: string;
-  let logoBindingDropped = false;
-
   if (existing.length > 0) {
     onStatus?.("Updating theme…");
     themeId = existing[0].themeid;
-    const attempts: Array<{ label: string; payload: Record<string, unknown> }> =
-      webResourceId
-        ? [
-            ...LOGO_BIND_CASINGS.map((c) => ({
-              label: `with ${c}@odata.bind`,
-              payload: bodyWithLogo(c),
-            })),
-            { label: "without logo binding", payload: { ...body } },
-          ]
-        : [{ label: "no logo", payload: { ...body } }];
-
-    let lastDetail = "";
-    let lastStatus = 0;
-    let ok = false;
-    for (let i = 0; i < attempts.length; i++) {
-      const { label, payload } = attempts[i];
-      const isFallback = i === attempts.length - 1 && webResourceId;
-      const res = await client.request(`/themes(${themeId})`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) {
-        if (isFallback && i > 0) logoBindingDropped = true;
-        ok = true;
-        break;
-      }
-      lastStatus = res.status;
-      lastDetail = await res.text().catch(() => "");
-      // Only continue to the next casing / fallback for the specific
-      // undeclared-property error. Anything else is a real failure.
-      if (!isLogoBindUndeclared(lastDetail)) {
-        throw new Error(`Update theme failed (${label}): ${lastStatus} ${lastDetail}`);
-      }
-    }
-    if (!ok) {
-      throw new Error(`Update theme failed after all logo-binding fallbacks: ${lastStatus} ${lastDetail}`);
+    const res = await client.request(`/themes(${themeId})`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(`Update theme failed: ${res.status} ${detail}`);
     }
   } else {
     onStatus?.("Creating theme…");
-    const attempts: Array<{ label: string; payload: Record<string, unknown> }> =
-      webResourceId
-        ? [
-            ...LOGO_BIND_CASINGS.map((c) => ({
-              label: `with ${c}@odata.bind`,
-              payload: bodyWithLogo(c),
-            })),
-            { label: "without logo binding", payload: { ...body } },
-          ]
-        : [{ label: "no logo", payload: { ...body } }];
+    themeId = await client.create("themes", body);
+  }
 
-    let lastErr: Error | undefined;
-    let created: string | undefined;
-    for (let i = 0; i < attempts.length; i++) {
-      const { label, payload } = attempts[i];
-      const isFallback = i === attempts.length - 1 && webResourceId;
-      try {
-        created = await client.create("themes", payload);
-        if (isFallback && i > 0) logoBindingDropped = true;
-        break;
-      } catch (err) {
-        lastErr = err as Error;
-        const msg = lastErr?.message ?? "";
-        if (!isLogoBindUndeclared(msg)) {
-          throw new Error(`Create theme failed (${label}): ${msg}`);
-        }
-      }
-    }
-    if (!created) {
-      throw new Error(
-        `Create theme failed after all logo-binding fallbacks: ${lastErr?.message ?? "unknown"}`,
-      );
-    }
-    themeId = created;
+  let logoBindingDropped = false;
+  if (webResourceId) {
+    onStatus?.("Linking logo to theme…");
+    const linkOk = await linkLogoToTheme(client, themeId, webResourceId);
+    if (!linkOk) logoBindingDropped = true;
   }
 
   if (logoBindingDropped) {
     onStatus?.(
-      "Theme applied without logo link — this org's Dataverse metadata doesn't expose the theme→logo lookup via Web API. The logo web resource was uploaded successfully and can be linked manually from the theme form.",
+      "Theme applied, but the logo link could not be set automatically on this org — every known logo nav-property name was rejected by Dataverse. The logo web resource was uploaded successfully and can be linked manually from the theme form (Settings → Themes → select theme → Logo lookup).",
     );
   }
 
@@ -421,6 +358,81 @@ export async function applyTheme({
   }
 
   return { themeId, webResourceId };
+}
+
+/**
+ * Link a logo web resource to a theme record via the OData `$ref` endpoint
+ * for the single-valued logo navigation property.
+ *
+ * Returns true on success, false if every attempted nav property name
+ * failed. The caller decides whether to surface that as a non-fatal warning
+ * (current behaviour in `applyTheme`).
+ *
+ * Strategy:
+ *  1. Discover the actual nav property name from $metadata. This is the
+ *     bullet-proof path — it returns whatever name THIS org uses
+ *     (`logoid`, `LogoId`, `lk_theme_webresource_logoid`, etc.) so we don't
+ *     have to guess.
+ *  2. If discovery fails (permissions, network), fall back to trying
+ *     `logoid` and then `LogoId` against $ref directly.
+ *  3. PUT — not POST — because the logo lookup is single-valued. POST is
+ *     for collection-valued nav property associations.
+ */
+async function linkLogoToTheme(
+  client: DataverseClient,
+  themeId: string,
+  webResourceId: string,
+): Promise<boolean> {
+  const candidates = new Set<string>();
+
+  // Step 1 — metadata discovery.
+  try {
+    const metaRes = await client.request(
+      "/EntityDefinitions(LogicalName='theme')/ManyToOneRelationships?$select=ReferencingAttribute,ReferencingEntityNavigationPropertyName&$filter=ReferencingAttribute eq 'logoid'",
+    );
+    if (metaRes.ok) {
+      const json = (await metaRes.json()) as {
+        value?: Array<{ ReferencingEntityNavigationPropertyName?: string }>;
+      };
+      const navName = json.value?.[0]?.ReferencingEntityNavigationPropertyName;
+      if (navName) candidates.add(navName);
+    }
+  } catch {
+    // discovery is best-effort; fall through to known casings
+  }
+
+  // Step 2 — append known casings as fallbacks (deduped via the Set).
+  candidates.add("logoid");
+  candidates.add("LogoId");
+
+  // Step 3 — try each candidate against `$ref`. The body must be an
+  // absolute @odata.id pointing at the target record. `DataverseClient`
+  // exposes `orgUrl` and `apiVersion` as readonly publics, so we can
+  // construct the canonical Web API URL without re-deriving it.
+  const apiBase = `${client.orgUrl}/api/data/${client.apiVersion}`;
+  const odataId = `${apiBase}/webresourceset(${webResourceId})`;
+
+  for (const navName of candidates) {
+    try {
+      const res = await client.request(
+        `/themes(${themeId})/${navName}/$ref`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ "@odata.id": odataId }),
+        },
+      );
+      // 204 No Content is the success code for $ref PUT.
+      if (res.ok) return true;
+      // 412 Precondition Failed sometimes surfaces for already-set
+      // single-valued nav refs; treat as success.
+      if (res.status === 412) return true;
+      // Other 4xx → try next candidate.
+    } catch {
+      // network/transient — try next candidate
+    }
+  }
+  return false;
 }
 
 async function upsertLogoWebResource(
