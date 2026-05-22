@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.44.5";
+export const APP_VERSION = "v1.44.6";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.44.6",
+    date: "May 22, 2026",
+    tag: "FIX",
+    fixes: [
+      "**Brand → Apply now actually shows you what happened to the logo link, and tries harder to find the right Dataverse nav property to bind it.** v1.44.5 introduced metadata-discovery + `$ref` PUT, but two issues kept the logo from appearing on clariantservicepoc: (1) the metadata query filtered on `ReferencingAttribute eq 'logoid'`, which on some orgs returns an empty array because the platform exposes the relationship under a different attribute logical name — we now fetch ALL ManyToOneRelationships on the theme entity (no filter) and pick every one that references `webresource`, which is unambiguous; (2) when the link silently failed we then immediately printed *“Theme published as default.”* and the user had no idea anything went wrong with the logo. The final status now reads *“Theme published as default — but the logo could not be linked automatically. Diagnostic: metadata: N rels, M → webresource; logoid=400; LogoId=400; lk_theme_webresource_logoid=404. The logo web resource is uploaded in the org and can be linked manually: Settings → Themes → {theme} → Logo lookup.”* That diagnostic is exactly what you need to find the right nav-property name without opening dev tools. We also now try `lk_theme_webresource_logoid` as a third fallback. On the vast majority of orgs the logo will simply link silently; on the holdouts the user sees a single actionable line.",
+    ],
+  },
   {
     version: "v1.44.5",
     date: "May 22, 2026",

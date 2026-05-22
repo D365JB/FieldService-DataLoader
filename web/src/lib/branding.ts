@@ -217,7 +217,12 @@ export async function applyTheme({
   colors,
   logo,
   onStatus,
-}: ApplyThemeArgs): Promise<{ themeId: string; webResourceId?: string }> {
+}: ApplyThemeArgs): Promise<{
+  themeId: string;
+  webResourceId?: string;
+  logoLinked: boolean;
+  logoLinkDiag?: string;
+}> {
   // 1) Optional: upload logo as web resource.
   let webResourceId: string | undefined;
   if (logo) {
@@ -323,15 +328,19 @@ export async function applyTheme({
   }
 
   let logoBindingDropped = false;
+  let logoBindingDiag = "";
   if (webResourceId) {
     onStatus?.("Linking logo to theme…");
-    const linkOk = await linkLogoToTheme(client, themeId, webResourceId);
-    if (!linkOk) logoBindingDropped = true;
+    const result = await linkLogoToTheme(client, themeId, webResourceId, onStatus);
+    if (!result.ok) {
+      logoBindingDropped = true;
+      logoBindingDiag = result.diag;
+    }
   }
 
   if (logoBindingDropped) {
     onStatus?.(
-      "Theme applied, but the logo link could not be set automatically on this org — every known logo nav-property name was rejected by Dataverse. The logo web resource was uploaded successfully and can be linked manually from the theme form (Settings → Themes → select theme → Logo lookup).",
+      `Theme applied, but the logo link could not be set automatically on this org. Diagnostic: ${logoBindingDiag}. The logo web resource was uploaded successfully and can be linked manually from the theme form (Settings → Themes → select theme → Logo lookup).`,
     );
   }
 
@@ -357,62 +366,96 @@ export async function applyTheme({
     );
   }
 
-  return { themeId, webResourceId };
+  return {
+    themeId,
+    webResourceId,
+    logoLinked: !!webResourceId && !logoBindingDropped,
+    logoLinkDiag: logoBindingDropped ? logoBindingDiag : undefined,
+  };
 }
 
 /**
  * Link a logo web resource to a theme record via the OData `$ref` endpoint
  * for the single-valued logo navigation property.
  *
- * Returns true on success, false if every attempted nav property name
- * failed. The caller decides whether to surface that as a non-fatal warning
- * (current behaviour in `applyTheme`).
+ * Returns `{ ok: true }` on success, or `{ ok: false, diag }` with a short
+ * diagnostic string listing what was tried and what HTTP status came back.
+ * The diagnostic is surfaced to the user so a "logo didn't link" failure
+ * can be debugged from the UI without opening the browser console.
  *
- * Strategy:
- *  1. Discover the actual nav property name from $metadata. This is the
- *     bullet-proof path — it returns whatever name THIS org uses
- *     (`logoid`, `LogoId`, `lk_theme_webresource_logoid`, etc.) so we don't
- *     have to guess.
- *  2. If discovery fails (permissions, network), fall back to trying
- *     `logoid` and then `LogoId` against $ref directly.
+ * Strategy (v1.44.6):
+ *  1. Discover the nav property name from $metadata broadly — fetch ALL
+ *     ManyToOneRelationships on `theme` and pick any that reference
+ *     `webresource` (covers orgs where the column logical name isn't
+ *     literally `logoid`, or where the filter parser is fussy).
+ *  2. Also try the historical guesses (`logoid`, `LogoId`,
+ *     `lk_theme_webresource_logoid`).
  *  3. PUT — not POST — because the logo lookup is single-valued. POST is
- *     for collection-valued nav property associations.
+ *     for collection-valued associations.
+ *  4. Surface every attempt's HTTP status via onStatus so the user sees
+ *     exactly what Dataverse said.
  */
 async function linkLogoToTheme(
   client: DataverseClient,
   themeId: string,
   webResourceId: string,
-): Promise<boolean> {
+  onStatus?: (msg: string) => void,
+): Promise<{ ok: true } | { ok: false; diag: string }> {
   const candidates = new Set<string>();
+  const diagParts: string[] = [];
 
-  // Step 1 — metadata discovery.
+  // Step 1 — broad metadata discovery. Fetch every ManyToOne relationship
+  // on the `theme` entity (no filter — some orgs reject `$filter` on
+  // EntityDefinitions sub-collections with cryptic 500s) and select the
+  // ones that reference `webresource`. This finds the logo lookup
+  // regardless of what the column logical name is on this org.
+  onStatus?.("Discovering theme→logo navigation property from metadata…");
   try {
     const metaRes = await client.request(
-      "/EntityDefinitions(LogicalName='theme')/ManyToOneRelationships?$select=ReferencingAttribute,ReferencingEntityNavigationPropertyName&$filter=ReferencingAttribute eq 'logoid'",
+      "/EntityDefinitions(LogicalName='theme')/ManyToOneRelationships?$select=ReferencingAttribute,ReferencingEntityNavigationPropertyName,ReferencedEntity",
     );
     if (metaRes.ok) {
       const json = (await metaRes.json()) as {
-        value?: Array<{ ReferencingEntityNavigationPropertyName?: string }>;
+        value?: Array<{
+          ReferencingAttribute?: string;
+          ReferencingEntityNavigationPropertyName?: string;
+          ReferencedEntity?: string;
+        }>;
       };
-      const navName = json.value?.[0]?.ReferencingEntityNavigationPropertyName;
-      if (navName) candidates.add(navName);
+      const rels = json.value ?? [];
+      const wrRels = rels.filter((r) => r.ReferencedEntity === "webresource");
+      diagParts.push(`metadata: ${rels.length} rels, ${wrRels.length} → webresource`);
+      for (const r of wrRels) {
+        if (r.ReferencingEntityNavigationPropertyName) {
+          candidates.add(r.ReferencingEntityNavigationPropertyName);
+        }
+      }
+      const discovered = wrRels
+        .map((r) => `${r.ReferencingAttribute}→${r.ReferencingEntityNavigationPropertyName}`)
+        .join(", ");
+      if (discovered) onStatus?.(`Logo nav candidates from metadata: ${discovered}`);
+    } else {
+      diagParts.push(`metadata GET → HTTP ${metaRes.status}`);
     }
-  } catch {
-    // discovery is best-effort; fall through to known casings
+  } catch (err) {
+    diagParts.push(`metadata GET threw: ${(err as Error).message ?? "unknown"}`);
   }
 
-  // Step 2 — append known casings as fallbacks (deduped via the Set).
-  candidates.add("logoid");
-  candidates.add("LogoId");
+  // Step 2 — known fallbacks. Order doesn't really matter (Set dedupes);
+  // every name is tried until one returns 2xx/412.
+  for (const c of ["logoid", "LogoId", "lk_theme_webresource_logoid"]) {
+    candidates.add(c);
+  }
 
-  // Step 3 — try each candidate against `$ref`. The body must be an
-  // absolute @odata.id pointing at the target record. `DataverseClient`
-  // exposes `orgUrl` and `apiVersion` as readonly publics, so we can
-  // construct the canonical Web API URL without re-deriving it.
+  // Step 3 — try each candidate against `$ref`. Body must be an absolute
+  // @odata.id pointing at the target record. `DataverseClient` exposes
+  // `orgUrl` and `apiVersion` as readonly publics.
   const apiBase = `${client.orgUrl}/api/data/${client.apiVersion}`;
   const odataId = `${apiBase}/webresourceset(${webResourceId})`;
 
   for (const navName of candidates) {
+    let status = 0;
+    let snippet = "";
     try {
       const res = await client.request(
         `/themes(${themeId})/${navName}/$ref`,
@@ -422,17 +465,24 @@ async function linkLogoToTheme(
           body: JSON.stringify({ "@odata.id": odataId }),
         },
       );
+      status = res.status;
       // 204 No Content is the success code for $ref PUT.
-      if (res.ok) return true;
-      // 412 Precondition Failed sometimes surfaces for already-set
-      // single-valued nav refs; treat as success.
-      if (res.status === 412) return true;
-      // Other 4xx → try next candidate.
-    } catch {
-      // network/transient — try next candidate
+      // 412 sometimes surfaces for already-set single-valued refs → success.
+      if (res.ok || res.status === 412) {
+        onStatus?.(`Logo linked via ${navName} (HTTP ${status})`);
+        return { ok: true };
+      }
+      const body = await res.text().catch(() => "");
+      snippet = body.slice(0, 120).replace(/\s+/g, " ");
+      onStatus?.(`Logo link via ${navName} → HTTP ${status}: ${snippet || "(no body)"}`);
+      diagParts.push(`${navName}=${status}`);
+    } catch (err) {
+      const msg = (err as Error).message ?? "unknown";
+      onStatus?.(`Logo link via ${navName} threw: ${msg}`);
+      diagParts.push(`${navName}=ERR`);
     }
   }
-  return false;
+  return { ok: false, diag: diagParts.join("; ") };
 }
 
 async function upsertLogoWebResource(

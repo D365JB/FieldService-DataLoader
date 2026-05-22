@@ -106,14 +106,25 @@ export function Brand() {
         }
       }
 
-      await applyTheme({
+      const result = await applyTheme({
         client,
         themeName,
         colors,
         logo,
         onStatus: setStatus,
       });
-      setStatus("Theme published as default.");
+      // v1.44.6 — if the colors apply succeeds but the logo→theme link
+      // couldn't be set on this org, surface that explicitly as the final
+      // status (not buried mid-flow where the next setStatus call clobbers
+      // it). Includes the diagnostic so we can see what was actually tried
+      // without opening the browser console.
+      if (logo && !result.logoLinked) {
+        setStatus(
+          `Theme published as default — but the logo could not be linked automatically. Diagnostic: ${result.logoLinkDiag ?? "(none)"}. The logo web resource is uploaded in the org and can be linked manually: Settings → Themes → ${themeName} → Logo lookup.`,
+        );
+      } else {
+        setStatus("Theme published as default.");
+      }
       setStep("done");
     } catch (err) {
       // Surface BOTH the last status ("what we were doing") and the error
