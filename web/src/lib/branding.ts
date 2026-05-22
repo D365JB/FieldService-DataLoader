@@ -275,78 +275,127 @@ export async function applyTheme({
     hoverlinkeffect: colors.hoverLink,
     selectedlinkeffect: colors.selectedLink,
   };
-  if (webResourceId) {
-    // v1.44.2 — The `theme` entity's nav property casing for the logo lookup
-    // differs across Dataverse orgs / versions. Older orgs surface the nav
-    // property as the schema-cased `LogoId` (matching the column's schema
-    // name); newer ones surface the lowercase `logoid` (matching the logical
-    // name). Either way, the OTHER casing returns the cryptic
-    //   "undeclared property '<X>' which only has property annotations …"
-    // 400 because OData treats it as a totally unknown property.
-    //
-    // We try `logoid@odata.bind` first (current default in tenant metadata)
-    // and fall back to `LogoId@odata.bind` if the create fails with the
-    // matching undeclared-property message. This makes the Brand flow
-    // metadata-agnostic without round-tripping $metadata. `logoimage`
-    // remains the wrong target — it's a string URL column, not a lookup.
-    body["logoid@odata.bind"] = `/webresourceset(${webResourceId})`;
-  }
+  // v1.44.4 — Bind the logo web resource to the theme via @odata.bind.
+  //
+  // History of pain on this single field:
+  //   * Some orgs expose the nav property as lowercase `logoid` (matches the
+  //     attribute's logical name).
+  //   * Older orgs expose it schema-cased as `LogoId`.
+  //   * Some orgs (e.g. clariantservicepoc, May 2026) reject BOTH casings with
+  //     "An undeclared property '<X>' which only has property annotations in
+  //     the payload but no property value was found in the payload." This
+  //     means the `theme` EDM on those orgs has no writable single-valued nav
+  //     property for the logo at all — the platform expects callers to set
+  //     the logo via the form/UI, not the Web API.
+  //
+  // Strategy: try the known casings in order, and if ALL fail with the same
+  // undeclared-property error, fall back to applying the theme WITHOUT the
+  // logo binding. The logo web resource is still uploaded and published, so
+  // it's available in the org; only the theme→logo link is dropped. The
+  // theme apply (colors, accents, header) is what users actually notice, so
+  // we treat the logo link as best-effort and never fail the whole flow.
+  //
+  // `logoimage` remains the wrong target — it's a string URL column, not a
+  // lookup. We do not try it.
+  const LOGO_BIND_CASINGS = ["logoid", "LogoId"] as const;
+  const isLogoBindUndeclared = (detail: string): boolean =>
+    /undeclared property '(logoid|LogoId)'/i.test(detail) &&
+    /only has property annotations/i.test(detail);
+
+  const bodyWithLogo = (casing: string): Record<string, unknown> => {
+    const out = { ...body };
+    if (webResourceId) {
+      out[`${casing}@odata.bind`] = `/webresourceset(${webResourceId})`;
+    }
+    return out;
+  };
 
   let themeId: string;
+  let logoBindingDropped = false;
+
   if (existing.length > 0) {
     onStatus?.("Updating theme…");
     themeId = existing[0].themeid;
-    const res = await client.request(`/themes(${themeId})`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const detail = await res.text().catch(() => "");
-      // v1.44.2 — Same logoid/LogoId casing fallback as the create branch.
-      if (
-        webResourceId &&
-        detail.includes("undeclared property 'logoid'")
-      ) {
-        const retryBody = { ...body };
-        delete retryBody["logoid@odata.bind"];
-        retryBody["LogoId@odata.bind"] = `/webresourceset(${webResourceId})`;
-        const retry = await client.request(`/themes(${themeId})`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(retryBody),
-        });
-        if (!retry.ok) {
-          const retryDetail = await retry.text().catch(() => "");
-          throw new Error(`Update theme failed: ${retry.status} ${retryDetail}`);
-        }
-      } else {
-        throw new Error(`Update theme failed: ${res.status} ${detail}`);
+    const attempts: Array<{ label: string; payload: Record<string, unknown> }> =
+      webResourceId
+        ? [
+            ...LOGO_BIND_CASINGS.map((c) => ({
+              label: `with ${c}@odata.bind`,
+              payload: bodyWithLogo(c),
+            })),
+            { label: "without logo binding", payload: { ...body } },
+          ]
+        : [{ label: "no logo", payload: { ...body } }];
+
+    let lastDetail = "";
+    let lastStatus = 0;
+    let ok = false;
+    for (let i = 0; i < attempts.length; i++) {
+      const { label, payload } = attempts[i];
+      const isFallback = i === attempts.length - 1 && webResourceId;
+      const res = await client.request(`/themes(${themeId})`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        if (isFallback && i > 0) logoBindingDropped = true;
+        ok = true;
+        break;
       }
+      lastStatus = res.status;
+      lastDetail = await res.text().catch(() => "");
+      // Only continue to the next casing / fallback for the specific
+      // undeclared-property error. Anything else is a real failure.
+      if (!isLogoBindUndeclared(lastDetail)) {
+        throw new Error(`Update theme failed (${label}): ${lastStatus} ${lastDetail}`);
+      }
+    }
+    if (!ok) {
+      throw new Error(`Update theme failed after all logo-binding fallbacks: ${lastStatus} ${lastDetail}`);
     }
   } else {
     onStatus?.("Creating theme…");
-    try {
-      themeId = await client.create("themes", body);
-    } catch (err) {
-      // v1.44.2 — Retry with `LogoId@odata.bind` when the tenant's metadata
-      // surfaces the schema-cased nav property instead of the lowercase one.
-      // We detect the specific OData error rather than blind-retrying any
-      // 400, so genuine validation failures (missing required cols, bad
-      // colour hex, etc.) still surface immediately.
-      const msg = (err as Error)?.message ?? "";
-      if (
-        webResourceId &&
-        msg.includes("undeclared property 'logoid'")
-      ) {
-        const retryBody = { ...body };
-        delete retryBody["logoid@odata.bind"];
-        retryBody["LogoId@odata.bind"] = `/webresourceset(${webResourceId})`;
-        themeId = await client.create("themes", retryBody);
-      } else {
-        throw err;
+    const attempts: Array<{ label: string; payload: Record<string, unknown> }> =
+      webResourceId
+        ? [
+            ...LOGO_BIND_CASINGS.map((c) => ({
+              label: `with ${c}@odata.bind`,
+              payload: bodyWithLogo(c),
+            })),
+            { label: "without logo binding", payload: { ...body } },
+          ]
+        : [{ label: "no logo", payload: { ...body } }];
+
+    let lastErr: Error | undefined;
+    let created: string | undefined;
+    for (let i = 0; i < attempts.length; i++) {
+      const { label, payload } = attempts[i];
+      const isFallback = i === attempts.length - 1 && webResourceId;
+      try {
+        created = await client.create("themes", payload);
+        if (isFallback && i > 0) logoBindingDropped = true;
+        break;
+      } catch (err) {
+        lastErr = err as Error;
+        const msg = lastErr?.message ?? "";
+        if (!isLogoBindUndeclared(msg)) {
+          throw new Error(`Create theme failed (${label}): ${msg}`);
+        }
       }
     }
+    if (!created) {
+      throw new Error(
+        `Create theme failed after all logo-binding fallbacks: ${lastErr?.message ?? "unknown"}`,
+      );
+    }
+    themeId = created;
+  }
+
+  if (logoBindingDropped) {
+    onStatus?.(
+      "Theme applied without logo link — this org's Dataverse metadata doesn't expose the theme→logo lookup via Web API. The logo web resource was uploaded successfully and can be linked manually from the theme form.",
+    );
   }
 
   // 3) Publish the theme as default. The correct call is the BOUND action

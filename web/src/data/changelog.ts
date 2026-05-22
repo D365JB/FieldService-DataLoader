@@ -7,9 +7,17 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.44.3";
+export const APP_VERSION = "v1.44.4";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.44.4",
+    date: "May 22, 2026",
+    tag: "FIX",
+    fixes: [
+      "**Brand → Apply no longer dies on the theme→logo lookup.** The v1.44.2 fix that fell back from `logoid@odata.bind` to `LogoId@odata.bind` covered most orgs, but at least one customer org (clariantservicepoc) rejects BOTH casings with `An undeclared property 'LogoId' which only has property annotations in the payload but no property value was found in the payload.` That OData error means the `theme` EDM on that org exposes no writable single-valued navigation property for the logo at all via Web API — the platform expects callers to link the logo from the form, not over OData. We now degrade gracefully: try `logoid` → `LogoId` → drop the logo binding entirely and apply the theme without it. The logo web resource is still uploaded and published, so it's available in the org and can be linked manually from the theme form. The status line surfaces *“Theme applied without logo link”* so the user knows what happened. Colours, accents, navbar shelf, and header tints — the things people actually see when they switch themes — now apply on every org, regardless of how its theme metadata is shaped.",
+    ],
+  },
   {
     version: "v1.44.3",
     date: "May 21, 2026",
