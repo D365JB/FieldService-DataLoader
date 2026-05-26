@@ -1,6 +1,6 @@
 {
   "name": "fsdataloader-api",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "SWA managed Functions: AOAI proxy + helpers for FS Data Studio",
   "main": "dist/src/functions/*.js",
   "scripts": {

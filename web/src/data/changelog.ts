@@ -7,9 +7,19 @@ export interface ChangelogEntry {
   fixes?: string[];
 }
 
-export const APP_VERSION = "v1.44.6";
+export const APP_VERSION = "v1.44.7";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "v1.44.7",
+    date: "May 26, 2026",
+    tag: "FIX",
+    fixes: [
+      "**Hardened API access so AI/branding endpoints can't be called anonymously.** Added `APP_ACCESS_KEY` enforcement to `/api/generateContent`, `/api/models`, `/api/fetchWebsite`, `/api/fetchImage`, and `/api/extractBranding`, plus CORS allow-headers for `x-app-key` and `x-fsdl-session`. This prevents accidental/public quota drain and improves stability under load.",
+      "**Brand logo retrieval is now more resilient.** The Brand apply flow retries transient image-proxy failures and automatically falls back across multiple detected logo candidates before degrading to colors-only, reducing theme apply failures caused by bad favicon/og:image URLs.",
+      "**Generate preflight now appears at the top of the page.** Readiness checks (API, Dataverse, AOAI, pick consistency) are visible earlier in the workflow so users can fix blockers before they spend time configuring entities.",
+    ],
+  },
   {
     version: "v1.44.6",
     date: "May 22, 2026",
