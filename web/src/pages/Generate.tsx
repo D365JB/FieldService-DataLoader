@@ -505,6 +505,23 @@ export function Generate() {
         {!result && !running && <WorkflowLockBanner orgUrl={orgUrl} />}
 
         {!result && !running && (
+          <RunPreflight
+            orgUrl={orgUrl}
+            picks={{
+              existing: (
+                Object.keys(entityModes) as Array<keyof typeof entityModes>
+              )
+                .filter((k) => entityModes[k] === "existing")
+                .map((k) => ({
+                  label: ENTITY_LABELS[k as string] ?? (k as string),
+                  count: entityPicks[k].length,
+                })),
+            }}
+            onChange={setPreflightOk}
+          />
+        )}
+
+        {!result && !running && (
           <div className="card p-6 mb-6">
             <h3 className="font-semibold text-white mb-1">
               What to load
@@ -799,23 +816,6 @@ export function Generate() {
               />
             </div>
           </div>
-        )}
-
-        {!result && !running && (
-          <RunPreflight
-            orgUrl={orgUrl}
-            picks={{
-              existing: (
-                Object.keys(entityModes) as Array<keyof typeof entityModes>
-              )
-                .filter((k) => entityModes[k] === "existing")
-                .map((k) => ({
-                  label: ENTITY_LABELS[k as string] ?? (k as string),
-                  count: entityPicks[k].length,
-                })),
-            }}
-            onChange={setPreflightOk}
-          />
         )}
 
         <div className="card p-6 mb-6">

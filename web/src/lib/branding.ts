@@ -71,12 +71,31 @@ export async function fetchImageBytes(url: string): Promise<{
   bytes: number;
   base64: string;
 }> {
-  const res = await apiFetch(`/api/fetchImage?url=${encodeURIComponent(url)}`);
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(`fetchImage ${res.status}: ${detail || res.statusText}`);
+  const target = `/api/fetchImage?url=${encodeURIComponent(url)}`;
+  const transient = new Set([429, 500, 502, 503, 504]);
+  let lastStatus = 0;
+  let lastDetail = "";
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await apiFetch(target);
+    if (res.ok) return res.json();
+    lastStatus = res.status;
+    lastDetail = await res.text().catch(() => "");
+    if (transient.has(res.status) && attempt < 2) {
+      await new Promise((r) =>
+        setTimeout(r, (attempt + 1) * 1200 + Math.random() * 1000),
+      );
+      continue;
+    }
+    break;
   }
-  return res.json();
+
+  if (transient.has(lastStatus)) {
+    throw new Error(
+      "Logo service is temporarily unavailable. Please retry, or continue with colors only.",
+    );
+  }
+  throw new Error(`fetchImage ${lastStatus}: ${lastDetail || "request failed"}`);
 }
 
 /**

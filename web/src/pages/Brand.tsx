@@ -88,20 +88,39 @@ export function Brand() {
       let logo: { contentType: string; base64: string; fileName: string } | null =
         null;
       if (includeLogo && selectedLogoUrl) {
-        try {
-          setStatus("Downloading logo…");
-          const img = await fetchImageBytes(selectedLogoUrl);
-          const ext =
-            img.contentType.split("/")[1]?.replace("svg+xml", "svg") ?? "png";
-          logo = {
-            contentType: img.contentType,
-            base64: img.base64,
-            fileName: `logo.${ext}`,
-          };
-        } catch (logoErr) {
+        const candidates = [
+          selectedLogoUrl,
+          ...branding.candidateImages.filter((c) => c !== selectedLogoUrl),
+        ].slice(0, 8);
+        let lastLogoErr = "";
+        for (let i = 0; i < candidates.length; i++) {
+          const candidate = candidates[i];
+          try {
+            setStatus(
+              `Downloading logo (${i + 1}/${candidates.length})…`,
+            );
+            const img = await fetchImageBytes(candidate);
+            const ext =
+              img.contentType
+                .split("/")[1]
+                ?.replace("svg+xml", "svg") ?? "png";
+            logo = {
+              contentType: img.contentType,
+              base64: img.base64,
+              fileName: `logo.${ext}`,
+            };
+            if (candidate !== selectedLogoUrl) {
+              setSelectedLogoUrl(candidate);
+            }
+            break;
+          } catch (logoErr) {
+            lastLogoErr = (logoErr as Error).message;
+          }
+        }
+        if (!logo) {
           // Don't fail the whole apply if logo can't be fetched.
           setStatus(
-            `Logo download failed (${(logoErr as Error).message}). Continuing with colors only…`,
+            `Logo download failed (${lastLogoErr || "no usable logo URL"}). Continuing with colors only…`,
           );
         }
       }

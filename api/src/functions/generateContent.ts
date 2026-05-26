@@ -5,6 +5,7 @@ import {
   type InvocationContext,
 } from "@azure/functions";
 import { DefaultAzureCredential } from "@azure/identity";
+import { requireAppKey } from "../lib/requireAppKey";
 import { sessionTag } from "../lib/session";
 
 interface GenerateRequest {
@@ -100,7 +101,7 @@ function corsHeaders(origin: string | null): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": allowed,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, x-app-key, x-fsdl-session",
     Vary: "Origin",
   };
 }
@@ -127,11 +128,17 @@ export async function generateContent(
     return { status: 204, headers: cors };
   }
 
+  const gate = requireAppKey(req, cors);
+  if (gate) return gate;
+
   if (!AOAI_ENDPOINT) {
     return {
-      status: 500,
+      status: 503,
       headers: cors,
-      jsonBody: { error: "AOAI_ENDPOINT not configured" },
+      jsonBody: {
+        error:
+          "AI service is not configured (AOAI_ENDPOINT missing). Set Function App setting AOAI_ENDPOINT to your Azure OpenAI account endpoint.",
+      },
     };
   }
 
